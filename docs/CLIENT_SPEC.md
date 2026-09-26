@@ -1,534 +1,175 @@
 # CLIENT_SPEC.md
 
-# AI Client Specification
-
-**Version:** 0.2
-**Status:** Draft
-**Role:** User Interaction + Local Capability / Execution Runtime
+**Version:** v0.2
+**Role:** AI Client / User Interaction + Local Execution Runtime
 
 ---
 
-## 1. Overview
+## 1. Purpose
 
-AI Client is the user's local interaction and execution endpoint in the Central AI Orchestration architecture.
+AI Client 是用户与 Central Server 之间的交互和执行端。
 
-The Client is responsible for:
+Client 不负责整个问题的规划，而负责：
 
-1. interacting with the user;
-2. exposing locally available capabilities;
-3. executing the current Step requested by the Server;
-4. interacting with local services, tools, agents, devices, and applications;
-5. collecting execution results and Evidence;
-6. handling Human-in-the-loop interaction;
-7. reporting execution state and Evidence back to the Server.
+* 与 User 交互
+* 向 Server 提交 User Request
+* 向 Server 声明本地可用能力
+* 接收 Server 当前要执行的 Step
+* 在本地执行 Step
+* 与本地服务、Agent、MCP、工具、设备等协作
+* 收集并返回 Evidence
+* 在需要时向 User 获取信息
+* 在 Server 认为 Request 已达到完成条件后，让 User 对最终结果进行确认
 
-The Client is **not** responsible for:
+核心原则：
 
-* global workflow planning;
-* deciding the next Step;
-* maintaining an independent workflow planner;
-* performing autonomous LLM-based re-planning;
-* executing an entire workflow locally;
-* replacing the Server's Workflow Engine.
-
-The core model is:
-
-```text
-                    Central Server
-                         │
-                  Plan one Step
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │ AI Client    │
-                  │              │
-                  │ UI           │
-                  │ Capability   │
-                  │ Runtime      │
-                  │ Execution    │
-                  └──────┬───────┘
-                         │
-              Local Services / Agents
-              Tools / Devices / Apps
-                         │
-                         ▼
-                      Evidence
-                         │
-                         ▼
-                    Central Server
-                         │
-                     Re-plan
-                         │
-                         ▼
-                    Next Step
-```
-
-The fundamental execution loop is:
-
-```text
-Plan
-  ↓
-One Step
-  ↓
-Execute
-  ↓
-Observe
-  ↓
-Evidence
-  ↓
-Re-plan
-  ↓
-One Step
-```
+> **Client 执行当前 Step，不负责决定下一个 Step。**
 
 ---
 
-# 2. Design Principles
-
-## 2.1 Single-Step Dispatch
-
-The Server MUST NOT dispatch more than one actionable Step to a Client at a time.
-
-The Client receives:
+# 2. Architecture
 
 ```text
-execution.request
+                  User
+                   │
+                   ▼
+              ┌─────────┐
+              │ Client  │
+              │         │
+              │ UI      │
+              │ Session │
+              │ Runtime │
+              └────┬────┘
+                   │
+            User Request / Result
+                   │
+                   ▼
+              ┌─────────┐
+              │ Central │
+              │ Server  │
+              └─────────┘
 ```
 
-for the current Step, executes it, and reports the result.
-
-Only after the Server receives the result may it generate the next Step.
-
-This is a core protocol invariant.
+Client 内部：
 
 ```text
-Server
-  │
-  │ Step N
-  ▼
 Client
-  │
-  │ result/evidence
-  ▼
-Server
-  │
-  │ Step N+1
-  ▼
-Client
+│
+├── User Interaction
+│
+├── Workflow Session
+│
+├── Capability Registry
+│
+├── Step Executor
+│
+├── Local Services / Agents
+│
+├── MCP / Tools / Devices
+│
+└── Evidence Collector
 ```
-
-The Server SHOULD NOT send:
-
-```text
-Step N
-Step N+1
-Step N+2
-Step N+3
-```
-
-as an executable batch.
-
-This prevents stale plans and keeps planning synchronized with the latest Evidence.
-
----
-
-## 2.2 Client Is Execution-Oriented
-
-The Client should be rich in local capabilities but intentionally limited in global intelligence.
-
-Conceptually:
-
-```text
-Server:
-    "What should happen next?"
-
-Client:
-    "I can execute this."
-
-Server:
-    "What actually happened?"
-
-Client:
-    "Here is the result and Evidence."
-```
-
----
-
-## 2.3 Server Is the Planning Authority
-
-The Client MUST NOT independently decide the next workflow Step.
-
-Even if a local agent or LLM exists inside the Client, it MUST NOT modify the authoritative Server workflow state without an explicit protocol operation.
-
-Local agents MAY help execute a Step.
-
-They do not become the global Workflow Engine.
-
----
-
-## 2.4 Workflow State Is Server-Owned
-
-The Client may report:
-
-* execution started;
-* execution waiting;
-* execution completed;
-* execution failed;
-* execution cancelled;
-* Evidence collected.
-
-The Server owns the authoritative Workflow state.
-
-The Client MUST NOT independently transition the global workflow into:
-
-```text
-COMPLETED
-FAILED
-CANCELLED
-```
-
-unless the protocol explicitly defines the Client event as the input that causes the Server to perform that transition.
 
 ---
 
 # 3. Responsibilities
 
-## 3.1 Client Responsibilities
+Client MUST：
 
-The Client is responsible for:
+1. 接收 User Request
+2. 将 User Request 提交给 Server
+3. 提供本地 Capability 信息
+4. 接收 Server 下发的当前 Step
+5. 检查本地是否允许执行
+6. 执行 Step
+7. 返回执行状态和 Evidence
+8. 处理当前 Step 所需的 User Interaction
+9. 展示 Workflow 最终结果
+10. 在需要时获取 User 对 Request 是否解决的最终确认
 
-### User Interaction
+Client MUST NOT：
 
-* conversation UI;
-* workflow UI;
-* displaying current Step;
-* requesting user input;
-* displaying execution status;
-* displaying Evidence;
-* requesting confirmation where required.
-
-### Capability Management
-
-* discovering local capabilities;
-* exposing capability metadata;
-* registering capabilities with Server;
-* detecting capability changes;
-* enabling/disabling capabilities;
-* enforcing local capability permissions.
-
-### Execution
-
-* receiving one Step;
-* validating whether it can execute;
-* invoking the required local capability;
-* monitoring execution;
-* collecting output;
-* reporting execution state.
-
-### Evidence
-
-* collecting command output;
-* collecting logs;
-* collecting screenshots;
-* collecting files;
-* collecting device data;
-* collecting structured results;
-* collecting human-generated information.
-
-### Human-in-the-loop
-
-* presenting interaction requests;
-* collecting user input;
-* collecting confirmations;
-* reporting user responses;
-* associating responses with the current Step.
+* 自己决定整个 Workflow 的执行计划
+* 自己决定下一个 Step
+* 修改 Server 维护的 Workflow 状态
+* 在 Server 未要求的情况下自主创建新的全局 Workflow
+* 将本地 Agent 的判断直接作为 Workflow 最终状态
 
 ---
 
-# 4. Non-Responsibilities
+# 4. User Request
 
-The Client MUST NOT become responsible for:
-
-* global workflow planning;
-* global context composition;
-* knowledge-base retrieval;
-* global RAG;
-* selecting the next Step;
-* deciding whether the overall problem is solved;
-* maintaining the authoritative workflow state;
-* autonomous workflow re-planning;
-* silently changing Server-issued Steps.
-
-A Client MAY contain local intelligence, but such intelligence is subordinate to the Server workflow protocol.
-
----
-
-# 5. Client Architecture
-
-A reference architecture:
+User Request 是 User 通过 Client 提交给 Server 的需求。
 
 ```text
-┌─────────────────────────────────────────────┐
-│                  AI Client                  │
-│                                             │
-│  ┌───────────────┐     ┌────────────────┐   │
-│  │ User Interface│     │ Session Manager│   │
-│  └───────┬───────┘     └───────┬────────┘   │
-│          │                     │            │
-│          └──────────┬──────────┘            │
-│                     ▼                       │
-│              Workflow Runtime               │
-│                     │                       │
-│          ┌──────────┴──────────┐            │
-│          ▼                     ▼            │
-│   Execution Manager      HITL Manager       │
-│          │                     │            │
-│          ▼                     ▼            │
-│ Capability Registry      User Interaction   │
-│          │                                  │
-│          ▼                                  │
-│ Local Capability Runtime                   │
-│          │                                  │
-│   ┌──────┼──────────┬──────────┐            │
-│   ▼      ▼          ▼          ▼            │
-│ Tools  Services    Agents    Devices        │
-│                                             │
-│                 Evidence Manager            │
-│                       │                     │
-│                       ▼                     │
-│                Central Server               │
-└─────────────────────────────────────────────┘
+User
+  ↓
+Client Interaction
+  ↓
+User Request
+  ↓
+Server
 ```
 
----
+Client 可以负责：
 
-# 6. Session Management
+* 对话
+* 表单
+* 文件选择
+* 参数收集
+* 环境信息收集
 
-The Client manages the local user session and its relationship with the Server.
-
-A session MAY contain:
-
-* `session_id`;
-* `user_id`;
-* `client_id`;
-* active workflow references;
-* conversation messages;
-* capability information;
-* connection status.
-
-The Client SHOULD support reconnection without losing the local execution context of an active Step.
-
-The Client SHOULD persist sufficient local information to recover from temporary network failures.
+但 Client 不负责解释 User Request 并制定完整解决方案。
 
 ---
 
-# 7. Capability System
+# 5. Capability
 
-The Client exposes its locally available capabilities to the Server.
+Client 应向 Server 声明当前可用的本地能力。
 
-A capability represents an operation that the Client can execute.
-
-Examples:
+例如：
 
 ```text
-filesystem.read
-filesystem.write
-shell.execute
-git.status
-git.diff
-git.log
-browser.open
-browser.inspect
-device.read
-device.configure
-camera.capture
-diagnostic.run
-local_agent.invoke
+Capability
+├── git
+│   └── collect_diagnostics
+├── filesystem
+│   └── read_file
+├── terminal
+│   └── execute_command
+├── docker
+│   └── inspect_container
+├── browser
+│   └── open_page
+└── local-agent
+    └── diagnose_project
 ```
 
-Capabilities MAY be provided by:
+Capability 描述的是：
 
-* built-in Client functionality;
-* local applications;
-* local services;
-* MCP servers;
-* local agents;
-* operating-system APIs;
-* devices;
-* enterprise tools.
+> **Client 能够执行什么。**
 
----
+Server 根据这些 Capability 决定是否以及如何利用 Client 的本地能力。
 
-# 8. Capability Manifest
+Client 的 Capability 可以动态变化。
 
-The Client SHOULD expose a Capability Manifest.
-
-Example:
-
-```json
-{
-  "client_id": "client_001",
-  "capabilities": [
-    {
-      "id": "git.diff",
-      "version": "1.0",
-      "description": "Collect current git diff",
-      "input_schema": {},
-      "output_schema": {},
-      "risk_level": "low"
-    },
-    {
-      "id": "shell.execute",
-      "version": "1.0",
-      "description": "Execute a local shell command",
-      "input_schema": {},
-      "output_schema": {},
-      "risk_level": "high"
-    }
-  ]
-}
-```
-
-The Server may use this information during planning.
-
-The capability manifest is descriptive.
-
-It does not grant unrestricted authorization.
-
----
-
-# 9. Dynamic Capability Discovery
-
-Capabilities MAY change during a workflow.
-
-Examples:
+例如：
 
 ```text
-local service started
-local service stopped
-device connected
-device disconnected
-MCP server added
-permission revoked
-agent became unavailable
+Capability Available
+        ↓
+Local Service Started
+        ↓
+Capability Updated
 ```
 
-The Client SHOULD notify the Server when the capability set changes.
-
-Example:
-
-```text
-capability.updated
-```
-
-The Server MUST treat capability information as potentially stale.
-
-Before executing a Step, the Client MUST perform local validation.
+Client 应能够向 Server 更新 Capability 状态。
 
 ---
 
-# 10. Workflow Execution
+# 6. Step Execution
 
-The Client receives one actionable Step at a time.
-
-Example:
-
-```json
-{
-  "type": "execution.request",
-  "workflow_id": "wf_001",
-  "step_id": "step_004",
-  "capability": "git.diff",
-  "input": {
-    "repository": "/workspace/project"
-  }
-}
-```
-
-The Client:
-
-1. validates the request;
-2. validates capability availability;
-3. validates local permissions;
-4. starts execution;
-5. reports execution state;
-6. collects Evidence;
-7. reports the result.
-
----
-
-# 11. Step State
-
-The Client recognizes the following execution states:
-
-```text
-PENDING
-RUNNING
-WAITING
-COMPLETED
-FAILED
-CANCELLED
-```
-
-The Server owns the authoritative state.
-
-The Client reports observations about the current Step.
-
-### PENDING
-
-The Step exists but has not started execution.
-
-### RUNNING
-
-The Step is actively executing.
-
-### WAITING
-
-The current Step cannot continue because it is waiting for an external event.
-
-Examples:
-
-* user input;
-* user confirmation;
-* device event;
-* local service response;
-* external resource.
-
-### COMPLETED
-
-The Step completed successfully.
-
-### FAILED
-
-The Step was attempted but could not complete successfully.
-
-### CANCELLED
-
-Execution was explicitly cancelled.
-
----
-
-# 12. Human-in-the-loop
-
-Human-in-the-loop is an interaction mechanism of the Client, not a workflow-control mechanism.
-
-The Client provides the local user interaction capabilities required by an active Step.
-
-The Server remains responsible for:
-
-* workflow state;
-* planning;
-* determining the next Step.
-
-The Client is responsible for:
-
-* presenting interaction requests;
-* collecting user input;
-* reporting the response;
-* continuing the current Step;
-* reporting Evidence.
-
-## 12.1 Human Interaction Flow
+Server 一次只向 Client 下发一个当前 Step。
 
 ```text
 Server
@@ -537,112 +178,52 @@ Server
   ▼
 Client
   │
-  │ current Step requires user input
+  │ execute
   ▼
-User
+Local Capability
   │
-  │ confirmation / selection / information
   ▼
-Client
+Evidence
   │
-  │ user.response
   ▼
 Server
-  │
-  │ context update + re-plan
-  ▼
-Next Step
 ```
 
-## 12.2 WAITING
+Client 不需要知道整个 Workflow 的未来步骤。
 
-Human interaction MAY cause:
+例如 Server：
 
 ```text
-RUNNING → WAITING
+Step:
+检查项目当前 Git 状态
 ```
 
-After the required event occurs:
+Client 执行后返回：
 
 ```text
-WAITING → RUNNING
+status: COMPLETED
+
+evidence:
+  branch: main
+  modified_files: 7
+  untracked_files: 2
 ```
 
-The Client MUST NOT interpret `WAITING` as workflow-level pause.
-
-There is no required:
-
-```text
-pause_workflow
-resume_workflow
-```
-
-concept.
-
-## 12.3 User Response
-
-Example:
-
-```json
-{
-  "type": "user.response",
-  "workflow_id": "wf_001",
-  "step_id": "step_004",
-  "request_id": "req_123",
-  "response": {
-    "type": "confirmation",
-    "value": "confirm"
-  }
-}
-```
-
-The Server interprets the response in workflow context.
-
-## 12.4 Human Evidence
-
-Human interaction MAY produce Evidence:
-
-```json
-{
-  "type": "evidence",
-  "workflow_id": "wf_001",
-  "step_id": "step_004",
-  "source": "human",
-  "data": {
-    "decision": "confirm"
-  }
-}
-```
-
-Human Evidence SHOULD be distinguishable from automatically collected Evidence.
-
-## 12.5 User Rejection
-
-User rejection does not automatically mean workflow failure.
-
-The Server may decide to:
-
-* generate another Step;
-* request additional information;
-* retry;
-* terminate the workflow.
-
-The Server remains the authority for the resulting workflow state.
+然后由 Server 决定下一步。
 
 ---
 
-# 13. Local Execution and Composite Capabilities
+# 7. Composite Capability
 
-A single Server Step MAY invoke a composite local capability.
+一个 Capability 可以在 Client 内部包含多个本地操作。
 
-Example:
+例如：
 
 ```text
-Capability:
-    git.collect_diagnostics
+git.collect_diagnostics
 ```
 
-Internally it may execute:
+内部可能执行：
 
 ```text
 git status
@@ -651,505 +232,291 @@ git log
 git branch
 ```
 
-However, Central still sees:
+但对于 Server 来说，它仍然是：
 
 ```text
-One Step
+一个 Capability
++
+一个 Step
++
+一个明确的结果
+```
+
+Client 不应把一个完整 Workflow 隐藏在 Capability 中。
+
+---
+
+# 8. Step States
+
+Client 需要能够表达当前 Step 的执行状态：
+
+```text
+PENDING
+RUNNING
+WAITING
+COMPLETED
+FAILED
+```
+
+### PENDING
+
+Step 已收到，但尚未开始执行。
+
+### RUNNING
+
+Step 正在执行。
+
+### WAITING
+
+Step 无法继续，需要外部条件。
+
+例如：
+
+* User 输入
+* User 确认
+* 本地服务响应
+* 设备响应
+* 外部资源准备完成
+
+### COMPLETED
+
+Step 成功完成，并产生 Evidence。
+
+### FAILED
+
+Step 执行失败，并返回失败信息和已有 Evidence。
+
+---
+
+# 9. Human-in-the-loop
+
+Human Interaction 属于 Client 的职责。
+
+例如当前 Step：
+
+```text
+请确认是否允许修改配置文件。
+```
+
+Client：
+
+```text
+Server Step
     ↓
-One Capability Invocation
+Client UI
     ↓
-One Result
+User
+    ↓
+User Response
+    ↓
+Server
 ```
 
-A composite capability MUST have:
+User Response 可以成为下一轮 Workflow 的输入。
 
-* defined input;
-* defined output;
-* defined failure semantics;
-* defined permission requirements.
+User 的拒绝或补充信息本身不等于 Workflow Failed。
 
-A composite capability MUST NOT become an opaque representation of an entire workflow.
+Server 根据 User Response 决定后续处理。
 
 ---
 
-# 14. Evidence
+# 10. Evidence
 
-Evidence is the Client's primary output to the Server.
+Client 是 Evidence 的主要产生端。
 
-Evidence MAY include:
+Evidence 可以来自：
 
-### Structured data
+* 命令执行
+* 文件读取
+* 本地 Agent
+* 服务状态
+* 设备状态
+* 日志
+* User Input
+* User Confirmation
+* 测试结果
 
-```json
-{
-  "cpu_usage": 72,
-  "temperature": 65
-}
-```
-
-### Command output
-
-```text
-$ git status
-...
-```
-
-### Files
+例如：
 
 ```text
-diagnostic_report.json
+Evidence:
+  source: local_agent
+  type: diagnostic_result
+
+  result:
+    root_cause: missing_dependency
+    confidence: 0.91
 ```
 
-### Logs
-
-```text
-application.log
-```
-
-### Screenshots
-
-```text
-screenshot.png
-```
-
-### Device information
-
-```json
-{
-  "device": "camera_01",
-  "status": "connected"
-}
-```
-
-### Human input
-
-```json
-{
-  "operator_decision": "confirmed"
-}
-```
+Client 应尽可能返回实际观察结果，而不是自行推测整个问题是否已经解决。
 
 ---
 
-# 15. Evidence Provenance
+# 11. Request Completion Confirmation
 
-Evidence SHOULD contain provenance information.
+这是 Client 的重要职责。
 
-Example:
+Server 可以根据 Workflow 的完成条件和 Evidence 判断：
 
-```json
-{
-  "evidence_id": "ev_001",
-  "workflow_id": "wf_001",
-  "step_id": "step_004",
-  "source": "local_tool",
-  "capability": "git.diff",
-  "timestamp": "2026-09-23T12:00:00Z",
-  "data": {}
-}
-```
+> 当前结果已经达到系统能够判断的完成条件。
 
-This allows the Server to distinguish:
+但这不一定代表 User 认为自己的 Request 已经真正解决。
 
-```text
-LLM-generated assumption
-        vs
-actual local observation
-```
-
-The Client SHOULD NOT modify Evidence to make it conform to an expected result.
-
----
-
-# 16. Communication
-
-The Client communicates with the Server through a protocol supporting:
-
-* request/response;
-* event streaming;
-* execution status;
-* Evidence transfer;
-* reconnect;
-* correlation IDs.
-
-Possible transports:
-
-```text
-REST
-WebSocket
-SSE
-gRPC
-```
-
-A practical implementation MAY use:
-
-```text
-REST:
-    session / capability / execution APIs
-
-WebSocket:
-    workflow events / execution events / HITL events
-```
-
-The transport is replaceable.
-
-The protocol semantics MUST remain independent of transport.
-
----
-
-# 17. Core Events
-
-### Server → Client
-
-```text
-workflow.start
-execution.request
-user.input.request
-workflow.cancel
-```
-
-### Client → Server
-
-```text
-capability.manifest
-capability.updated
-execution.started
-execution.waiting
-execution.completed
-execution.failed
-execution.cancelled
-user.response
-evidence
-client.status
-```
-
----
-
-# 18. Correlation
-
-Every execution-related message SHOULD contain:
-
-```text
-workflow_id
-step_id
-request_id
-client_id
-```
-
-This allows the Server and Client to correlate asynchronous events.
-
-Example:
-
-```text
-workflow_id = wf_001
-step_id     = step_004
-request_id  = req_981
-```
-
----
-
-# 19. Idempotency
-
-The Client SHOULD protect against duplicate execution requests.
-
-A repeated:
-
-```text
-execution.request
-```
-
-with the same execution identifier SHOULD NOT blindly execute the operation twice.
-
-This is especially important for side-effecting operations.
-
-Examples:
-
-```text
-device.configure
-file.write
-shell.execute
-database.update
-```
-
-The Client SHOULD maintain sufficient execution metadata to determine whether a request has already been accepted or completed.
-
----
-
-# 20. Security Boundary
-
-The Client is the local security boundary.
-
-The Server cannot assume that a declared capability is automatically executable.
-
-The Client MUST enforce:
-
-* local permissions;
-* authentication;
-* authorization;
-* filesystem restrictions;
-* process restrictions;
-* device permissions;
-* user confirmation requirements;
-* enterprise security policies.
-
-For dangerous operations, the Client MAY require explicit Human-in-the-loop confirmation.
-
----
-
-# 21. Client Failure
-
-Client failures MUST be observable by the Server.
-
-Examples:
-
-```text
-network disconnected
-local service unavailable
-capability disappeared
-permission denied
-execution timeout
-application crashed
-device disconnected
-user interaction unavailable
-```
-
-The Client SHOULD report structured failure information.
-
-Example:
-
-```json
-{
-  "type": "execution.failed",
-  "workflow_id": "wf_001",
-  "step_id": "step_004",
-  "error": {
-    "code": "CAPABILITY_UNAVAILABLE",
-    "message": "git service is unavailable"
-  }
-}
-```
-
-The Server determines whether to:
-
-* retry;
-* re-plan;
-* select another capability;
-* request user intervention;
-* terminate the workflow.
-
----
-
-# 22. Cancellation
-
-The Server MAY send:
-
-```text
-workflow.cancel
-```
-
-The Client SHOULD stop the currently executing Step when safe to do so.
-
-For non-interruptible operations, the Client MAY report that cancellation is pending.
-
-The Client MUST report the final execution state.
-
----
-
-# 23. Reconnection
-
-Temporary communication loss MUST NOT automatically imply workflow cancellation.
-
-After reconnecting, the Client SHOULD:
-
-1. authenticate again if required;
-2. identify the active workflow;
-3. identify the current Step;
-4. report local execution state;
-5. synchronize pending Evidence;
-6. resume protocol communication.
-
-The Server remains the source of authoritative workflow state.
-
----
-
-# 24. Local Agent Integration
-
-The Client MAY integrate local agents.
-
-Examples:
-
-```text
-coding agent
-diagnostic agent
-browser agent
-device agent
-industrial test agent
-```
-
-A local agent is treated as a capability provider.
+因此：
 
 ```text
 Server
   ↓
-One Step
+Completion Candidate
   ↓
 Client
   ↓
+User
+```
+
+Client 向 User 展示结果并请求最终确认。
+
+例如：
+
+```text
+当前检查结果：
+
+- 服务已经启动
+- Health Check 正常
+- API 测试通过
+
+这个结果是否解决了你的问题？
+
+[ 已解决 ]    [ 还没有解决 ]
+```
+
+### User 确认已解决
+
+```text
+User
+ ↓
+Client
+ ↓
+Request Completed
+```
+
+### User 判断还没有解决
+
+Client 将 User 的反馈提交给 Server：
+
+```text
+User
+ ↓
+Client
+ ↓
+User Feedback
+ ↓
+Server
+ ↓
+Re-plan
+```
+
+因此：
+
+> **Server 可以判断“达到完成条件”，但 User 可以最终判断“我的 Request 是否真的解决”。**
+
+---
+
+# 12. Client 与 Local Agent
+
+Client 可以拥有本地 Agent。
+
+```text
+Central LLM
+      │
+      ▼
+Server Step
+      │
+      ▼
+Client
+      │
+      ▼
 Local Agent
-  ↓
-Result
-  ↓
-Client
-  ↓
+      │
+      ▼
 Evidence
-  ↓
+```
+
+Local Agent 可以具有一定的自主性，但其作用范围属于 Client 本地执行环境。
+
+它不应绕过 Server 创建独立的全局 Workflow。
+
+---
+
+# 13. Security Boundary
+
+v0.2 只定义最基本的边界：
+
+> **Server 决定“要做什么”，Client 决定“本地是否允许执行”。**
+
+Client 可以根据本地权限、用户授权或运行环境拒绝某个 Step。
+
+具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec。
+
+---
+
+# 14. Core Interaction
+
+```text
+User
+ ↓
+Client
+ ↓
+User Request
+ ↓
 Server
+ ↓
+execution.request
+ ↓
+Client
+ ↓
+Local Capability / Agent
+ ↓
+Evidence
+ ↓
+Server
+ ↓
+Re-plan
+ ↓
+execution.request
+ ↓
+Client
+ ↓
+...
+ ↓
+Completion Candidate
+ ↓
+Client
+ ↓
+User Confirmation
+ ↓
+┌───────────────┐
+│ Solved        │ → Completed
+│ Not Solved    │ → Server Re-plan
+└───────────────┘
 ```
 
-The local agent MUST NOT silently create a parallel global workflow.
-
 ---
 
-# 25. Non-Goals
+# 15. Design Principle
 
-The Client is not intended to be:
+Client 的核心原则：
 
-* a second Central Server;
-* a global workflow planner;
-* a knowledge-base engine;
-* a global RAG system;
-* an autonomous multi-step agent;
-* the authoritative workflow state store.
+> **Client 是 User Interaction + Local Execution Runtime，而不是 Workflow Planner。**
 
-The Client may provide local intelligence, but the system remains centrally orchestrated.
+Server 决定：
 
----
+> **下一步做什么。**
 
-# 26. MVP
+Client 决定：
 
-The MVP Client SHOULD implement:
+> **本地是否允许做，以及如何利用本地能力执行。**
 
-### Core
+User 最终决定：
 
-* user authentication;
-* Server connection;
-* session management;
-* workflow UI;
-* single-Step execution;
-* execution state reporting;
-* Evidence reporting.
-
-### Capability
-
-* static capability manifest;
-* capability discovery;
-* capability validation;
-* local permission checks.
-
-### Human-in-the-loop
-
-* confirmation dialog;
-* user input;
-* selection;
-* user response event;
-* WAITING state.
-
-### Communication
-
-* REST or WebSocket;
-* correlation IDs;
-* reconnect;
-* idempotency.
-
-### Local Execution
-
-At least:
-
-```text
-shell.execute
-filesystem.read
-filesystem.write
-git.status
-git.diff
-```
-
-The exact capability set depends on the target environment.
-
----
-
-# 27. Core Invariants
-
-The following rules are normative.
-
-### Invariant 1
-
-> Client receives and executes one actionable Step at a time.
-
-### Invariant 2
-
-> Client does not decide the next Step.
-
-### Invariant 3
-
-> Server owns authoritative workflow state.
-
-### Invariant 4
-
-> Client owns local execution authority.
-
-### Invariant 5
-
-> Evidence is returned to Server after execution.
-
-### Invariant 6
-
-> Human interaction belongs to the current Step.
-
-### Invariant 7
-
-> WAITING represents an external blocking condition, not workflow pause.
-
-### Invariant 8
-
-> Client-side local intelligence must not silently create a competing global workflow.
-
----
-
-# 28. Conceptual Summary
-
-```text
-                ┌──────────────────────┐
-                │   Central Server     │
-                │                      │
-                │ Planning             │
-                │ Context             │
-                │ Knowledge            │
-                │ Workflow State       │
-                └──────────┬───────────┘
-                           │
-                    One Actionable Step
-                           │
-                           ▼
-                ┌──────────────────────┐
-                │      AI Client       │
-                │                      │
-                │ User Interaction     │
-                │ Capability Runtime   │
-                │ Local Execution      │
-                │ Human-in-the-loop    │
-                └──────────┬───────────┘
-                           │
-                 Local Services / Agents
-                           │
-                           ▼
-                       Evidence
-                           │
-                           ▼
-                    Central Server
-                           │
-                        Re-plan
-```
-
-The fundamental principle is:
-
-> **Server decides what to do next. Client executes what it is currently asked to do. Client reports what actually happened.**
+> **这个 Request 是否真的解决了。**
