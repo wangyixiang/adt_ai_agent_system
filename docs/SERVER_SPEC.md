@@ -1,1112 +1,1614 @@
-# Central AI Server Specification
+# SERVER_SPEC.md
 
+# Central AI Orchestrator Specification
+
+**Version:** 0.2
 **Status:** Draft
-**Version:** 0.1
 **Role:** AI Brain + Context Engine + Knowledge Engine + Workflow Orchestrator
 
 ---
 
-# 1. Purpose
+# 1. Overview
 
-Central Server 是整个系统的 AI Brain。
+The Central Server is the authoritative orchestration layer of the system.
 
-它负责：
+Its primary responsibilities are:
 
-1. 管理用户 Session。
-2. 管理 Conversation。
-3. 组装 LLM Context。
-4. 从 Knowledge Base / RAG 系统提取知识。
-5. 管理 Workflow。
-6. 根据 Client Capability 进行 Planning。
-7. 调用 LLM。
-8. 选择和调度可用 Capability。
-9. 根据 Client 返回的 Evidence 重新 Planning。
-10. 管理整个解决问题的闭环。
+1. receiving user goals;
+2. maintaining workflow state;
+3. composing context;
+4. retrieving knowledge;
+5. understanding available Client capabilities;
+6. invoking LLMs;
+7. planning the next actionable Step;
+8. dispatching that Step to a Client;
+9. receiving execution results and Evidence;
+10. updating context;
+11. re-planning based on actual observations.
 
-核心原则：
+The Server does **not** directly execute local operations.
 
-> **Server owns intelligence and orchestration. Client owns interaction and local execution.**
+The Client is the execution endpoint.
 
----
-
-# 2. Architectural Position
+The fundamental loop is:
 
 ```text
-                       ┌──────────────────────┐
-                       │       USER           │
-                       └──────────┬───────────┘
-                                  │
-                                  ▼
-                       ┌──────────────────────┐
-                       │       CLIENT         │
-                       │ UI / Interaction     │
-                       │ Local Capabilities   │
-                       │ Local Execution      │
-                       └──────────┬───────────┘
-                                  │
-                           API / WebSocket
-                                  │
-                                  ▼
-              ┌────────────────────────────────────────┐
-              │              CENTRAL SERVER             │
-              │                                        │
-              │ Session Manager                        │
-              │ Conversation Manager                   │
-              │ Context Engine                         │
-              │ Knowledge / RAG                        │
-              │ Workflow Engine                        │
-              │ Planner                                │
-              │ Capability Registry                    │
-              │ LLM Gateway                            │
-              │ Evidence Manager                       │
-              │ Policy / Audit                         │
-              └──────────────────┬─────────────────────┘
-                                 │
-                ┌────────────────┼─────────────────┐
-                ▼                ▼                 ▼
-             Vector DB        Knowledge          LLM
-                                                vLLM
-                                                SGLang
-                                                OpenAI
-                                                Claude
+User Goal
+   ↓
+Context Assembly
+   ↓
+LLM Planning
+   ↓
+One Step
+   ↓
+Client Execution
+   ↓
+Evidence
+   ↓
+Context Update
+   ↓
+LLM Re-planning
+   ↓
+One Step
 ```
 
 ---
 
-# 3. Core Responsibilities
-
-Server 是：
+# 2. Core Architecture
 
 ```text
-Context Engine
-+
-Knowledge Engine
-+
+┌─────────────────────────────────────────────────────┐
+│                  Central Server                     │
+│                                                     │
+│  ┌──────────────┐     ┌──────────────────────────┐  │
+│  │ Session      │     │ Workflow Engine          │  │
+│  │ Manager      │     │                          │  │
+│  └──────┬───────┘     └────────────┬─────────────┘  │
+│         │                          │                │
+│         ▼                          ▼                │
+│  ┌──────────────────────────────────────────────┐  │
+│  │              Context Engine                  │  │
+│  │                                              │  │
+│  │ Conversation / Workspace / Evidence / State  │  │
+│  └──────────────────────┬───────────────────────┘  │
+│                         │                          │
+│              ┌──────────┴──────────┐               │
+│              ▼                     ▼               │
+│      Knowledge Engine        Capability Registry   │
+│              │                     │               │
+│              └──────────┬──────────┘               │
+│                         ▼                          │
+│                  Planning Engine                   │
+│                         │                          │
+│                         ▼                          │
+│                    LLM Gateway                     │
+│                         │                          │
+│                         ▼                          │
+│                 One Actionable Step                │
+└─────────────────────────┬───────────────────────────┘
+                          │
+                          ▼
+                     AI Client
+                          │
+                 Local Execution
+                          │
+                          ▼
+                       Evidence
+                          │
+                          └──────────────► Server
+```
+
+---
+
+# 3. Design Principles
+
+## 3.1 Centralized Planning
+
+The Server is the primary planning authority.
+
+The Server determines:
+
+* what should happen next;
+* which capability should be used;
+* what inputs are required;
+* what Evidence should be collected;
+* whether additional user interaction is required.
+
+---
+
+## 3.2 Single-Step Planning
+
+The Server MUST plan and dispatch only one actionable Step at a time.
+
+The Server MUST NOT normally send:
+
+```text
+Step 1
+Step 2
+Step 3
+Step 4
+```
+
+as a pre-generated execution plan to the Client.
+
+Instead:
+
+```text
+Plan Step 1
+   ↓
+Execute Step 1
+   ↓
+Observe
+   ↓
+Re-plan
+   ↓
+Plan Step 2
+```
+
+This is a fundamental architectural constraint.
+
+---
+
+# 4. Why Single-Step Dispatch
+
+Single-Step dispatch provides several important properties.
+
+## 4.1 Fresh Evidence
+
+Every new Step is planned using the latest execution Evidence.
+
+## 4.2 Reduced Stale Planning
+
+A plan generated before execution may become invalid after new information appears.
+
+Single-Step dispatch minimizes this problem.
+
+## 4.3 Capability Awareness
+
+The Server can re-evaluate available Client capabilities before each Step.
+
+## 4.4 Dynamic Re-planning
+
+Execution results can alter the solution path.
+
+For example:
+
+```text
+Expected:
+    service is running
+
+Actual:
+    service is stopped
+```
+
+The Server can generate:
+
+```text
+Step N+1:
+    start service
+```
+
+instead of blindly continuing an old plan.
+
+---
+
+# 5. Authority Model
+
+The architecture uses explicit authority boundaries.
+
+```text
+LLM
+    =
+Decision / Planning Authority
+
 Workflow Engine
-+
-Planner
-+
-LLM Gateway
+    =
+State Authority
+
+Client
+    =
+Execution Authority
+
+User
+    =
+Human Authorization / Information Source
 ```
 
-而不是简单的：
+The LLM MUST NOT directly mutate authoritative workflow state.
 
-```text
-HTTP Proxy → LLM
-```
+The LLM proposes an action.
+
+The Workflow Engine validates and commits the resulting state transition.
+
+The Client executes the requested operation.
 
 ---
 
-# 4. Session Management
+# 6. Session Management
 
-Server 必须维护：
-
-```text
-user
-client
-session
-conversation
-workflow
-```
-
-关系：
+A Session represents an interaction between:
 
 ```text
 User
- └── Session
-      ├── Conversation
-      ├── Workflow A
-      ├── Workflow B
-      └── Client Connection
+Client
+Server
 ```
 
-Server 是 Session State 的最终权威来源。
+A session MAY contain:
+
+```text
+session_id
+user_id
+client_id
+conversation
+active_workflows
+workspace
+capability_context
+```
+
+Sessions SHOULD survive temporary Client reconnection.
 
 ---
 
-# 5. Conversation Management
+# 7. Workflow
 
-Server 必须保存：
+A Workflow represents the problem or objective being solved.
+
+Examples:
 
 ```text
-User Message
-Assistant Message
-System Context
-Tool Call
-Tool Result
-Workflow Event
-Evidence Reference
+Diagnose failing service
+Investigate test failure
+Modify local project
+Collect HIL diagnostic evidence
+Configure device
+Generate and validate configuration
 ```
 
-Conversation 不应该简单地作为：
+A Workflow contains:
 
 ```text
-messages[]
-```
-
-无限增长。
-
-Server 必须支持：
-
-```text
-summarization
-compaction
-context selection
-message importance
-memory extraction
+workflow_id
+goal
+state
+current_step
+history
+context
+evidence
+client
+created_at
+updated_at
 ```
 
 ---
 
-# 6. Context Engine
+# 8. Workflow State Machine
 
-Context Engine 是 Server 的核心组件。
-
-它负责把不同来源的信息组合成最终 LLM Context。
-
-输入：
+The core Workflow states are:
 
 ```text
-User Request
+CREATED
+RUNNING
+COMPLETED
+FAILED
+CANCELLED
+```
+
+## CREATED
+
+Workflow exists but has not started execution.
+
+## RUNNING
+
+Workflow is actively being solved.
+
+This includes periods where its current Step is:
+
+```text
+PENDING
+RUNNING
+WAITING
+```
+
+## COMPLETED
+
+The Server determines that the user's goal has been successfully achieved.
+
+## FAILED
+
+The Server determines that the workflow cannot continue successfully.
+
+A failed Step does not necessarily mean the entire Workflow has failed.
+
+The Server MAY:
+
+* retry;
+* generate another Step;
+* use another capability;
+* request additional information.
+
+## CANCELLED
+
+The Workflow was explicitly terminated.
+
+Cancellation is distinct from failure.
+
+---
+
+# 9. Step
+
+A Step represents the next concrete action to execute.
+
+A Step SHOULD be:
+
+* actionable;
+* bounded;
+* observable;
+* executable by one Client capability;
+* associated with clear input and expected output.
+
+Example:
+
+```json
+{
+  "step_id": "step_004",
+  "capability": "git.diff",
+  "input": {
+    "repository": "/workspace/project"
+  }
+}
+```
+
+---
+
+# 10. Step State Machine
+
+The core Step states are:
+
+```text
+PENDING
+RUNNING
+WAITING
+COMPLETED
+FAILED
+CANCELLED
+```
+
+### PENDING
+
+Step exists but execution has not started.
+
+Typical reasons:
+
+* previous Step has not completed;
+* execution request has not yet been dispatched;
+* prerequisite is not ready.
+
+### RUNNING
+
+Client is actively executing the Step.
+
+### WAITING
+
+Execution cannot continue because an external event is required.
+
+Examples:
+
+```text
+user confirmation
+user input
+device event
+external resource
+local service response
+```
+
+### COMPLETED
+
+The Step completed successfully.
+
+### FAILED
+
+The Step was attempted but failed.
+
+The Server MAY re-plan.
+
+### CANCELLED
+
+The Step was explicitly cancelled.
+
+---
+
+# 11. WAITING Semantics
+
+`WAITING` is a blocking condition, not a workflow lifecycle state.
+
+There is intentionally no core:
+
+```text
+PAUSED
+RESUMING
+```
+
+state.
+
+Example:
+
+```text
+Step:
+    RUNNING
+       ↓
+    WAITING
+       ↓
+external event
+       ↓
+    RUNNING
+       ↓
+ COMPLETED
+```
+
+The Workflow remains:
+
+```text
+RUNNING
+```
+
+during this period.
+
+---
+
+# 12. Planning Engine
+
+The Planning Engine determines the next Step.
+
+Its input SHOULD include:
+
+```text
+User Goal
 Conversation
-Memory
-Knowledge
 Workflow State
+Current Step
+Previous Steps
+Execution Results
+Evidence
+Knowledge
+Workspace State
 Client Capabilities
-Execution Evidence
-System Instructions
-Tool Definitions
+User Responses
+Constraints
+Permissions
 ```
 
-输出：
+The planner produces:
 
 ```text
-LLM Context
+next Step
 ```
 
-抽象为：
-
-```text
-Context =
-    System Context
-  + User Context
-  + Conversation Context
-  + Knowledge Context
-  + Workflow Context
-  + Capability Context
-  + Evidence Context
-  + Tool Context
-```
+not an entire mandatory execution sequence.
 
 ---
 
-# 7. Context Assembly Pipeline
+# 13. LLM Gateway
 
-推荐：
+The LLM Gateway abstracts model execution.
+
+It MAY support:
 
 ```text
-User Request
-      │
-      ▼
-Intent / Task Analysis
-      │
-      ▼
-Context Retrieval
-      │
-      ├── Conversation
-      ├── Memory
-      ├── Knowledge
-      ├── Workflow
-      ├── Capability
-      └── Evidence
-      │
-      ▼
-Context Ranking
-      │
-      ▼
-Context Compression
-      │
-      ▼
-Prompt Assembly
-      │
-      ▼
-LLM
+OpenAI
+Anthropic
+local models
+vLLM
+SGLang
+other model providers
 ```
 
-Context Engine 不应该简单地把所有信息塞进 Prompt。
+The LLM Gateway is responsible for:
+
+* model selection;
+* request construction;
+* model invocation;
+* response normalization;
+* token/usage tracking;
+* timeout handling;
+* provider failure handling.
+
+The Workflow Engine remains authoritative over state.
 
 ---
 
-# 8. Knowledge System
+# 14. Context Engine
 
-Server 必须支持 Knowledge Base。
+The Context Engine constructs the context used for planning.
 
-Knowledge 来源可以包括：
-
-```text
-Documents
-Code
-Database
-Wiki
-User Knowledge
-Project Knowledge
-External Sources
-Execution Evidence
-```
-
-Knowledge Retrieval 可以使用：
+Potential sources:
 
 ```text
-Vector Search
-Keyword Search
-Hybrid Search
-Metadata Filter
-Graph / Relationship Search
+conversation
+workflow state
+current Step
+historical Steps
+Evidence
+knowledge retrieval
+workspace
+Client capabilities
+user input
+system policies
+permissions
 ```
+
+The Context Engine SHOULD distinguish:
+
+```text
+observed facts
+retrieved knowledge
+user statements
+LLM-generated hypotheses
+previous decisions
+```
+
+This reduces confusion between Evidence and inference.
 
 ---
 
-# 9. Project / Workspace Context
+# 15. Evidence Model
 
-Server 应支持 Workspace。
+Evidence is a first-class object.
 
-例如：
+Example:
 
-```text
-Workspace: automotive-hil-project
-
-Knowledge:
-  architecture/
-  specifications/
-  logs/
-  test-results/
-
-Conversation:
-  ...
-
-Capabilities:
-  client-A:
-    filesystem
-    shell
-    CAN
-    serial
-    oscilloscope
+```json
+{
+  "evidence_id": "ev_001",
+  "workflow_id": "wf_001",
+  "step_id": "step_004",
+  "source": "client",
+  "type": "command_output",
+  "timestamp": "2026-09-23T12:00:00Z",
+  "data": {}
+}
 ```
 
-Workspace Context 可以成为 LLM Context 的重要来源。
+Possible sources:
+
+```text
+client_tool
+device
+local_agent
+user
+server
+knowledge_base
+external_system
+```
+
+The Server SHOULD preserve Evidence provenance.
 
 ---
 
-# 10. Client Capability Registry
+# 16. Evidence vs LLM Reasoning
 
-Server 必须维护 Client Capability Registry。
-
-例如：
+The system MUST distinguish:
 
 ```text
-Client A
-
-filesystem.read
-filesystem.search
-shell.execute
-docker.*
-mcp.git
-mcp.github
+Evidence
+    ↓
+Observation
+    ↓
+Interpretation
+    ↓
+Hypothesis
+    ↓
+Next Step
 ```
 
-Registry 至少记录：
+For example:
+
+```text
+Evidence:
+    process exited with code 1
+
+Interpretation:
+    application failed during startup
+
+Hypothesis:
+    configuration may be invalid
+
+Next Step:
+    inspect configuration file
+```
+
+The hypothesis is not Evidence.
+
+---
+
+# 17. Knowledge Engine
+
+The Knowledge Engine provides relevant knowledge to the Context Engine and Planner.
+
+Possible sources:
+
+```text
+documentation
+code repositories
+manuals
+knowledge bases
+vector databases
+enterprise systems
+historical cases
+diagnostic databases
+```
+
+The Knowledge Engine SHOULD expose retrieval results with provenance.
+
+Example:
+
+```json
+{
+  "source_id": "doc_123",
+  "title": "Device Configuration Manual",
+  "content": "...",
+  "relevance": 0.91
+}
+```
+
+Knowledge retrieval is supporting context.
+
+It does not automatically override actual runtime Evidence.
+
+---
+
+# 18. Client Capability Registry
+
+The Server maintains a registry of capabilities exposed by Clients.
+
+Example:
+
+```text
+client_001
+    git.diff
+    git.status
+    shell.execute
+    filesystem.read
+
+client_002
+    device.read
+    device.configure
+    camera.capture
+```
+
+The registry SHOULD track:
 
 ```text
 client_id
 capability_id
 version
-schema
 availability
-permission
-last_seen
+permissions
 metadata
+last_seen
 ```
 
-Server Planning 时必须考虑：
+Capability information MAY become stale.
 
-> 当前连接的 Client 到底有什么能力。
+The Server SHOULD account for this when planning.
 
 ---
 
-# 11. Capability Is Not Tool Execution
+# 19. Capability-Aware Planning
 
-Server 不直接执行 Client Capability。
+The Planner MUST consider actual Client capabilities.
 
-Server 只生成：
+Example:
 
 ```text
-Execution Request
+Goal:
+    Diagnose camera connection failure
+
+Client capabilities:
+    i2c.capture
+    oscilloscope.read
+    mipi.measure
+    filesystem.write
+
+Planner:
+    select i2c.capture
 ```
 
-例如：
+If the Client reports:
+
+```text
+i2c.capture unavailable
+```
+
+the Server may select another capability or request user intervention.
+
+---
+
+# 20. Execution Request
+
+The Server sends an execution request containing one Step.
+
+Example:
 
 ```json
 {
-  "workflow_id": "wf_123",
-  "step_id": "step_5",
-  "target_client": "client_abc",
-  "capability": "filesystem.search",
-  "arguments": {
-    "path": "/project",
-    "pattern": "*.log"
+  "type": "execution.request",
+  "workflow_id": "wf_001",
+  "step_id": "step_005",
+  "capability": {
+    "id": "git.diff",
+    "version": "1.0"
+  },
+  "input": {
+    "repository": "/workspace/project"
   }
 }
 ```
 
-Client 执行后返回结果。
-
----
-
-# 12. Workflow Engine
-
-Workflow 是整个系统的核心控制结构。
-
-基本状态：
+The Client SHOULD validate:
 
 ```text
-CREATED
-PLANNING
-WAITING_FOR_CLIENT
-WAITING_FOR_USER
-EXECUTING
-OBSERVING
-REPLANNING
-COMPLETED
-FAILED
-PAUSED
-CANCELLED
+capability exists
+input valid
+permission available
+resource available
 ```
 
 ---
 
-# 13. Workflow Loop
+# 21. Execution Result
 
-Server 必须支持闭环：
+The Client reports the result of the current Step.
 
-```text
-                    ┌──────────────┐
-                    │ User Request │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │   Planning   │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │ Execute Step │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │    Observe   │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │ Evidence     │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │ Re-context   │
-                    └──────┬───────┘
-                           ▼
-                    ┌──────────────┐
-                    │ Re-plan      │
-                    └──────┬───────┘
-                           │
-                           └───────────► Execute
-```
-
-这不是一次性的 Agent Call。
-
-它是一个：
-
-> **Observe → Context → Plan → Execute → Observe**
-
-循环。
-
----
-
-# 14. Planner
-
-Planner 的输入：
-
-```text
-User Goal
-Conversation
-Knowledge
-Current Workflow State
-Client Capabilities
-Previous Evidence
-Previous Failures
-Policies
-```
-
-Planner 的输出：
-
-```text
-Plan
-```
-
-例如：
+Success:
 
 ```json
 {
-  "goal": "find why application fails",
-  "steps": [
-    {
-      "capability": "filesystem.search",
-      "arguments": {}
-    },
-    {
-      "capability": "shell.execute",
-      "arguments": {}
-    }
-  ]
+  "type": "execution.completed",
+  "workflow_id": "wf_001",
+  "step_id": "step_005",
+  "result": {},
+  "evidence": []
 }
 ```
 
-Planner 可以由 LLM 驱动，但 Workflow Engine 必须拥有最终状态控制权。
+Failure:
+
+```json
+{
+  "type": "execution.failed",
+  "workflow_id": "wf_001",
+  "step_id": "step_005",
+  "error": {
+    "code": "PERMISSION_DENIED",
+    "message": "..."
+  }
+}
+```
+
+The Server then determines what happens next.
 
 ---
 
-# 15. LLM Gateway
+# 22. Human-in-the-loop
 
-LLM 不应该直接散落在业务代码中。
+Human interaction is represented as part of the current Step.
 
-Server 应提供统一：
+The Server may generate a Step that requires user interaction.
+
+Example:
 
 ```text
-LLM Gateway
+Step:
+    Apply configuration to device
 ```
 
-支持：
+Client:
 
 ```text
-vLLM
-SGLang
-OpenAI
-Anthropic
-Gemini
-Ollama
-Other OpenAI-compatible endpoints
+execution.started
+      ↓
+execution.waiting
+      ↓
+user.input.request
 ```
 
-统一接口：
+User:
 
 ```text
-generate()
-stream()
-embed()
-rerank()
+confirm
+```
+
+Client:
+
+```text
+user.response
+execution.completed
+evidence
+```
+
+The Server then re-evaluates the workflow.
+
+---
+
+# 23. User Response
+
+User responses are Evidence / Events that can influence planning.
+
+Example:
+
+```json
+{
+  "type": "user.response",
+  "workflow_id": "wf_001",
+  "step_id": "step_006",
+  "request_id": "req_123",
+  "response": {
+    "type": "confirmation",
+    "value": "reject"
+  }
+}
+```
+
+The Server MUST NOT assume that:
+
+```text
+reject = workflow failed
+```
+
+Instead it evaluates the response in context.
+
+---
+
+# 24. Planning Cycle
+
+The Server follows this cycle:
+
+```text
+1. Receive goal
+       ↓
+2. Create Workflow
+       ↓
+3. Assemble Context
+       ↓
+4. Retrieve Knowledge
+       ↓
+5. Inspect Client Capabilities
+       ↓
+6. Invoke Planner / LLM
+       ↓
+7. Validate proposed Step
+       ↓
+8. Dispatch one Step
+       ↓
+9. Receive execution result
+       ↓
+10. Store Evidence
+       ↓
+11. Update Context
+       ↓
+12. Decide whether goal is complete
+       │
+       ├── yes → COMPLETED
+       │
+       └── no
+             ↓
+          Re-plan
+             ↓
+        Next Step
 ```
 
 ---
 
-# 16. Model Routing
+# 25. Step Validation
 
-Server 可以根据任务选择模型。
+The Server SHOULD validate an LLM-generated Step before dispatching it.
 
-例如：
+Validation MAY include:
 
 ```text
-simple classification
-      ↓
-small model
-
-planning
-      ↓
-reasoning model
-
-large context RAG
-      ↓
-long-context model
+capability exists
+client available
+input conforms to schema
+permissions allow operation
+Step is within workflow scope
+required dependencies exist
+security policy permits operation
 ```
 
-模型选择属于 Server。
-
-Client 不需要知道使用哪个模型。
+The LLM does not have direct execution authority.
 
 ---
 
-# 17. Evidence System
+# 26. LLM Output Contract
 
-Evidence 是 Workflow 的一等公民。
+The Planner SHOULD produce structured output.
 
-Server 必须能够保存：
+Example:
 
-```text
-Command Output
-File
-Log
-Screenshot
-Structured Result
-Test Result
-Measurement
-Tool Output
-User Confirmation
+```json
+{
+  "decision": "continue",
+  "step": {
+    "capability": "git.diff",
+    "input": {
+      "repository": "/workspace/project"
+    }
+  },
+  "reasoning_summary": "Inspect current changes before determining the next modification"
+}
 ```
 
-每个 Evidence 应包含：
+The production system SHOULD avoid exposing unrestricted chain-of-thought as a protocol requirement.
+
+Only the structured planning result needed by the Workflow Engine should be persisted.
+
+---
+
+# 27. Goal Completion
+
+The Server determines whether the workflow goal has been achieved.
+
+Completion SHOULD be based on:
 
 ```text
-evidence_id
+Evidence
+workflow objective
+validation results
+user requirements
+success criteria
+```
+
+The LLM MAY propose:
+
+```text
+goal_complete = true
+```
+
+but the Workflow Engine SHOULD validate the completion condition where possible.
+
+---
+
+# 28. Failure Handling
+
+Failures are categorized.
+
+### Step failure
+
+```text
+execution.failed
+```
+
+does not automatically imply:
+
+```text
+workflow.failed
+```
+
+The Server may:
+
+```text
+retry
+re-plan
+choose another capability
+request user input
+terminate
+```
+
+### Workflow failure
+
+Workflow becomes:
+
+```text
+FAILED
+```
+
+only when the Server determines that the goal cannot be successfully continued.
+
+---
+
+# 29. Retry
+
+Retries SHOULD be controlled by the Workflow Engine.
+
+The Server SHOULD distinguish:
+
+```text
+transient failure
+permanent failure
+unknown failure
+```
+
+Example:
+
+```text
+network timeout
+    ↓
+retry
+
+permission denied
+    ↓
+probably re-plan / request authorization
+
+invalid input
+    ↓
+correct Step
+```
+
+Retries MUST respect idempotency and side-effect constraints.
+
+---
+
+# 30. Cancellation
+
+The Server MAY cancel a workflow.
+
+Example:
+
+```text
+workflow.cancel
+```
+
+The Client should stop execution where safe.
+
+The Server then transitions the Workflow to:
+
+```text
+CANCELLED
+```
+
+after the execution state has been reconciled.
+
+---
+
+# 31. No Workflow-Level Pause/Resume
+
+The Server SHOULD NOT model ordinary external waiting as:
+
+```text
+PAUSED
+RESUMED
+```
+
+Instead:
+
+```text
+Workflow:
+    RUNNING
+
+Current Step:
+    WAITING
+```
+
+Examples:
+
+```text
+WAITING for user
+WAITING for device
+WAITING for local service
+WAITING for external resource
+```
+
+This keeps the workflow state model simple.
+
+---
+
+# 32. Event Model
+
+Core Server → Client events:
+
+```text
+workflow.start
+execution.request
+user.input.request
+workflow.cancel
+```
+
+Core Client → Server events:
+
+```text
+capability.manifest
+capability.updated
+execution.started
+execution.waiting
+execution.completed
+execution.failed
+execution.cancelled
+user.response
+evidence
+client.status
+```
+
+The protocol should be event-oriented even when transported through REST.
+
+---
+
+# 33. Event Ordering
+
+Events SHOULD contain:
+
+```text
+event_id
+timestamp
 workflow_id
 step_id
-source
-timestamp
-type
-content/reference
-hash
-metadata
+request_id
+sequence
 ```
+
+The Server SHOULD detect:
+
+```text
+duplicate events
+out-of-order events
+missing events
+stale events
+```
+
+The Workflow Engine remains the authority for accepting valid state transitions.
 
 ---
 
-# 18. Evidence → Context
+# 34. Idempotency
 
-Evidence 不应该全部直接塞入 Context。
+Every execution request SHOULD have a unique execution identifier.
 
-流程：
+Example:
 
 ```text
-Evidence
-   │
-   ▼
-Evidence Processing
-   │
-   ├── validation
-   ├── parsing
-   ├── summarization
-   ├── extraction
-   └── indexing
-   │
-   ▼
-Knowledge / Context
-   │
-   ▼
-Planner
+execution_id = exec_123
 ```
 
-这使 Server 可以处理大量本地执行结果。
+The Server SHOULD avoid dispatching the same side-effecting operation multiple times unless explicitly intended.
+
+The Client SHOULD also protect against duplicate execution.
 
 ---
 
-# 19. Human-in-the-loop
+# 35. Multi-Client Support
 
-Server 必须允许 Workflow 进入：
+A Workflow MAY interact with multiple Clients.
+
+Example:
 
 ```text
-WAITING_FOR_USER
+Client A:
+    developer workstation
+
+Client B:
+    HIL test bench
+
+Client C:
+    diagnostic device
 ```
 
-例如：
+The Server maintains the global workflow.
+
+A Step is dispatched to the Client that can execute it.
+
+Example:
+
+```text
+Step 1 → Client A
+Step 2 → Client B
+Step 3 → Client C
+Step 4 → Client A
+```
+
+The same Workflow may therefore coordinate multiple execution environments.
+
+---
+
+# 36. Multi-Agent Support
+
+Agents MAY exist on:
 
 ```text
 Server
- ↓
 Client
- ↓
-"Do you want to modify production configuration?"
- ↓
-User
- ↓
-Approve / Reject
- ↓
-Client
- ↓
-Server
+external systems
 ```
 
-用户的决定必须作为 Workflow Event 保存。
+The Server remains responsible for global orchestration.
+
+A local Agent is treated as an execution capability.
+
+A Server-side Agent may assist with:
+
+```text
+planning
+knowledge retrieval
+analysis
+specialized reasoning
+```
+
+Multiple agents MUST NOT create conflicting authoritative workflow states.
 
 ---
 
-# 20. Workflow Persistence
+# 37. Security and Authorization
 
-Workflow 必须持久化。
+The Server is responsible for global authorization policies.
 
-Server 重启后：
+The Client is responsible for local enforcement.
+
+Therefore:
 
 ```text
-Workflow
-   ↓
-restore
-   ↓
-resume
+Server:
+    Is this operation allowed within this workflow?
+
+Client:
+    Can this local environment execute it safely?
 ```
 
-Workflow State 不依赖 Client 内存。
+Both checks SHOULD be enforced.
+
+High-risk operations SHOULD support explicit user confirmation.
 
 ---
 
-# 21. Event Model
+# 38. Audit
 
-Server 与 Client 的通信应该采用 Event Model。
-
-核心事件：
+The Server SHOULD maintain an audit trail containing:
 
 ```text
-session.created
-session.updated
-
-capability.registered
-capability.updated
-capability.removed
-
-workflow.created
-workflow.started
-workflow.paused
-workflow.resumed
-workflow.cancelled
-workflow.completed
-
-workflow.step.created
-workflow.step.started
-workflow.step.waiting_confirmation
-workflow.step.completed
-workflow.step.failed
-
-execution.request
-execution.result
-
-evidence.created
-
-context.updated
-
-assistant.message
-assistant.stream
-```
-
----
-
-# 22. Client Connection
-
-Server 必须支持：
-
-```text
-Client connect
-Client authenticate
-Capability registration
-Heartbeat
-Event streaming
-Reconnect
-Session recovery
-```
-
-推荐：
-
-```text
-HTTPS
-+
-WebSocket
-```
-
----
-
-# 23. Authentication
-
-Server 必须验证 Client 身份。
-
-至少支持：
-
-```text
-User Authentication
-Client Authentication
-Session Authentication
-Capability Authorization
-```
-
-Client ID 不应该等价于 User ID。
-
-一个 User 可以有多个 Client：
-
-```text
-User
- ├── Desktop
- ├── Laptop
- ├── HIL Bench
- └── Server Agent
-```
-
----
-
-# 24. Authorization
-
-Server 应控制：
-
-```text
-who can create workflow
-who can access knowledge
-which client can participate
-which workspace can be accessed
-```
-
-Client 再控制：
-
-```text
-which local operation can actually execute
-```
-
-形成双层安全模型：
-
-```text
-Central Authorization
-          +
-Local Authorization
-```
-
----
-
-# 25. Audit
-
-Server 必须记录：
-
-```text
-User request
-LLM decision
-Workflow plan
-Capability selection
-Execution request
-Client result
-User approval
+workflow
+Step
+planning decision
+capability selected
+execution request
+execution result
 Evidence
-Final result
+user response
+state transition
 ```
 
-这样可以完整重建：
+This enables:
 
-> 为什么系统最终执行了这个操作。
+* debugging;
+* reproducibility;
+* compliance;
+* diagnosis;
+* workflow replay;
+* system improvement.
 
 ---
 
-# 26. Failure Handling
+# 39. Observability
 
-Server 必须处理：
+The Server SHOULD expose:
 
 ```text
-Client offline
-Capability unavailable
-Execution timeout
-Execution failure
-LLM failure
-RAG failure
-Context overflow
-User cancellation
-Network failure
+workflow metrics
+step latency
+LLM latency
+token usage
+execution latency
+failure rate
+retry rate
+capability availability
+waiting duration
+Evidence volume
 ```
 
-Planner 不应该把失败简单转换成最终错误。
-
-可以进入：
+Tracing SHOULD use correlation IDs:
 
 ```text
-OBSERVE
-   ↓
-ANALYZE
-   ↓
-REPLAN
-```
-
----
-
-# 27. Server Does Not Assume Client Is Always Available
-
-例如：
-
-```text
-User asks:
-"分析我的本地项目"
-
-Client offline
-```
-
-Server 可以：
-
-```text
-保存 request
-WAITING_FOR_CLIENT
-```
-
-Client 回来以后：
-
-```text
-resume workflow
+workflow_id
+step_id
+execution_id
+request_id
+event_id
 ```
 
 ---
 
-# 28. Multi-Client
+# 40. Persistence
 
-未来 Server 可以同时管理多个 Client。
-
-例如：
+The Server SHOULD persist at least:
 
 ```text
-                    Central
-                       │
-          ┌────────────┼────────────┐
-          ▼            ▼            ▼
-      Desktop        HIL Bench    Server Agent
-          │            │            │
-      filesystem      CAN         database
-      browser         ECU         docker
+Users
+Sessions
+Workflows
+Steps
+Events
+Evidence metadata
+Capability registry
+Audit records
+Knowledge references
 ```
 
-Planner 可以根据 Capability Registry 选择目标 Client。
+Large Evidence objects MAY be stored in object storage rather than the primary database.
 
 ---
 
-# 29. Multi-Agent
+# 41. Data Model
 
-Server 可以支持多个 Agent Role：
+A simplified model:
 
 ```text
-Planner
-Researcher
-Coder
-Debugger
-Verifier
-Reviewer
+User
+ │
+ └── Session
+       │
+       └── Workflow
+             │
+             ├── Context
+             ├── Step
+             │    ├── Execution
+             │    └── Evidence
+             │
+             ├── History
+             └── State
 ```
-
-但是这些 Agent 都属于 Central。
-
-Client Local Agent 属于 Execution Layer。
 
 ---
 
-# 30. Non-Goals
+# 42. Example End-to-End Flow
 
-Server 第一阶段不负责：
-
-* Desktop UI
-* Local filesystem access
-* Local shell execution
-* Local application control
-* Local hardware access
-* Direct access to user's machine
-
-Server 必须通过 Client Capability 执行这些操作。
-
----
-
-# 31. MVP
-
-Server MVP：
+User:
 
 ```text
-Authentication
-      ↓
-Session
-      ↓
-Conversation
-      ↓
-Context Assembly
-      ↓
-LLM Gateway
-      ↓
-Capability Registry
-      ↓
-Workflow Engine
-      ↓
-Execution Request
-      ↓
-Evidence
-      ↓
-Replanning
+"Find out why the local service is failing."
 ```
 
-第一阶段可以暂时不实现复杂 Multi-Agent。
-
----
-
-# 32. MVP End-to-End Example
-
-用户：
-
-> "帮我分析这个项目为什么启动失败。"
-
-Client：
+Server:
 
 ```text
-user.request
+Create Workflow
 ```
 
-Server：
-
-```text
-create workflow
-```
-
-Server 发现：
-
-```text
 Client capabilities:
 
-filesystem.search
+```text
+process.list
+service.status
+service.logs
 filesystem.read
 shell.execute
-git.status
 ```
 
-Server：
-
-```text
-Context Assembly
-+
-LLM Planning
-```
-
-生成：
+Planner creates:
 
 ```text
 Step 1:
-filesystem.search
+    service.status
+```
 
+Client executes.
+
+Result:
+
+```text
+service = stopped
+```
+
+Evidence:
+
+```text
+service is not running
+```
+
+Server re-plans.
+
+```text
 Step 2:
-filesystem.read
+    service.logs
+```
 
+Client executes.
+
+Evidence:
+
+```text
+configuration file not found
+```
+
+Server re-plans.
+
+```text
 Step 3:
-shell.execute
+    filesystem.read
 ```
 
-Client：
+Evidence:
 
 ```text
-Step 1 → result
-Step 2 → result
-Step 3 → user confirmation
+configuration file exists at another location
 ```
 
-用户：
+Server re-plans.
 
 ```text
-Approve
+Step 4:
+    service.configure
 ```
 
-Client：
+Client requires user confirmation.
 
 ```text
-Step 3 → execution
+WAITING
 ```
 
-返回：
+User confirms.
+
+Client executes.
+
+Evidence:
 
 ```text
-stdout
-stderr
-exit_code
-logs
+service started successfully
 ```
 
-Server：
+Server validates the goal.
 
 ```text
-Evidence Processing
-       ↓
-Context Assembly
-       ↓
-LLM
-       ↓
-Replanning
+Workflow → COMPLETED
 ```
 
-最后：
+At no point did the Server send:
 
 ```text
-Server
-   ↓
-Final explanation / solution
-   ↓
-Client
-   ↓
-User
+Step 1
+Step 2
+Step 3
+Step 4
 ```
+
+in advance.
+
+Every Step was generated from the latest available Evidence.
 
 ---
 
-# 33. Core Design Principle
+# 43. Non-Goals
 
-Central Server 应该是：
+The Server is not intended to:
 
-> **The Brain**
+* directly execute arbitrary Client operations;
+* embed all local tools;
+* replace local execution environments;
+* require Clients to run autonomous LLMs;
+* pre-generate immutable multi-step execution plans;
+* treat LLM output as authoritative workflow state.
 
-Client 应该是：
+---
 
-> **The Interface + Hands**
+# 44. MVP
 
-更准确地说：
+The MVP Server SHOULD contain:
+
+### Core
+
+* authentication;
+* sessions;
+* workflows;
+* workflow state machine;
+* Step state machine;
+* event system;
+* persistence.
+
+### AI
+
+* LLM Gateway;
+* Planner;
+* Context Engine;
+* basic Knowledge/RAG integration.
+
+### Client Integration
+
+* capability registry;
+* capability manifest;
+* execution request;
+* execution result;
+* Evidence ingestion.
+
+### Human-in-the-loop
+
+* user input request;
+* user response;
+* WAITING handling.
+
+### Reliability
+
+* correlation IDs;
+* idempotency;
+* retry;
+* reconnect;
+* timeout handling.
+
+---
+
+# 45. Core Invariants
+
+### Invariant 1
+
+> Server is the authoritative Workflow State Authority.
+
+### Invariant 2
+
+> Server dispatches only one actionable Step to a Client at a time.
+
+### Invariant 3
+
+> LLM proposes decisions; Workflow Engine validates and commits state transitions.
+
+### Invariant 4
+
+> Client executes; Server does not assume execution succeeded until Evidence is received.
+
+### Invariant 5
+
+> Every new Step SHOULD be planned using the latest available Evidence.
+
+### Invariant 6
+
+> WAITING is a Step blocking condition, not a Workflow pause state.
+
+### Invariant 7
+
+> A failed Step does not automatically imply a failed Workflow.
+
+### Invariant 8
+
+> User responses become inputs to the orchestration loop.
+
+### Invariant 9
+
+> Client capabilities are inputs to planning, not guarantees of availability.
+
+### Invariant 10
+
+> Evidence has higher authority than an unsupported LLM assumption about the local environment.
+
+---
+
+# 46. Conceptual Summary
+
+The Central Server is essentially:
 
 ```text
-Server
-    Understand
-    Remember
-    Retrieve
-    Plan
-    Reason
-    Orchestrate
-    Decide next action
-
-Client
-    Interact
-    Discover capabilities
-    Ask permission
-    Execute
-    Observe
-    Collect evidence
-    Report
+            ┌────────────────────────────┐
+            │      Central Server        │
+            │                            │
+            │  Goal                      │
+            │    ↓                       │
+            │  Context                   │
+            │    ↓                       │
+            │  Knowledge                 │
+            │    ↓                       │
+            │  Client Capabilities       │
+            │    ↓                       │
+            │  LLM / Planner             │
+            │    ↓                       │
+            │  One Step                  │
+            │    ↓                       │
+            │  Workflow Engine           │
+            └────────────┬───────────────┘
+                         │
+                    Execute One Step
+                         │
+                         ▼
+                    AI Client
+                         │
+                  Local Execution
+                         │
+                         ▼
+                      Evidence
+                         │
+                         ▼
+            ┌────────────────────────────┐
+            │      Context Update        │
+            └────────────┬───────────────┘
+                         │
+                       Re-plan
+                         │
+                         ▼
+                     Next Step
 ```
 
-最终形成：
+The fundamental principle is:
 
-```text
-                ┌───────────────┐
-                │     HUMAN     │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │    CLIENT     │
-                │               │
-                │ Interface     │
-                │ Capability    │
-                │ Execution     │
-                │ Evidence      │
-                └───────┬───────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │    CENTRAL    │
-                │               │
-                │ Context      │
-                │ Knowledge    │
-                │ Planning     │
-                │ Workflow     │
-                │ LLM          │
-                └───────┬───────┘
-                        │
-                        ▼
-                     REASON
-                        │
-                        ▼
-                     PLAN
-                        │
-                        ▼
-                   EXECUTION
-                        │
-                        ▼
-                    EVIDENCE
-                        │
-                        └───────────────┐
-                                        │
-                                        ▼
-                                    RE-CONTEXT
-                                        │
-                                        ▼
-                                     RE-PLAN
-```
-
+> **Server never tells Client how to solve the whole problem. Server tells Client only what to do next. Client executes it and reports what actually happened.**
