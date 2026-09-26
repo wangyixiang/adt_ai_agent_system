@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.2
+**Version:** v0.3
 **Status:** Draft
 **Scope:** Client ↔ Server Protocol
 
@@ -18,11 +18,13 @@
 * Step 如何下发
 * Execution 如何发生
 * Evidence 如何返回
+* Step Completion 如何判断
 * WAITING 如何处理
 * Completion Candidate 如何产生和确认
 * Capability 如何声明
 * User Feedback 如何重新进入 Workflow
-* 局部 Execution Failure 与 Workflow Failure 的区别
+* 局部 Execution Failure 与 Step Failure / Workflow Failure 的区别
+* Failure 后如何继续 Re-plan
 
 本文档只定义**协议语义和交互规则**。
 
@@ -87,7 +89,9 @@ Evidence
       ↓
 Context Update
       ↓
-Re-plan / Completion Evaluation
+Step Completion Evaluation
+      ↓
+Re-plan / Request Completion Evaluation
 ```
 
 ---
@@ -138,6 +142,7 @@ Server 负责：
 * 将 Step 下发给 Client
 * 接收 Execution / Evidence
 * 更新 Workflow Context
+* 进行 Step Completion Evaluation
 * 进行 Request Completion Evaluation
 * 继续 Re-plan 或生成 Completion Candidate
 * 根据 User Feedback 重新规划
@@ -159,9 +164,11 @@ Server 是 Workflow 的编排中心。
 
 ```text
 Server decides:
+
     What should be done
 
 Client decides:
+
     Whether and how the local execution is permitted
 ```
 
@@ -227,7 +234,9 @@ Evidence
   ↓
 Context Update
   ↓
-Re-plan / Completion Evaluation
+Step Completion Evaluation
+  ↓
+Re-plan / Request Completion Evaluation
 ```
 
 Server 不应仅根据此前的计划假设继续执行。
@@ -240,9 +249,13 @@ Client 同时承担：
 
 ```text
 User Interaction
+
 +
+
 Capability Runtime
+
 +
+
 Execution Runtime
 ```
 
@@ -257,7 +270,8 @@ LLM 可以：
 * 生成 Step Proposal
 * 分析 Evidence
 * 提出下一步
-* 提出 Completion Proposal
+* 提出 Step Completion Proposal
+* 提出 Request Completion Proposal
 
 但 LLM 不直接拥有 Workflow State 的最终修改权。
 
@@ -321,12 +335,23 @@ Server 必须根据失败原因、Evidence、Capability 和剩余可行路径判
 Execution FAILED
       ↓
 Server Evaluation
+
    ┌──┴──────────────┐
    ↓                 ↓
 Can Continue      Cannot Continue
    ↓                 ↓
 Re-plan         Workflow FAILED
 ```
+
+同时：
+
+```text
+Execution SUCCESS
+      ≠
+Step COMPLETED
+```
+
+因为 Execution 成功只表示这一次执行成功完成，不一定表示 Step 的目标已经满足。
 
 ---
 
@@ -336,13 +361,23 @@ Protocol 中的核心对象包括：
 
 ```text
 User Request
+
 Workflow
+
 Step
+
 Execution
+
 Evidence
+
 Capability Manifest
+
 User Input
+
+Completion Criteria
+
 Completion Candidate
+
 User Feedback
 ```
 
@@ -368,11 +403,11 @@ User Request 是 User 通过 Client 提交给 Server 的需求。
 
 ```text
 User
-  ↓
+ ↓
 Client
-  ↓
+ ↓
 User Request
-  ↓
+ ↓
 Server
 ```
 
@@ -380,8 +415,11 @@ User Request 至少包含：
 
 ```text
 request_id
+
 content
+
 client_id
+
 session_id
 ```
 
@@ -412,8 +450,11 @@ Workflow State：
 
 ```text
 CREATED
+
 RUNNING
+
 COMPLETED
+
 FAILED
 ```
 
@@ -435,17 +476,25 @@ Step 表达：
 
 ```text
 Step:
+
     step_id
+
     workflow_id
+
     capability
+
     input
+
     expected_output
+
+    completion_criteria
 ```
 
 例如：
 
 ```text
 Step:
+
     capability:
         git.collect_diagnostics
 
@@ -456,6 +505,12 @@ Step:
         git status
         git diff
         recent commits
+
+    completion_criteria:
+        required:
+            - git_status_collected
+            - git_diff_collected
+            - git_log_collected
 ```
 
 Step 本身不表示执行已经发生。
@@ -488,21 +543,31 @@ Step
 
 ```text
 Step-001
+
    │
+
    ├── Execution-001 → FAILED
+
    │
-   └── Execution-002 → COMPLETED
+
+   └── Execution-002 → SUCCESS
 ```
 
 Execution 可以包含：
 
 ```text
 execution_id
+
 step_id
+
 status
+
 started_at
+
 finished_at
+
 error
+
 runtime_information
 ```
 
@@ -522,10 +587,13 @@ Evidence 表达：
 
 ```text
 Execution:
-    status: COMPLETED
+
+    status: SUCCESS
+
     exit_code: 0
 
 Evidence:
+
     type: command_output
 
     stdout:
@@ -536,13 +604,21 @@ Evidence 可以来自：
 
 ```text
 Local Tool
+
 Local Agent
+
 File
+
 Log
+
 Service
+
 Device
+
 Test
+
 User Input
+
 User Feedback
 ```
 
@@ -563,35 +639,37 @@ Evidence 应尽可能表达实际观察结果，而不是 LLM 推测。
 关系：
 
 ```text
-                 Server
-                   │
-                   │ Step
-                   ▼
-              ┌─────────┐
-              │  Step   │
-              └────┬────┘
-                   │
-                   │ execute
-                   ▼
-              ┌───────────┐
-              │ Execution │
-              └─────┬─────┘
-                    │
-                    │ produces
-                    ▼
-              ┌───────────┐
-              │ Evidence  │
-              └─────┬─────┘
-                    │
-                    ▼
-                  Server
+                Server
+                  │
+                  │ Step
+                  ▼
+              ┌───────┐
+              │ Step  │
+              └───┬───┘
+                  │
+                  │ execute
+                  ▼
+            ┌───────────┐
+            │ Execution │
+            └─────┬─────┘
+                  │
+                  │ produces
+                  ▼
+             ┌─────────┐
+             │ Evidence│
+             └────┬────┘
+                  │
+                  ▼
+                Server
 ```
 
 特别需要区分：
 
 ```text
 Step ≠ Execution
+
 Execution ≠ Evidence
+
 Step ≠ Evidence
 ```
 
@@ -605,9 +683,13 @@ Step ≠ Evidence
 
 ```text
 Execution-001
+
     ├── Evidence-001: command output
+
     ├── Evidence-002: log
+
     ├── Evidence-003: test result
+
     └── Evidence-004: generated report
 ```
 
@@ -629,21 +711,36 @@ Step 的基本生命周期：
 
 ```text
 Server
+
   │
+
   │ Step
+
   ▼
+
 Client
+
   │
+
   ├── Validate
+
   │
+
   ├── Create Execution
+
   │
+
   ├── Execute
+
   │
+
   └── Return Execution Result + Evidence
-          │
-          ▼
-        Server
+
+           │
+
+           ▼
+
+         Server
 ```
 
 协议要求：
@@ -658,7 +755,8 @@ Client
 8. Client 收集 Evidence。
 9. Client 返回 Execution Result / Evidence。
 10. Server 更新 Workflow。
-11. Server 进行 Request Completion Evaluation 或 Re-plan。
+11. Server 进行 Step Completion Evaluation。
+12. Server 根据结果进行 Request Completion Evaluation 或 Re-plan。
 
 ---
 
@@ -670,8 +768,11 @@ Execution 描述一次具体执行。
 
 ```text
 SUCCESS
+
 FAILURE
+
 WAITING
+
 REJECTED
 ```
 
@@ -681,6 +782,7 @@ REJECTED
 
 ```text
 Execution:
+
     FAILURE
 ```
 
@@ -692,6 +794,26 @@ Execution:
 
 > 整个 Workflow 已经失败。
 
+同样：
+
+```text
+Execution:
+
+    SUCCESS
+```
+
+只说明：
+
+> 这次执行成功。
+
+并不自动说明：
+
+```text
+Step = COMPLETED
+```
+
+Step 是否完成需要经过 Step Completion Evaluation。
+
 ---
 
 # 15. Capability Manifest
@@ -702,11 +824,17 @@ Client 可以向 Server 声明当前可用 Capability。
 
 ```text
 filesystem.read
+
 git.collect_diagnostics
+
 docker.inspect
+
 terminal.execute
+
 browser.open
+
 device.capture
+
 local-agent.diagnose
 ```
 
@@ -733,9 +861,13 @@ Client 可以在以下情况下向 Server 提供 Capability 信息：
 
 ```text
 Client
+
   │
+
   │ Capability Manifest
+
   ▼
+
 Server
 ```
 
@@ -753,13 +885,21 @@ Client 收到 Step 后，应首先进行本地验证。
 
 ```text
 Capability exists?
+
         ↓
+
 Local execution allowed?
+
         ↓
+
 Required local resources available?
+
         ↓
+
 Create Execution
+
         ↓
+
 Execute
 ```
 
@@ -771,16 +911,529 @@ Server 根据该结果决定后续处理方式。
 
 ---
 
-# 18. Evidence Return
+# 18. Completion Criteria
+
+Step 可以包含 Completion Criteria。
+
+Completion Criteria 用于定义：
+
+> **什么条件满足时，该 Step 才算完成。**
+
+例如：
+
+```text
+Step:
+
+    capability:
+        git.collect_diagnostics
+
+    completion_criteria:
+
+        required:
+            - git_status_collected
+            - git_diff_collected
+            - git_log_collected
+```
+
+Completion Criteria 可以根据 Step 类型采用不同形式。
+
+## 18.1 Execution-based
+
+```text
+execution.status == SUCCESS
+```
+
+适用于：
+
+> Execution 成功本身即可证明 Step 完成。
+
+---
+
+## 18.2 Evidence-based
+
+```text
+evidence_exists:
+
+    - diagnostic_report
+```
+
+适用于：
+
+> 必须产生指定 Evidence。
+
+---
+
+## 18.3 Condition-based
+
+```text
+conditions:
+
+    service.status == "running"
+
+    health_check == "ok"
+```
+
+适用于：
+
+> Evidence 中观察到的实际状态必须满足指定条件。
+
+---
+
+## 18.4 Open-ended Step
+
+对于难以完全形式化的 Step，Planner / LLM 可以提出 Step Completion Proposal。
+
+例如：
+
+```text
+completed: true
+
+reason:
+    Root cause identified from startup logs.
+
+supporting_evidence:
+    - evidence-123
+    - evidence-127
+```
+
+该 Proposal 可以作为 Step Completion Evaluation 的输入之一。
+
+但：
+
+> **LLM 不直接拥有 Step State 的最终决定权。**
+
+---
+
+# 19. Step Completion Evaluation
+
+Step Completion Evaluation 是：
+
+> Server 根据 Step 的 Completion Criteria、Execution Result 和 Evidence，判断当前 Step 是否已经达到其目标。
+
+基本流程：
+
+```text
+Execution Result
+       +
+Evidence
+       +
+Completion Criteria
+       ↓
+Step Completion Evaluation
+       ↓
+COMPLETED / NOT_COMPLETED
+```
+
+Step Completion Evaluation 属于：
+
+> **Step-level evaluation**
+
+它与 Request Completion Evaluation 不同。
+
+---
+
+# 20. Execution Success Does Not Guarantee Step Completion
+
+必须明确区分：
+
+```text
+Execution SUCCESS
+```
+
+和：
+
+```text
+Step COMPLETED
+```
+
+例如：
+
+```text
+Step:
+
+    Check PostgreSQL health
+
+Execution:
+
+    pg_isready
+
+Execution Result:
+
+    SUCCESS
+
+Evidence:
+
+    server_status = "rejecting connections"
+```
+
+如果 Completion Criteria 是：
+
+```text
+server_status == "accepting connections"
+```
+
+则：
+
+```text
+Execution = SUCCESS
+
+Step = NOT_COMPLETED
+```
+
+因为：
+
+> Command 成功执行，不代表 Step 的目标已经满足。
+
+---
+
+# 21. Step Completion Evaluation Flow
+
+典型情况：
+
+```text
+Step
+ ↓
+Execution
+ ↓
+Execution Result + Evidence
+ ↓
+Step Completion Evaluation
+       │
+       ├── COMPLETED
+       │      ↓
+       │   Request Completion Evaluation
+       │
+       └── NOT_COMPLETED
+              ↓
+           Re-plan
+              ↓
+          New Step
+```
+
+`NOT_COMPLETED` 不代表 Workflow Failed。
+
+它表示：
+
+> 当前 Step 的目标尚未达到，需要根据当前 Evidence 继续寻找解决路径。
+
+如果需要继续处理，Server 可以：
+
+* Retry 当前 Step
+* 修改执行方式
+* 选择 Alternative Capability
+* 生成 New Step
+
+---
+
+# 22. Failure and Error Semantics
+
+Protocol 必须明确区分以下层次：
+
+```text
+Error
+
+Execution Failure
+
+Step Failure
+
+Workflow Failure
+```
+
+---
+
+## 22.1 Error
+
+Error 描述某个操作、Capability、消息或执行过程出现的问题。
+
+例如：
+
+```text
+CAPABILITY_UNAVAILABLE
+
+INVALID_INPUT
+
+COMMAND_EXIT_NONZERO
+
+RESOURCE_UNAVAILABLE
+
+PERMISSION_DENIED
+```
+
+Error 是一种事实描述。
+
+---
+
+## 22.2 Execution Failure
+
+Execution Failure 表示：
+
+> 当前这一次 Execution 没有成功完成。
+
+例如：
+
+```text
+Step:
+
+    terminal.execute
+
+    command: docker compose up
+```
+
+Execution：
+
+```text
+status:
+
+    FAILURE
+```
+
+Evidence：
+
+```text
+exit_code: 1
+
+stderr:
+
+    "port 8080 is already allocated"
+```
+
+此时：
+
+```text
+Execution = FAILURE
+```
+
+但：
+
+```text
+Workflow = RUNNING
+```
+
+仍然完全合法。
+
+---
+
+## 22.3 Step Failure
+
+Step Failure 表示：
+
+> Server 判断当前 Step 已无法通过当前执行路径满足其目标。
+
+例如：
+
+```text
+Step:
+
+    deploy service
+
+Execution:
+
+    FAILURE
+
+Evidence:
+
+    required image does not exist
+```
+
+Server 经过判断后，如果确认：
+
+```text
+Retry 当前路径没有意义
+
+并且当前 Step 无法继续达到目标
+```
+
+可以将：
+
+```text
+Step = FAILED
+```
+
+Step Failure 是 Step-level 的结论。
+
+它仍然不意味着 Workflow 必须失败。
+
+Server 可以继续 Re-plan。
+
+---
+
+## 22.4 Workflow Failure
+
+Workflow FAILED 表示：
+
+> Server 判断整个 Workflow 已经无法继续完成原始 User Request。
+
+例如：
+
+```text
+Execution FAILED
+      ↓
+Server Evaluation
+      ↓
+Re-plan
+      ↓
+No viable path
+      ↓
+Workflow FAILED
+```
+
+因此：
+
+```text
+Execution FAILED
+        ≠
+Step FAILED
+        ≠
+Workflow FAILED
+```
+
+失败不会自动向上层传播。
+
+---
+
+# 23. Failure Recovery
+
+Execution Failure 或 Step Failure 后，Server 可以根据具体情况选择：
+
+```text
+Retry
+
+Modify Step
+
+Alternative Capability
+
+New Step
+
+Workflow FAILED
+```
+
+典型流程：
+
+```text
+Execution / Step Result
+        ↓
+Evidence
+        ↓
+Server Evaluation
+        ↓
+Re-plan
+        ↓
+Next Step
+```
+
+---
+
+## 23.1 Retry
+
+重新执行当前 Step。
+
+```text
+Step-001
+
+   │
+
+   ├── Execution-001 → FAILURE
+
+   │
+
+   └── Execution-002 → SUCCESS
+```
+
+---
+
+## 23.2 Modify Step
+
+根据当前 Evidence 调整 Step 的输入或执行方式。
+
+---
+
+## 23.3 Alternative Capability
+
+如果当前 Capability 无法完成目标，可以使用其他可用 Capability。
+
+例如：
+
+```text
+Step:
+
+    terminal.execute
+
+Execution:
+
+    REJECTED
+
+       ↓
+
+Planner
+
+       ↓
+
+Alternative Step:
+
+    local-agent.diagnose
+```
+
+---
+
+## 23.4 New Step
+
+当前 Step 已经产生了有价值的 Evidence，但目标仍未满足。
+
+例如：
+
+```text
+Step A:
+
+    Check service health
+
+Evidence:
+
+    service is not accepting connections
+
+        ↓
+
+Re-plan
+
+        ↓
+
+Step B:
+
+    Inspect service logs
+```
+
+---
+
+## 23.5 Workflow Failed
+
+只有在 Server 判断：
+
+> 不存在可继续完成 User Request 的有效路径
+
+时：
+
+```text
+Workflow → FAILED
+```
+
+具体 Retry / Recovery Policy 不在本 Protocol 中规定。
+
+---
+
+# 24. Evidence Return
 
 Client 完成或中止当前 Execution 后：
 
 ```text
 Client
+
   │
+
   │ Execution Result
+
   │ Evidence
+
   ▼
+
 Server
 ```
 
@@ -791,9 +1444,9 @@ Evidence
    ↓
 Context Update
    ↓
-Request Completion Evaluation
+Step Completion Evaluation
    ↓
-Re-plan / Completion Candidate
+Request Completion Evaluation / Re-plan
 ```
 
 Evidence 不直接决定下一 Step。
@@ -802,7 +1455,7 @@ Evidence 不直接决定下一 Step。
 
 ---
 
-# 19. Waiting Protocol
+# 25. Waiting Protocol
 
 Step 可以进入：
 
@@ -818,9 +1471,13 @@ WAITING 表示：
 
 ```text
 User Input
+
 User Confirmation
+
 Local Service
+
 Device
+
 External Resource
 ```
 
@@ -846,7 +1503,7 @@ WAITING 是 Step / Execution 级条件。
 
 ---
 
-# 20. User Input During Execution
+# 26. User Input During Execution
 
 如果当前 Execution 需要 User 提供信息：
 
@@ -876,7 +1533,7 @@ User Input 可以：
 
 ---
 
-# 21. Request Completion Evaluation
+# 27. Request Completion Evaluation
 
 每次 Step / Execution 完成并产生新的 Evidence 后，Server 可以进行：
 
@@ -910,16 +1567,17 @@ Completion Candidate
 
 ---
 
-# 22. Completion Evaluation Result
+# 28. Completion Evaluation Result
 
 Request Completion Evaluation 至少有两类结果：
 
 ```text
 NOT_COMPLETE
+
 POSSIBLY_COMPLETE
 ```
 
-## 22.1 NOT_COMPLETE
+## 28.1 NOT_COMPLETE
 
 表示当前 Evidence 不足以认为整个 Request 已经完成。
 
@@ -935,7 +1593,7 @@ Next Step
 
 ---
 
-## 22.2 POSSIBLY_COMPLETE
+## 28.2 POSSIBLY_COMPLETE
 
 表示 Server 判断整个 Request 可能已经完成。
 
@@ -949,7 +1607,7 @@ Completion Candidate
 
 ---
 
-# 23. Completion Candidate
+# 29. Completion Candidate
 
 Completion Candidate 表示：
 
@@ -972,8 +1630,11 @@ Completion Candidate 应包含：
 
 ```text
 request_id
+
 workflow_id
+
 summary
+
 supporting_evidence
 ```
 
@@ -984,7 +1645,7 @@ supporting_evidence
 
 ---
 
-# 24. User Confirmation
+# 30. User Confirmation
 
 User 对 Completion Candidate 进行最终确认。
 
@@ -992,10 +1653,11 @@ User 对 Completion Candidate 进行最终确认。
 
 ```text
 CONFIRMED
+
 REJECTED
 ```
 
-## 24.1 CONFIRMED
+## 30.1 CONFIRMED
 
 ```text
 Completion Candidate
@@ -1005,7 +1667,9 @@ User Confirmed
 Workflow COMPLETED
 ```
 
-## 24.2 REJECTED
+---
+
+## 30.2 REJECTED
 
 User 可以提供 Feedback：
 
@@ -1025,7 +1689,7 @@ Re-plan
 
 ---
 
-# 25. Completion Candidate Is Not Step Completion
+# 31. Completion Candidate Is Not Step Completion
 
 协议必须明确：
 
@@ -1043,8 +1707,11 @@ Completion Candidate
 
 ```text
 Step 1 → Completed
+
 Step 2 → Completed
+
 Step 3 → Completed
+
 Step 4 → Completed
 ```
 
@@ -1056,9 +1723,13 @@ Step 4 → Completed
 Completion Candidate
 ```
 
+因此：
+
+> **不是每个 Step 都需要 User Confirmation。**
+
 ---
 
-# 26. Re-planning
+# 32. Re-planning
 
 Re-planning 是 Server 根据新的 Evidence / User Feedback 重新生成下一 Step 的过程。
 
@@ -1082,14 +1753,26 @@ Re-planning 的输入可以包括：
 
 ```text
 User Request
+
 Workflow State
+
 Current Step
+
 Previous Steps
+
 Execution Results
+
 Evidence
+
 Capability Manifest
+
 Knowledge
+
 User Feedback
+
+Step Completion Evaluation
+
+Failure Information
 ```
 
 Planner 生成：
@@ -1102,7 +1785,7 @@ Workflow Engine 对其进行协议层验证后，才能作为正式 Step 下发�
 
 ---
 
-# 27. User Feedback
+# 33. User Feedback
 
 User Feedback 是 User 对当前 Workflow、Completion Candidate 或 Execution 结果提供的额外信息。
 
@@ -1132,183 +1815,7 @@ Re-plan
 
 ---
 
-# 28. Failure and Error Semantics
-
-Protocol 必须明确区分三个层次：
-
-```text
-Error
-Execution Failure
-Workflow Failure
-```
-
-## 28.1 Error
-
-Error 描述某个操作、Capability、消息或执行过程出现的问题。
-
-例如：
-
-```text
-CAPABILITY_UNAVAILABLE
-INVALID_INPUT
-COMMAND_EXIT_NONZERO
-RESOURCE_UNAVAILABLE
-PERMISSION_DENIED
-```
-
-Error 是一种事实描述。
-
----
-
-## 28.2 Execution Failure
-
-Execution Failure 表示：
-
-> 当前这一次 Execution 没有成功完成。
-
-例如：
-
-```text
-Step:
-    terminal.execute
-    command: docker compose up
-```
-
-Execution：
-
-```text
-status:
-    FAILURE
-```
-
-Evidence：
-
-```text
-exit_code: 1
-
-stderr:
-    "port 8080 is already allocated"
-```
-
-此时：
-
-```text
-Execution = FAILED
-```
-
-但：
-
-```text
-Workflow = RUNNING
-```
-
-仍然完全合法。
-
----
-
-## 28.3 Workflow Failure
-
-Workflow FAILED 表示：
-
-> Server 判断当前 Workflow 已经无法继续完成 User Request。
-
-例如：
-
-```text
-Execution FAILED
-      ↓
-Server evaluates failure
-      ↓
-Re-plan
-      ↓
-No available Capability
-      ↓
-No viable alternative
-      ↓
-Workflow FAILED
-```
-
-因此：
-
-```text
-Execution FAILED
-        ≠
-Workflow FAILED
-```
-
----
-
-# 29. Failure Recovery
-
-Execution Failure 后，Server 可以根据具体情况选择：
-
-```text
-Execution Failure
-       ↓
-Server Evaluation
-   ┌───┼───────────┬────────────┐
-   ↓   ↓           ↓            ↓
-Retry  Re-plan   Alternative   Fail Workflow
-```
-
-例如：
-
-### Retry
-
-```text
-Step-001
-   │
-   ├── Execution-001 → FAILED
-   │
-   └── Execution-002 → SUCCESS
-```
-
-### Re-plan
-
-```text
-Step-001
-   ↓
-Execution FAILED
-   ↓
-Evidence
-   ↓
-Planner
-   ↓
-Step-002
-```
-
-### Alternative Capability
-
-```text
-Step:
-    terminal.execute
-
-Execution:
-    REJECTED
-
-       ↓
-
-Planner
-
-       ↓
-
-Alternative Step:
-    local-agent.diagnose
-```
-
-### Workflow Failure
-
-只有在 Server 判断不存在可继续的有效路径时：
-
-```text
-Workflow → FAILED
-```
-
-具体 Retry / Recovery Policy 不在本 Protocol 中规定。
-
----
-
-# 30. Protocol Message Direction
+# 34. Protocol Message Direction
 
 Protocol 消息按照方向分为：
 
@@ -1316,13 +1823,21 @@ Protocol 消息按照方向分为：
 
 ```text
 User Request
+
 Capability Manifest
+
 Step Acceptance / Rejection
+
 Execution Started
+
 Execution Result
+
 Evidence
+
 User Input
+
 User Confirmation
+
 User Feedback
 ```
 
@@ -1330,9 +1845,13 @@ User Feedback
 
 ```text
 Workflow Created
+
 Step
+
 Waiting Request
+
 Completion Candidate
+
 Workflow Result
 ```
 
@@ -1340,9 +1859,9 @@ Workflow Result
 
 ---
 
-# 31. Core Interaction Sequence
+# 35. Core Interaction Sequence
 
-## 31.1 Request Creation
+## 35.1 Request Creation
 
 ```text
 User
@@ -1359,7 +1878,7 @@ Workflow
 
 ---
 
-## 31.2 Step Execution
+## 35.2 Step Execution
 
 ```text
 Server
@@ -1384,41 +1903,84 @@ Server
 
 ---
 
-## 31.3 Re-planning
+## 35.3 Step Completion
+
+```text
+Execution Result
+      +
+Evidence
+      +
+Completion Criteria
+      ↓
+Step Completion Evaluation
+      │
+      ├── COMPLETED
+      │
+      └── NOT_COMPLETED
+               ↓
+             Re-plan
+```
+
+---
+
+## 35.4 Re-planning
 
 ```text
 Server
+
   │
+
   │ Evidence
+
   ↓
+
 Context Update
+
   ↓
+
 Planner
+
   ↓
+
 Next Step
+
   │
+
   ▼
+
 Client
 ```
 
 ---
 
-## 31.4 Execution Failure and Recovery
+## 35.5 Execution Failure and Recovery
 
 ```text
 Step
-  ↓
+ ↓
 Execution
-  ↓
+ ↓
 FAILURE
-  ↓
+ ↓
 Evidence
-  ↓
+ ↓
 Server Evaluation
-  ├── Retry
-  ├── Re-plan
-  ├── Alternative Step
-  └── Workflow FAILED
+
+ ├── Retry
+ │
+ ├── Modify Step
+ │
+ ├── Alternative Step
+ │
+ ├── New Step
+ │
+ └── Step FAILED
+          ↓
+       Re-plan
+          ↓
+    No viable path
+          ↓
+    Workflow FAILED
 ```
 
 前三种情况 Workflow 仍然可以保持：
@@ -1427,36 +1989,45 @@ Server Evaluation
 RUNNING
 ```
 
----
+Step FAILED 后也仍然可以 Re-plan。
 
-## 31.5 Completion
+只有没有可行继续路径时，Workflow 才进入：
 
 ```text
-Evidence
-   ↓
-Request Completion Evaluation
-   ↓
-POSSIBLY_COMPLETE
-   ↓
-Completion Candidate
-   ↓
-Client
-   ↓
-User
-  ├── CONFIRMED
-  │      ↓
-  │  Workflow COMPLETED
-  │
-  └── REJECTED
-         ↓
-     User Feedback
-         ↓
-       Re-plan
+FAILED
 ```
 
 ---
 
-# 32. Protocol Invariants
+## 35.6 Completion
+
+```text
+Step Completed
+      ↓
+Request Completion Evaluation
+      ↓
+POSSIBLY_COMPLETE
+      ↓
+Completion Candidate
+      ↓
+Client
+      ↓
+User
+
+   ├── CONFIRMED
+   │      ↓
+   │  Workflow COMPLETED
+   │
+   └── REJECTED
+          ↓
+      User Feedback
+          ↓
+        Re-plan
+```
+
+---
+
+# 36. Protocol Invariants
 
 以下规则是 Protocol 的强约束。
 
@@ -1496,33 +2067,47 @@ Evidence 不应被伪造成未实际执行的结果。
 
 ---
 
-## Invariant 6 — Step Failure Is Local
+## Invariant 6 — Execution Failure Is Local
 
-Execution Failure 或 Step Failure 不自动导致 Workflow FAILED。
+Execution Failure 不自动导致 Workflow Failure。
 
-Server 必须判断 Workflow 是否仍然可以继续。
+Server 必须判断是否存在继续路径。
 
 ---
 
-## Invariant 7 — Workflow Failure Is Global
+## Invariant 7 — Step Failure Is Local
+
+Step Failure 不自动导致 Workflow Failure。
+
+Server 仍然可以通过 Re-planning 寻找新的解决路径。
+
+---
+
+## Invariant 8 — Workflow Failure Is Global
 
 Workflow FAILED 表示 Server 判断当前 Workflow 已经无法继续完成 User Request。
 
 ---
 
-## Invariant 8 — Step Completion Is Not Request Completion
+## Invariant 9 — Execution Success Does Not Guarantee Step Completion
+
+Execution 成功不代表 Step 目标已经满足。
+
+---
+
+## Invariant 10 — Step Completion Is Not Request Completion
 
 Step 完成不能直接导致 Workflow 完成。
 
 ---
 
-## Invariant 9 — Completion Candidate Is Request-level
+## Invariant 11 — Completion Candidate Is Request-level
 
 Completion Candidate 针对整个 User Request，而不是单个 Step。
 
 ---
 
-## Invariant 10 — User Final Confirmation
+## Invariant 12 — User Final Confirmation
 
 Workflow 只有在 User 确认 Completion Candidate 后，才能进入：
 
@@ -1532,25 +2117,25 @@ COMPLETED
 
 ---
 
-## Invariant 11 — LLM Does Not Own State
+## Invariant 13 — LLM Does Not Own State
 
 LLM 产生 Proposal，但不能直接修改 authoritative Workflow State。
 
 ---
 
-## Invariant 12 — Client Owns Local Execution
+## Invariant 14 — Client Owns Local Execution
 
 Server 可以要求 Client 执行 Capability，但 Client 保留本地执行许可与执行控制。
 
 ---
 
-## Invariant 13 — No Fabricated Evidence
+## Invariant 15 — No Fabricated Evidence
 
 Client 不应把推测、假设或未实际执行的结果作为实际 Evidence 返回。
 
 ---
 
-## Invariant 14 — Waiting Is Step / Execution-level
+## Invariant 16 — Waiting Is Step / Execution-level
 
 WAITING 表示当前 Step / Execution 等待外部条件。
 
@@ -1558,14 +2143,34 @@ WAITING 表示当前 Step / Execution 等待外部条件。
 
 ---
 
-# 33. Protocol Versioning
+## Invariant 17 — Failure Is Not Automatically Propagated
+
+不同层级的 Failure 必须分别评估。
+
+```text
+Execution Failure
+      ↓
+Server Evaluation
+      ↓
+Step Failure / Recovery
+      ↓
+Re-plan
+      ↓
+Workflow Failure
+```
+
+只有 Server 判断 Workflow 无法继续完成 User Request 时，Workflow 才进入 FAILED。
+
+---
+
+# 37. Protocol Versioning
 
 Protocol 必须具有明确版本。
 
 示例：
 
 ```text
-protocol_version: "0.2"
+protocol_version: "0.3"
 ```
 
 Protocol Version 用于：
@@ -1579,7 +2184,7 @@ Protocol Version 用于：
 
 ---
 
-# 34. Non-Goals
+# 38. Non-Goals
 
 当前 Protocol 不定义：
 
@@ -1608,71 +2213,116 @@ Protocol Version 用于：
 
 ---
 
-# 35. Protocol Definition
+# 39. Protocol Definition
 
 本系统 Protocol 的核心定义：
 
-> **Client 向 Server 提交 User Request；Server 创建并驱动 Workflow，以 One-Step-at-a-Time 的方式向 Client 下发当前 Step；Client 对 Step 创建并执行 Execution，通过本地 Capability 完成实际操作并返回 Execution Result 与 Evidence；Server 基于 Evidence 更新 Context，并进行 Re-planning 或 Request Completion Evaluation。Execution Failure 只表示当前执行失败，不自动意味着 Workflow Failure；Server 根据失败 Evidence 判断是否 Retry、Re-plan、采用替代路径，或者最终将 Workflow 标记为 FAILED。当 Server 判断 User Request 可能完成时产生 Completion Candidate，由 Client 交给 User 最终确认；User 确认后 Workflow 才进入 COMPLETED，否则根据 User Feedback 继续 Re-planning。**
+> **Client 向 Server 提交 User Request；Server 创建并驱动 Workflow，以 One-Step-at-a-Time 的方式向 Client 下发当前 Step；Client 对 Step 创建并执行 Execution，通过本地 Capability 完成实际操作并返回 Execution Result 与 Evidence；Server 基于 Evidence 更新 Context，并进行 Step Completion Evaluation。Step 未完成时，Server 根据当前 Evidence 进行 Re-planning；Step 完成后，Server 进行 Request Completion Evaluation。当 Server 判断 User Request 可能完成时产生 Completion Candidate，由 Client 交给 User 最终确认；User 确认后 Workflow 才进入 COMPLETED，否则根据 User Feedback 继续 Re-planning。Execution Failure 或 Step Failure 不自动意味着 Workflow Failure，Server 应根据当前 Evidence 和剩余可行路径决定 Retry、修改 Step、替代 Capability、生成新的 Step，或最终将 Workflow 标记为 FAILED。**
 
 核心闭环：
 
 ```text
 User Request
-     ↓
+      ↓
 Workflow
-     ↓
+      ↓
 Step
-     ↓
+      ↓
 Execution
-     ↓
+      ↓
 Evidence
-     ↓
-Context Update
-     ↓
-Request Completion Evaluation
-     ├── NOT_COMPLETE
-     │       ↓
-     │    Re-plan
-     │       ↓
-     │    Next Step
-     │
-     └── POSSIBLY_COMPLETE
-             ↓
-      Completion Candidate
-             ↓
-            User
-          /       \
-     Confirmed   Rejected
-        ↓           ↓
-   COMPLETED     Feedback
-                    ↓
-                 Re-plan
+      ↓
+Step Completion Evaluation
+      │
+      ├── NOT_COMPLETED
+      │       ↓
+      │    Re-plan
+      │       ↓
+      │    Next Step
+      │
+      └── COMPLETED
+              ↓
+      Request Completion Evaluation
+              │
+              ├── NOT_COMPLETE
+              │       ↓
+              │    Re-plan
+              │       ↓
+              │    Next Step
+              │
+              └── POSSIBLY_COMPLETE
+                      ↓
+               Completion Candidate
+                      ↓
+                    User
+                 /        \
+          Confirmed       Rejected
+             ↓                ↓
+        COMPLETED         Feedback
+                              ↓
+                           Re-plan
 ```
 
 核心失败闭环：
 
 ```text
 Step
-  ↓
+ ↓
 Execution
-  ↓
+ ↓
 FAILURE
-  ↓
+ ↓
 Evidence
-  ↓
+ ↓
 Server Evaluation
-  ├── Retry
-  ├── Re-plan
-  ├── Alternative Step
-  └── Workflow FAILED
+ │
+ ├── Retry
+ ├── Modify Step
+ ├── Alternative Capability
+ ├── New Step
+ └── Step FAILED
+          ↓
+       Re-plan
+          ↓
+   No viable path
+          ↓
+   Workflow FAILED
 ```
 
 其中：
 
 ```text
-Execution FAILED
+Execution SUCCESS
+        ≠
+Step COMPLETED
+
+Execution FAILURE
+        ≠
+Step FAILED
+
+Step FAILED
         ≠
 Workflow FAILED
+
+Step COMPLETED
+        ≠
+Completion Candidate
 ```
 
-只有 Server 判断整个 Workflow 已经不存在可继续完成 User Request 的有效路径时，Workflow 才进入 `FAILED`。
+最终形成：
+
+```text
+Plan
+ ↓
+Execute
+ ↓
+Observe
+ ↓
+Evaluate
+ ↓
+Re-plan
+ ↓
+Execute Next Step
+```
+
+这构成 Central AI Orchestrator 的核心 Client ↔ Server 执行协议。
