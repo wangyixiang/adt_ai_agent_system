@@ -1,9 +1,8 @@
 # SYSTEM_SPEC.md
 
-**Version:** v0.1
+**Version:** v0.2
 **Status:** Draft
 **Purpose:** Define the core behavior, responsibilities, boundaries, and lifecycle of the AI Client + Central Server system.
-**写作要求**: SYSTEM_SPEC.md 保持在系统行为层，暂时不进入 API 字段、数据库、具体 LLM、WebSocket、Electron 等实现细节。 它的作用是成为后面所有 Spec 的“母规格”：后面的 Protocol / Workflow / Capability / Evidence 都必须能够从这里推导出来。
 
 ---
 
@@ -33,13 +32,41 @@
 └─────────────────────┘
 ```
 
-系统的核心执行模型：
+系统核心执行模型：
 
-> **Request → Plan → Step → Execute → Evidence → Re-plan → ... → User Confirmation**
+```text
+Request
+   ↓
+Plan
+   ↓
+Step
+   ↓
+Execute
+   ↓
+Evidence
+   ↓
+Evaluate Request Completion
+   │
+   ├── Not Complete → Re-plan
+   │
+   └── Possibly Complete
+             ↓
+      Completion Candidate
+             ↓
+       User Confirmation
+          /         \
+      Solved      Not Solved
+         ↓            ↓
+     Completed      Re-plan
+```
+
+核心原则：
+
+> **每个 Step 都产生 Evidence，但不是每个 Step 都进入 Completion Candidate。**
 
 ---
 
-# 2. Core Concept
+# 2. Core Concepts
 
 系统中的核心对象：
 
@@ -59,25 +86,28 @@ User Request
    Evidence
       │
       ▼
-  Re-planning
+Request Completion Evaluation
       │
-      ▼
-    Step ...
+      ├── Not Complete → Re-plan
+      │
+      └── Possibly Complete
+                  ↓
+         Completion Candidate
+                  ↓
+            User Confirmation
 ```
 
-最终：
+这些对象分别代表：
 
-```text
-Completion Candidate
-        │
-        ▼
-       User
-      /     \
-  Solved   Not Solved
-     │          │
-     ▼          ▼
- Completed   Re-plan
-```
+| Concept              | Meaning                          |
+| -------------------- | -------------------------------- |
+| User Request         | User 希望解决的问题或完成的任务               |
+| Workflow             | Server 为处理 Request 而管理的过程        |
+| Step                 | 当前需要执行的具体动作                      |
+| Execution            | Client 对 Step 的实际执行              |
+| Evidence             | 实际执行、观察或 User Interaction 得到的结果  |
+| Completion Candidate | Server 判断 Request 可能已经解决后的候选完成状态 |
+| User Confirmation    | User 对 Request 是否真正解决的最终判断       |
 
 ---
 
@@ -135,7 +165,8 @@ Workflow 负责组织：
 * 当前 Step
 * Context
 * Evidence
-* Completion 状态
+* Request Completion Evaluation
+* Completion Candidate
 
 Workflow 是 Server 端的 authoritative state。
 
@@ -187,11 +218,15 @@ Client
   ▼
 Server
   │
-  │ Re-plan
+  │ Evaluate Request
   │
-  │ Step 2
-  ▼
-Client
+  ├──── Not Complete ────→ Re-plan
+  │                           │
+  │                         Step 2
+  │
+  └──── Possibly Complete
+              ↓
+       Completion Candidate
 ```
 
 Server 不提前向 Client 下发完整的未来 Step 序列。
@@ -202,7 +237,7 @@ Server 不提前向 Client 下发完整的未来 Step 序列。
 
 因此系统采用：
 
-> **Plan → Execute → Observe → Re-plan**
+> **Plan → Execute → Observe → Evaluate → Re-plan**
 
 而不是：
 
@@ -298,7 +333,7 @@ Local Agent 可以具有一定的本地自主能力。
 
 **Evidence** 是系统从实际执行、观察或 User Interaction 中获得的事实或结果。
 
-Evidence 是 Re-planning 的主要输入。
+Evidence 是后续 Request Completion Evaluation 和 Re-planning 的主要输入。
 
 ```text
 Step
@@ -309,9 +344,11 @@ Evidence
  ↓
 Context
  ↓
-Planner
- ↓
-Next Step
+Request Completion Evaluation
+       │
+       ├── Not Complete → Planner
+       │
+       └── Possibly Complete
 ```
 
 Evidence 可以来自：
@@ -332,7 +369,7 @@ Evidence 可以来自：
 
 # 11. Context
 
-**Context** 是 Server 为当前 Planning 决策构建的工作上下文。
+**Context** 是 Server 为当前 Planning 和 Completion Evaluation 构建的工作上下文。
 
 Context 可以包含：
 
@@ -354,7 +391,7 @@ Client Capabilities
 Knowledge
 ```
 
-Context 在每次 Re-plan 前可以重新组合。
+Context 在每次 Re-plan 或 Completion Evaluation 前可以重新组合。
 
 因此：
 
@@ -381,10 +418,10 @@ Relevant Knowledge
 Context
       │
       ▼
-Planner
+Planner / Evaluation
 ```
 
-Knowledge 用于辅助 Planning 和 Reasoning。
+Knowledge 用于辅助 Planning、Reasoning 和 Completion Evaluation。
 
 Knowledge 本身不是 Workflow State。
 
@@ -431,6 +468,7 @@ Workflow Engine 是 Workflow State 的权威管理者。
 * 管理 Step 状态
 * 接收 Execution Result
 * 保存 Evidence
+* 触发 Request Completion Evaluation
 * 触发 Re-plan
 * 处理 Completion Proposal
 * 管理 Workflow 生命周期
@@ -438,20 +476,20 @@ Workflow Engine 是 Workflow State 的权威管理者。
 核心关系：
 
 ```text
-Planner
-   │
-   │ Proposal
-   ▼
+Planner / Evaluation
+          │
+          │ Proposal
+          ▼
 Workflow Engine
-   │
-   │ State / Action
-   ▼
-Client
+          │
+          │ State / Action
+          ▼
+       Client
 ```
 
 即：
 
-> **LLM 负责提出建议，Workflow Engine 负责决定系统状态如何变化。**
+> **LLM 可以提出建议，但 Workflow Engine 负责管理 authoritative state。**
 
 ---
 
@@ -526,7 +564,12 @@ Step 执行失败。
 
 Step Failed 不必然意味着 Workflow Failed。
 
-Server 可以根据 Failure Evidence 重新规划。
+Server 可以根据 Failure Evidence：
+
+* Retry
+* Change Approach
+* Generate Another Step
+* 判断无法继续
 
 ---
 
@@ -556,97 +599,233 @@ COMPLETED
 
 ---
 
-# 18. Re-planning
+# 18. Request Completion Evaluation
 
-Re-planning 是本系统的核心机制。
+这是系统区别于普通 Step Workflow 的关键机制。
 
-触发条件包括：
+每当一个 Step 产生新的 Evidence 后，Server 可以评估：
 
-* Step Completed
-* Step Failed
-* Step Waiting 后获得所需输入
-* User 提供新的信息
-* User 判断当前结果仍未解决 Request
-* Client Capability 发生变化
-* 新 Evidence 改变了问题理解
+> **当前所有 Evidence 是否已经足以表明 User Request 可能已经解决？**
 
-基本流程：
+这个判断针对的是：
+
+> **整个 User Request**
+
+而不是当前 Step。
+
+因此：
+
+```text
+Step Completed
+      ↓
+Evidence
+      ↓
+Request Completion Evaluation
+```
+
+可能产生两种结果：
+
+### 18.1 Not Complete
 
 ```text
 Evidence
    ↓
-Context Update
+Evaluation
    ↓
-Planner
+Request Not Complete
    ↓
-Next Step Proposal
-   ↓
-Workflow Engine
+Re-plan
    ↓
 Next Step
 ```
 
----
+这是最常见的路径。
 
-# 19. Completion Model
-
-系统区分：
-
-### System Completion Candidate
-
-Server 根据当前 Evidence 判断：
-
-> 当前结果已经达到系统可以判断的完成条件。
-
-对于可以形式化的任务：
+### 18.2 Possibly Complete
 
 ```text
 Evidence
    ↓
+Evaluation
+   ↓
+Request Possibly Complete
+   ↓
+Completion Candidate
+```
+
+只有这一种情况下才进入 User Confirmation。
+
+---
+
+# 19. Completion Candidate
+
+**Completion Candidate** 不是每个 Step 的必经状态。
+
+它表示：
+
+> Server 根据当前 Workflow 的全部相关 Evidence，认为 User Request 可能已经解决，并准备请求 User 最终确认。
+
+例如：
+
+```text
+Step 1 → Evidence
+            ↓
+        Not Complete
+            ↓
+          Step 2
+            ↓
+         Evidence
+            ↓
+        Not Complete
+            ↓
+          Step 3
+            ↓
+         Evidence
+            ↓
+        Possibly Complete
+            ↓
+     Completion Candidate
+```
+
+因此：
+
+> **Step Completion ≠ Request Completion Candidate**
+
+两者必须明确区分。
+
+---
+
+# 20. Completion Model
+
+系统采用三级完成模型：
+
+```text
+Step Completion
+      ↓
+Request Completion Evaluation
+      ↓
+Completion Candidate
+      ↓
+User Confirmation
+      ↓
+Request Completion
+```
+
+## 20.1 Step Completion
+
+回答：
+
+> 当前 Step 是否完成？
+
+主要根据当前 Step 的 Execution Result 和 Evidence 判断。
+
+---
+
+## 20.2 Request Completion Evaluation
+
+回答：
+
+> 当前整个 User Request 是否已经可能解决？
+
+这是 Request-level 判断。
+
+可能由：
+
+* Workflow Engine
+* 明确的 Completion Criteria
+* Planner / LLM 提出的 Completion Proposal
+
+共同参与。
+
+---
+
+## 20.3 User Confirmation
+
+回答：
+
+> 这个结果是否真的解决了 User 自己的问题？
+
+这是最终的 User-level 判断。
+
+---
+
+# 21. Completion Evaluation Examples
+
+## 21.1 Formalizable Request
+
+例如：
+
+> “确认服务是否正常运行。”
+
+Completion Criteria：
+
+```text
+service.status == running
+health_check == OK
+```
+
+执行：
+
+```text
+Step
+ ↓
+Evidence
+ ↓
 Completion Criteria
-   ↓
-Workflow Engine
-   ↓
-Completion Candidate
+ ↓
+Possibly Complete
+ ↓
+User Confirmation
 ```
-
-对于开放式任务：
-
-```text
-Evidence
-   ↓
-Planner
-   ↓
-Completion Proposal
-   ↓
-Workflow Engine
-   ↓
-Completion Candidate
-```
-
-Completion Candidate **不直接意味着 User Request 已经最终解决**。
 
 ---
 
-# 20. User Final Confirmation
+## 21.2 Open-ended Request
 
-当 Server 认为当前结果已经达到 Completion Candidate 时：
+例如：
+
+> “帮我解决这个项目启动问题。”
+
+可能执行多个 Step：
 
 ```text
-Server
-  ↓
+检查日志
+ ↓
+发现依赖问题
+ ↓
+安装依赖
+ ↓
+重新启动
+ ↓
+运行测试
+ ↓
+Evidence
+ ↓
+Planner 判断可能已经解决
+ ↓
 Completion Candidate
-  ↓
-Client
-  ↓
-User
+ ↓
+User Confirmation
 ```
 
-Client 将结果展示给 User。
+---
 
-User 判断：
+# 22. User Final Confirmation
 
-> **这个结果是否真正解决了我的 Request？**
+只有当 Server 进入 `Completion Candidate` 后，才需要进行 Request-level User Confirmation。
+
+```text
+Completion Candidate
+        ↓
+      Client
+        ↓
+       User
+      /     \
+ Solved     Not Solved
+    │           │
+    ▼           ▼
+COMPLETED     Re-plan
+```
 
 ### User 确认已解决
 
@@ -661,6 +840,8 @@ Workflow = COMPLETED
 ```
 
 ### User 判断尚未解决
+
+Client 将 User Feedback 返回 Server：
 
 ```text
 User
@@ -678,31 +859,41 @@ Re-plan
 
 因此：
 
-> **系统可以判断“达到完成条件”，但最终“Request 是否真正解决”由 User 确认。**
+> **不是每个 Step 都询问 User。**
+
+只有：
+
+> **Server 判断整个 Request 可能已经解决时，才请求 User 做最终确认。**
 
 ---
 
-# 21. Human-in-the-loop
+# 23. Human-in-the-loop
 
 Human-in-the-loop 存在于两个层次。
 
-## 21.1 Execution-level
+## 23.1 Execution-level Human Interaction
 
-User 为当前 Step 提供信息或确认。
+当前 Step 需要 User 提供信息：
 
 ```text
 Step
  ↓
 WAITING
  ↓
-User Interaction
+User Input
  ↓
-Continue
+RUNNING
+ ↓
+COMPLETED
 ```
 
-## 21.2 Request-level
+这种交互是为了帮助当前 Step 继续执行。
 
-Workflow 达到 Completion Candidate 后：
+---
+
+## 23.2 Request-level User Confirmation
+
+整个 Request 被认为可能已经解决：
 
 ```text
 Completion Candidate
@@ -712,13 +903,79 @@ User Confirmation
 Completed / Re-plan
 ```
 
-User 不直接管理 Workflow State。
+这种交互是为了确认：
 
-User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续状态。
+> **User 的原始 Request 是否真正解决。**
+
+两者不能混淆。
 
 ---
 
-# 22. Responsibility Boundary
+# 24. Re-planning
+
+Re-planning 是本系统的核心机制。
+
+触发条件包括：
+
+* Step Completed
+* Step Failed
+* Step Waiting 后获得所需输入
+* User 提供新的信息
+* User 在 Completion Confirmation 中判断尚未解决
+* Client Capability 发生变化
+* 新 Evidence 改变了问题理解
+* Request Completion Evaluation 判断 Not Complete
+
+基本流程：
+
+```text
+Evidence / User Feedback
+          ↓
+     Context Update
+          ↓
+        Planner
+          ↓
+   Next Step Proposal
+          ↓
+    Workflow Engine
+          ↓
+       Next Step
+```
+
+注意：
+
+> **Request Completion Evaluation 与 Re-planning 是两个不同的决策阶段。**
+
+---
+
+# 25. LLM Role
+
+LLM 是 Planner / Reasoner。
+
+LLM 可以：
+
+* 理解 Request
+* 分析 Context
+* 使用 Knowledge
+* 分析 Evidence
+* 选择 Capability
+* 生成下一 Step
+* 提出 Completion Proposal
+
+LLM 不负责：
+
+* 直接执行 Client 操作
+* 直接修改 Workflow State
+* 直接访问 Client 本地资源
+* 自动宣布 User Request 已最终解决
+
+尤其：
+
+> **LLM 可以提出“可能已经解决”的 Completion Proposal，但最终 Request Completion 需要经过 User Confirmation。**
+
+---
+
+# 26. Responsibility Boundary
 
 系统的核心职责边界：
 
@@ -726,7 +983,7 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
 ┌────────────────────────────────────────┐
 │ User                                   │
 │                                        │
-│ 决定自己的 Request 是否真正解决          │
+│ 最终判断自己的 Request 是否真正解决       │
 └──────────────────┬─────────────────────┘
                    │
                    ▼
@@ -747,8 +1004,8 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
 │ Workflow State                         │
 │ Context                                │
 │ Knowledge                              │
-│ Planning                               │
-│ Re-planning                            │
+│ Completion Evaluation                  │
+│ Planning / Re-planning                 │
 └──────────────────┬─────────────────────┘
                    │
                    ▼
@@ -759,12 +1016,12 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
 
 > **User 决定是否真正解决。**
 > **Client 负责交互和执行。**
-> **Server 负责编排和状态。**
+> **Server 负责编排、评估和状态。**
 > **LLM 负责推理和规划。**
 
 ---
 
-# 23. End-to-End Lifecycle
+# 27. End-to-End Lifecycle
 
 完整 User Request 生命周期：
 
@@ -777,7 +1034,7 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
                      User Request
                           │
                           ▼
-                    Create Workflow
+                   Create Workflow
                           │
                           ▼
                     Build Context
@@ -786,7 +1043,7 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
                     Planner / LLM
                           │
                           ▼
-                       Step
+                        Step
                           │
                           ▼
                        Client
@@ -797,72 +1054,96 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
                       Evidence
                           │
                           ▼
-                    Update Context
+              Request Completion Evaluation
                           │
-                          ▼
-                       Re-plan
-                          │
-                 ┌────────┴────────┐
-                 │                 │
-              Continue        Completion
-                 │              Candidate
-                 │                 │
-                 │                 ▼
-                 │              Client
-                 │                 │
-                 │                 ▼
-                 │               User
-                 │              /     \
-                 │         Solved     Not Solved
-                 │            │           │
-                 │            ▼           │
-                 │       COMPLETED        │
-                 │                        │
-                 └────────────────────────┘
-                          Re-plan
+                 ┌────────┴─────────┐
+                 │                  │
+            Not Complete       Possibly Complete
+                 │                  │
+                 ▼                  ▼
+              Re-plan       Completion Candidate
+                 │                  │
+                 ▼                  ▼
+              Next Step           Client
+                                    │
+                                    ▼
+                                  User
+                               /         \
+                           Solved       Not Solved
+                              │              │
+                              ▼              ▼
+                         COMPLETED        Re-plan
+```
+
+核心循环：
+
+```text
+Plan
+ ↓
+Step
+ ↓
+Execute
+ ↓
+Evidence
+ ↓
+Evaluate Request Completion
+ ↓
+┌──────────────────────┐
+│                      │
+│ Not Complete         │──→ Re-plan
+│                      │
+│ Possibly Complete    │──→ User Confirmation
+│                      │
+└──────────────────────┘
 ```
 
 ---
 
-# 24. Core Design Principles
+# 28. Core Design Principles
 
-系统必须遵循以下原则：
-
-### 24.1 Central Orchestration
+### 28.1 Central Orchestration
 
 > Central Server 是全局 Workflow 的编排中心。
 
-### 24.2 Edge Execution
+### 28.2 Edge Execution
 
 > Client 负责本地能力和本地执行。
 
-### 24.3 One Step at a Time
+### 28.3 One Step at a Time
 
 > Server 一次只下发一个当前 Step。
 
-### 24.4 Evidence Driven
+### 28.4 Evidence Driven
 
-> 下一步规划应尽可能基于实际 Evidence。
+> 后续决策应尽可能基于实际 Evidence。
 
-### 24.5 LLM Is Not State Authority
+### 28.5 Request-level Completion Evaluation
 
-> LLM 可以提出决策，但不直接拥有 Workflow State。
+> Completion Evaluation 针对整个 User Request，而不是单个 Step。
 
-### 24.6 User Owns the Final Judgment
+### 28.6 Completion Candidate Is Not Step Completion
 
-> 系统可以判断达到 Completion Candidate，但 User 最终确认 Request 是否真正解决。
+> Step 完成不代表 Request 已解决，也不自动触发 User Confirmation。
 
-### 24.7 Client Is More Than UI
+### 28.7 User Owns the Final Judgment
 
-> Client 不只是 UI，而是 User Interaction + Local Capability + Execution Runtime。
+> Server 可以判断 Request 可能已经解决，但 User 最终确认 Request 是否真正解决。
 
-### 24.8 Local Intelligence Is Subordinate
+### 28.8 LLM Is Not State Authority
+
+> LLM 可以提出规划和 Completion Proposal，但不直接拥有 Workflow State。
+
+### 28.9 Client Is More Than UI
+
+> Client 是 User Interaction + Local Capability + Execution Runtime。
+
+### 28.10 Local Intelligence Is Subordinate
 
 > Client 可以拥有 Local Agent，但 Local Agent 不拥有全局 Workflow 控制权。
 
 ---
 
-# 25. Non-Goals
+# 29. Non-Goals
 
 本 Spec 暂不定义：
 
@@ -885,7 +1166,7 @@ User 的输入通过 Client 提交给 Server，由 Workflow Engine 决定后续�
 
 ---
 
-# 26. Next Specifications
+# 30. Next Specifications
 
 基于本 Spec，后续规格按以下顺序展开：
 
@@ -925,8 +1206,8 @@ Product
 
 ---
 
-# 27. System Definition
+# 31. System Definition
 
 本系统最终可以概括为：
 
-> **一个由 Central Server 负责 AI Planning 和 Workflow Orchestration、由 AI Client 负责 User Interaction 和 Local Execution、通过 Evidence 驱动持续 Re-planning，并由 User 最终确认 Request 是否真正解决的 Human-in-the-loop AI 系统。**
+> **一个由 Central Server 负责 AI Planning、Request-level Completion Evaluation 和 Workflow Orchestration，由 AI Client 负责 User Interaction 和 Local Execution，通过 Evidence 驱动持续 Re-planning，并在 Server 判断 Request 可能已经解决后，由 User 最终确认 Request 是否真正解决的 Human-in-the-loop AI 系统。**
