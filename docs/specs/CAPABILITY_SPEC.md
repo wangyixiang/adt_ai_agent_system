@@ -1,8 +1,8 @@
 # CAPABILITY_SPEC.md
 
-**Version:** v0.1
-**层级:** Specification — Client 与 Server 共享的 Capability 契约
-**拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
+- **Version:** v0.1
+- **层级:** Specification — Client 与 Server 共享的 Capability 契约
+- **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
 ---
 

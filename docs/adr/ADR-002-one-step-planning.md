@@ -1,7 +1,7 @@
 # ADR-002: Server 一次只下发一个 Step（One-Step Planning）
 
-**Status:** ACCEPTED
-**拆分说明:** 沉淀自原 `SERVER_SPEC.md` v0.2 §10 "One-Step Planning"。
+- **Status:** ACCEPTED
+- **拆分说明:** 沉淀自原 `SERVER_SPEC.md` v0.2 §10 "One-Step Planning"。
 
 ---
 

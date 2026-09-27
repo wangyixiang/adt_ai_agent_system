@@ -1,9 +1,9 @@
 # CLIENT_SPEC.md
 
-**Version:** v0.3
-**Role:** AI Client / User Interaction + Local Execution Runtime
-**层级:** Architecture — 组件角色定位
-**拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
+- **Version:** v0.3
+- **Role:** AI Client / User Interaction + Local Execution Runtime
+- **层级:** Architecture — 组件角色定位
+- **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
 
 ---
 
