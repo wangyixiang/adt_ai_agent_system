@@ -1,8 +1,9 @@
 # REQUIREMENTS.md
 
-**Version:** v0.1（首次编写）
-**层级:** Requirements — 必须做什么
-**关联:** 承接 `PRODUCT.md`。本文件中的场景与约束会反过来要求 `WORKFLOW_SPEC.md` / `CAPABILITY_SPEC.md` / `PROTOCOL_SPEC.md` 做相应扩展，具体在各节末尾标注"待补"。
+- **Version:** v0.2
+- **层级:** Requirements — 必须做什么
+- **关联:** 承接 `PRODUCT.md`。本文件中的场景与约束会反过来要求 `WORKFLOW_SPEC.md` / `CAPABILITY_SPEC.md` / `PROTOCOL_SPEC.md` 做相应扩展，具体在各节末尾标注"待补"。
+**修订说明 (v0.2):** 同步 `PRODUCT.md` v0.2 的决策——移除记录的"可审计/不可篡改"要求，报告改为完全按需生成。原 FR-6（记录不可篡改）已删除，NFR-1 已简化为普通的数据完整性要求。
 
 ---
 
@@ -17,8 +18,8 @@
    * **建议类**：工程师阅读建议，自行离线执行，之后回来告知系统"已解决"。
    * **执行类**：Step 携带明确的"需要人工确认"标记，Client 展示给工程师；确认后才真正执行，拒绝则视为 `REJECTED`，Server 重新规划。
 7. 工程师最终确认问题解决（`workflow.completion_response(solved)`）。
-8. 系统自动把整个 Workflow 归档为 Audit Record（新流程，当前 Spec 未定义，见 §5）。
-9. 工程师或审核人员可随时基于 Audit Record 生成报告（新流程，见 §6）。
+8. 系统自动把整个 Workflow 归档为一份完整记录（Record，新流程，当前 Spec 未定义，见 §5）。
+9. 若客户/工程师需要，可基于 Record 生成报告；不需要时可以不生成，报告不是每次诊断的必需产出（新流程，见 §6）。
 
 ---
 
@@ -30,9 +31,9 @@
 | FR-2 | 诊断过程中动态生成信息收集类 Step，无需预先固定诊断脚本 | 已被 One-Step Planning（`ADR-002`）覆盖 |
 | FR-3 | Capability 需要区分"只读/无副作用"与"有副作用/需人工确认" | **待补**：`CAPABILITY_SPEC.md` 需新增分类字段 |
 | FR-4 | 有副作用的 Capability，在工程师明确确认之前不得执行 | **待补**：需要定义"确认"这个动作本身如何建模——是否复用 `WORKFLOW_SPEC.md` 的 `WAITING` 状态，还是需要专门的确认机制，目前未设计 |
-| FR-5 | Workflow 进入 `COMPLETED` 后自动生成 Audit Record | **待补**：全新概念，见 §5，建议独立输出 `AUDIT_SPEC.md` |
-| FR-6 | Audit Record 一旦生成不可被篡改（含全部 Evidence 和人工确认记录） | **待补**：涉及存储层设计，见 §3 NFR-1 |
-| FR-7 | 支持基于 Audit Record 按需生成人类可读报告 | **待补**：全新，见 §6 |
+| FR-5 | Workflow 进入 `COMPLETED` 后自动生成一份完整记录（Record），不要求不可篡改 | **待补**：全新概念，见 §5，建议独立输出 `RECORD_SPEC.md` |
+| ~~FR-6~~ | ~~Record 不可被篡改~~ | **已删除 (v0.2)**：审计/防篡改需求已被 `PRODUCT.md` v0.2 明确排除，不再作为需求 |
+| FR-7 | 支持基于 Record 按需生成人类可读报告；是否生成、何时生成由客户/工程师决定，不是自动触发的必需步骤 | **待补**：全新，见 §6 |
 | FR-8 | 工程师可在诊断进行中查看当前已收集的证据和进展，不必等到 Completion | **待补**：当前协议只有 Server 主动推送 Step，没有"中途查询已有 Evidence"的读接口 |
 | FR-9 | Capability 集合可插拔，不同 HiL 测试环境可注册各自的 Capability 而不改动核心 Workflow 逻辑 | 命名规范已被 `CAPABILITY_SPEC.md` 覆盖，但"注册/发现机制"目前只有 `capability.sync`，缺少更完整的领域包管理设计 |
 
@@ -40,8 +41,8 @@
 
 ## 3. 非功能需求（NFR）
 
-* **NFR-1 完整性/不可篡改性**：Audit Record 一旦生成，任何后续修改必须留痕而不是覆盖。具体机制（Hash Chain、Append-only 存储、外部时间戳服务等）留给后续技术选型，本文件只确认"必须保证"这个要求本身。
-* **NFR-2 记录保留期限**：取决于具体行业的合规要求，本版本未定，见 §7 开放问题。
+* **NFR-1 记录完整性**：生成的 Record 应包含完整的 Step / Evidence / 人工确认信息，避免遗漏关键字段；不要求审计级别的防篡改机制（原 v0.1 的"不可篡改性"要求已在 v0.2 明确移除）。
+* **NFR-2 记录保留期限**：不再有合规驱动的强制要求，具体保留多久由客户实际需要决定，本版本未定，见 §7 开放问题。
 * **NFR-3 并发性**：`PROTOCOL_SPEC.md` 已支持同一工程师在一个 session 内并行多个 Workflow；但多个工程师是否可能针对**同一套物理测试硬件**同时报告问题、Workflow 之间要不要感知彼此以避免冲突的修复动作，目前完全没有考虑，见 §7 开放问题。
 * **NFR-4 时延**：诊断辅助是工程师现场实时交互场景，Step 往返延迟需要控制在可接受范围内；具体阈值取决于 Capability 本身的执行耗时（"查询状态"和"重新烧录固件"的耗时数量级完全不同），本版本不设统一数值。
 * **NFR-5 弱网/离线容忍度**：测试现场网络可能不稳定。`PROTOCOL_SPEC.md` 的 `session.resume` 提供了断线重连的基础支持，但"诊断过程中长时间离线，Client 能否继续本地执行、事后同步"尚未定义。
