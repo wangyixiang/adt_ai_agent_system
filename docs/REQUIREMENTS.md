@@ -1,6 +1,6 @@
 # REQUIREMENTS.md
 
-- **Version:** v0.7（对齐 `WORKFLOW_SPEC.md` v0.2 的终止状态设计，取代 v0.6）
+- **Version:** v0.8（引用状态同步：`RECORD_SPEC.md`、`REPORT_SPEC.md` 已建成，§7 影响表对应行更新；取代 v0.7）
 - **层级:** Requirements — 必须做什么
 - **关联:** 承接 `PRODUCT.md`。需求编号一经使用即保持稳定；被删除的需求保留编号并标注"已删除"，不重排。
 - **优先级:** P0 = v0.1 必须；P1 = 后续版本。
@@ -75,7 +75,7 @@
 | 编号 | 优先级 | 需求 | 验收标准 |
 |---|---|---|---|
 | FR-23 | P1 | 系统可以对接一个第三方 Knowledge Base，检索相关知识作为诊断的辅助输入 | 检索逻辑、知识库构建与维护均在第三方系统内；本系统只做查询和消费，不实现自己的检索引擎（对齐 `PRODUCT.md` D-5、§7.1） |
-| FR-24 | — | Record 未来可能被沉淀/导出到该第三方 Knowledge Base，供后续检索复用 | **不在当前版本实现范围内**；仅要求 `RECORD_SPEC.md`（待建）的字段设计不与"未来可导出"这个方向产生冲突，不要求现在就实现导出通道（见 §7） |
+| FR-24 | — | Record 未来可能被沉淀/导出到该第三方 Knowledge Base，供后续检索复用 | **不在当前版本实现范围内**；`RECORD_SPEC.md` §8 已按"字段设计不与未来可导出冲突"落地，但仍不实现导出通道（见 §7） |
 
 ---
 
@@ -143,8 +143,8 @@
 | `PROTOCOL_SPEC.md` | `step.dispatch` 需携带"需确认"标记；确认/拒绝消息；取消 Workflow；中途查看进展与证据；请求生成报告；查询 Record；（视 Q-5）用户身份 | FR-4、FR-7、FR-11、FR-14、FR-17 |
 | `SERVER_SPEC.md` | 职责中增加"保存 Record"与"按需生成 Report"；Knowledge 相关职责需说明为对接第三方系统，不自建（已在 `SERVER_SPEC.md` v0.4 落实） | FR-12、FR-17~FR-19、FR-23 |
 | `CLIENT_SPEC.md` | 职责中增加"展示历史 Record"与"发起 Report 生成请求"（已在 `CLIENT_SPEC.md` v0.4 落实） | FR-14、FR-17 |
-| `RECORD_SPEC.md`（待建） | 定义 Record 的结构、保存时机、与 Evidence 的关系；**不需要**为系统内检索/相似案例匹配预留结构（FR-15 已删除），**但字段设计不应与"未来可能被导出到第三方 Knowledge Base"这个方向冲突**（v0.6 新增，见 FR-24） | FR-12~FR-14、FR-24 |
-| `REPORT_SPEC.md`（待建，或并入功能规格） | 定义报告的触发、内容约束（只来自 Record）、输出形式 | FR-17~FR-20 |
+| `RECORD_SPEC.md`（已建成，v0.1） | 定义 Record 的结构、保存时机、与 Evidence 的关系；**不需要**为系统内检索/相似案例匹配预留结构（FR-15 已删除），**但字段设计不应与"未来可能被导出到第三方 Knowledge Base"这个方向冲突**（v0.6 新增，见 FR-24；已在 v0.1 §8 落实） | FR-12~FR-14、FR-24 |
+| `REPORT_SPEC.md`（已建成，v0.1） | 定义报告的触发、内容约束（只来自 Record）、输出形式 | FR-17~FR-20 |
 | 安全规格（待建） | 认证、授权、有副作用动作的权限边界 | NFR-6、Q-1 |
 | 第三方 Knowledge Base 集成规格（待建，v0.6 新增） | 定义与第三方系统的接入协议、检索接口、鉴权 | FR-23、Q-6 |
 

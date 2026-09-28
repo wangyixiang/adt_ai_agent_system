@@ -1,6 +1,6 @@
 # WORKFLOW_SPEC.md
 
-- **Version:** v0.2（补充终止状态、取消语义、确认规则、建议路径，取代 v0.1）
+- **Version:** v0.3（§12 引用状态同步：`RECORD_SPEC.md` 已建成，取代 v0.2）
 - **层级:** Specification — Client 与 Server 共享的行为契约
 - **拆分说明:** 原 v0.2 的 `CLIENT_SPEC.md` 和 `SERVER_SPEC.md` 里，Step 状态机、Evidence 结构、Completion 判定流程被各自定义了一遍，且已经出现细节漂移（例如 Evidence 两种不同的示例结构、Execution Loop 图里 "Done Candidate" 与其余各处 "Completion Candidate" 不一致）。本文件把这些内容整合为唯一权威定义，`architecture/CLIENT_SPEC.md` 与 `architecture/SERVER_SPEC.md` 均应引用本文件，不再各自维护副本。
 
@@ -332,4 +332,4 @@ User 不直接修改 Workflow State；User 的输入始终通过 Client 返回 S
 
 > **Workflow 进入任一终止状态（`COMPLETED` / `FAILED` / `CANCELLED`）时，触发 Record 保存。**
 
-`CANCELLING` 是过渡态，不触发保存——保存动作发生在它最终落到 `CANCELLED` 的那一刻。Record 具体包含哪些字段、如何与 Evidence/Step 关联，由待建的 `RECORD_SPEC.md` 定义；本节只规定"触发时机"这一条属于 Workflow 状态机的自然延伸的规则。
+`CANCELLING` 是过渡态，不触发保存——保存动作发生在它最终落到 `CANCELLED` 的那一刻。Record 具体包含哪些字段、如何与 Evidence/Step 关联，由 `RECORD_SPEC.md` §3 定义；本节只规定"触发时机"这一条属于 Workflow 状态机的自然延伸的规则。

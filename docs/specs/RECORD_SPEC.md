@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.1
+- **Version:** v0.2（§7 引用状态同步：`REPORT_SPEC.md` 已建成，取代 v0.1）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -158,7 +158,7 @@ spec_versions
 * Report 由指定的一份 Record 生成，只在工程师明确请求时触发。
 * Report 的事实性内容必须能追溯到该 Record 的 `entries` 或 `final_result`——不能引入 Record 之外的信息。
 * 生成 Report 不修改 Record；同一份 Record 可以生成多次 Report（例如不同详略程度）。
-* 因为 Record 本身已经是结构化 + 叙事并存的成品文档（§0、§3），Report 生成本质上是对 `summary` / `entries` / `final_result` 的**裁剪、重新排版**，不需要重新理解协议或重新推断事实——具体的裁剪规则、模板留给 `REPORT_SPEC.md`（待建）。
+* 因为 Record 本身已经是结构化 + 叙事并存的成品文档（§0、§3），Report 生成本质上是对 `summary` / `entries` / `final_result` 的**裁剪、重新排版**，不需要重新理解协议或重新推断事实——具体的裁剪规则与模板见 `REPORT_SPEC.md` §3、§5。
 
 ---
 

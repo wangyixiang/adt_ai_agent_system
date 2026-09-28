@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
+- **Version:** v0.5（终止状态措辞对齐 `WORKFLOW_SPEC.md` v0.3；§1.1、§5 引用状态同步 `PRODUCT.md` v0.6 / `REQUIREMENTS.md` v0.7，取代 v0.4）
 - **层级:** Architecture — 系统应该由什么构成
 - **拆分说明:** 本文件从原 `CLIENT_SPEC.md` / `SERVER_SPEC.md` v0.2 中抽取系统级架构内容整合而成。组件各自的角色定位见 `CLIENT_SPEC.md` / `SERVER_SPEC.md`；Step/Workflow/Evidence 的具体契约见 `../specs/WORKFLOW_SPEC.md`。
 
@@ -65,7 +65,7 @@
 
 **说明（v0.4 新增）：**
 
-* `COMPLETED` 之后补充了 `Record` 一步，表示 Workflow 结束时保存完整记录。这不只发生在 `Solved` 分支——已取消、失败、未解决（放弃）等其他终止状态同样会保存 Record（这些终止状态的完整定义见 `../specs/WORKFLOW_SPEC.md`，本图只画主循环，不是完整状态机）。
+* `COMPLETED` 之后补充了 `Record` 一步，表示 Workflow 结束时保存完整记录。这不只发生在 `Solved` 分支——另外两种终止状态（`FAILED`、`CANCELLED`）同样会保存 Record（这些终止状态的完整定义见 `../specs/WORKFLOW_SPEC.md`，本图只画主循环，不是完整状态机）。
 * `Not Solved` 分支指向 `Re-plan`，代表"工程师认为还没解决，继续排查"这条**非终止**路径；工程师主动放弃/取消 Workflow 是另一条独立的终止路径，同样会导向 `Record`，具体状态区分见 `WORKFLOW_SPEC.md`，本图不重复展开。
 
 ### 1.1 关于 Knowledge：第三方系统，不是本系统自建
@@ -76,7 +76,7 @@
 
 这与 `PRODUCT.md` D-5（"不在本系统内建设知识库或历史案例检索能力"）是一致的：D-5 排除的是"自己造一个检索引擎/知识库"，不是"完全不能查任何知识库"。
 
-一个相关但**明确不在本版本范围内**的问题：本系统产生的 Record，未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用？——产品侧已经确认这是未来方向，但本版本不实现任何主动推送机制。这意味着 Record 的具体结构设计（`RECORD_SPEC.md`，待建）需要考虑"以后可能要被导出"，但不需要现在就构建导出通道。具体的第三方系统接口形态，留给后续架构决策（建议后续单独出一条 ADR，而不是散落在本文件里）。
+一个相关但**明确不在本版本范围内**的问题：本系统产生的 Record，未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用？——产品侧已经确认这是未来方向，但本版本不实现任何主动推送机制。这意味着 Record 的结构设计需要考虑"以后可能要被导出"——`RECORD_SPEC.md` §8 已按此给出约束（结构化字段自足、`narrative` 用领域语言书写等），但不需要现在就构建导出通道。具体的第三方系统接口形态，留给后续架构决策（建议后续单独出一条 ADR，而不是散落在本文件里）。
 
 ---
 
@@ -146,7 +146,7 @@ Local Capability
 | Server 角色定位与职责边界 | `architecture/SERVER_SPEC.md` |
 | Step / Workflow / Evidence / Completion 的具体契约（唯一权威定义） | `specs/WORKFLOW_SPEC.md` |
 | Capability 命名规范与 Manifest 格式 | `specs/CAPABILITY_SPEC.md` |
-| 消息 Schema、通信机制 | `specs/PROTOCOL_SPEC.md`（待写） |
-| Record 的结构与保存时机 | `specs/RECORD_SPEC.md`（待建，见 §1.1） |
-| Report 的触发与内容约束 | `specs/REPORT_SPEC.md`（待建） |
+| 消息 Schema、通信机制 | `specs/PROTOCOL_SPEC.md` |
+| Record 的结构与保存时机 | `specs/RECORD_SPEC.md` |
+| Report 的触发与内容约束 | `specs/REPORT_SPEC.md` |
 | 关键架构决策及其被否决的替代方案 | `adr/` |

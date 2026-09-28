@@ -1,6 +1,6 @@
 # CLIENT_SPEC.md
 
-- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
+- **Version:** v0.5（§9 引用状态同步：`RECORD_SPEC.md`、`REPORT_SPEC.md` 已建成；对齐 `PRODUCT.md` v0.6 / `REQUIREMENTS.md` v0.7，取代 v0.4）
 - **Role:** AI Client / User Interaction + Local Execution Runtime
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
@@ -182,5 +182,5 @@ User 最终决定：**这个 Request 是否真的解决了，以及是否需要�
 * 系统级架构图与核心边界原则 → `ARCHITECTURE.md`
 * Step / Evidence / Completion 的具体契约 → `../specs/WORKFLOW_SPEC.md`
 * Capability 命名规范与 Manifest 格式 → `../specs/CAPABILITY_SPEC.md`
-* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`（待建）
-* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`（待建）
+* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`
+* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`

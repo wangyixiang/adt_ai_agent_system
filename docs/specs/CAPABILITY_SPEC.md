@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.3（补充 interruptible 声明，取代 v0.2）
+- **Version:** v0.4（§4 消息名对齐 `PROTOCOL_SPEC.md` v0.3 的 `capability.sync`；§6 `human.manual_action` 条文已落地；取代 v0.3）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -93,7 +93,7 @@ Client 的 Capability 可以动态变化：
 Capability Available → Local Service Started → Capability Updated
 ```
 
-Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capability.manifest` 初次声明、`capability.updated` 增量更新，具体字段见 `PROTOCOL_SPEC.md`，待写）。更新时 side_effect 声明必须一并携带，不能只更新名称。
+Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capability.sync`：`mode: "full"` 用于初次全量声明、`mode: "incremental"` 用于增量更新，具体字段见 `PROTOCOL_SPEC.md` §6）。更新时 side_effect 声明必须一并携带，不能只更新名称。
 
 ---
 
@@ -112,7 +112,7 @@ Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capabi
 
 2. **Capability 声明的真实性**：Client 自主上报"我有什么能力"，Server 直接采信。除了后续 Security Spec 要处理的认证授权问题之外，即使排除恶意场景，"声明与实际实现不一致"也是一个工程问题——建议约定：声明的 Capability 在实际调用时若无法执行，应作为 `execution.failed`（或 `WORKFLOW_SPEC.md` §11 提到的"拒绝执行"信号）处理，而不是静默失败。
 
-3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` v0.4 §4。记录于此，避免以后被重新提出、重新讨论。
+3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
 
 4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
 
@@ -126,4 +126,4 @@ Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capabi
 |---|---|---|
 | `human.manual_action` | 用于"建议"这种解决方式——Server 生成一条指令性的 Step，Client 只需要把 `input.instruction` 展示给工程师；工程师在系统外自行执行后，把观察到的结果作为反馈传回，Client 将其包装为 Evidence。系统本身不执行任何操作，因此不需要额外的确认流程——工程师本人就是那个"决定要不要做"的人。 | `false`（固定值，不需要声明） |
 
-这个设计的完整流程和状态转换，由 `WORKFLOW_SPEC.md` 定义（讨论已经定下方向，具体条文尚未落笔，见变更记录）。
+这个设计的完整流程和状态转换，由 `WORKFLOW_SPEC.md` §6.1（建议路径）定义；协议层完全复用 `step.dispatch` / `step.status`，见 `PROTOCOL_SPEC.md` §8.2。

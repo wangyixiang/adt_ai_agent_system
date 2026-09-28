@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.5（终止状态措辞对齐 `WORKFLOW_SPEC.md` v0.2，取代 v0.4）
+- **Version:** v0.6（§1.1、§9 引用状态同步：`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md` 均已建成；终止状态措辞仍对齐 `WORKFLOW_SPEC.md` v0.3，取代 v0.5）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -132,7 +132,7 @@ Knowledge 和 Context 都是 Planner 的输入，不是 Workflow State——它�
 **关于第三方 Knowledge Base 的边界（v0.4 新增）：**
 
 * 检索逻辑（如何匹配、如何排序、知识库本身的构建与维护）都在第三方系统内，Server 只负责查询和消费结果，不实现自己的检索引擎，也不做历史案例的相似度匹配（对齐 `PRODUCT.md` D-5、`ARCHITECTURE.md` §4 MUST NOT）。
-* **本系统产生的 Record 未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用，是已确认的产品方向，但不在本版本实现范围内**——本版本不构建任何 Record → Knowledge Base 的主动推送机制。这一点影响 `RECORD_SPEC.md`（待建）的结构设计：字段设计应避免与"未来可能被导出"这个方向产生冲突，但不需要现在就为导出预留具体接口。具体的对接方式（推送时机、数据格式、鉴权）建议留给后续单独的 ADR，而不是提前在本文件里假设。
+* **本系统产生的 Record 未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用，是已确认的产品方向，但不在本版本实现范围内**——本版本不构建任何 Record → Knowledge Base 的主动推送机制。这一点已经落到 `RECORD_SPEC.md` §8 的结构设计约束（结构化字段自足、`narrative` 用领域语言书写、`summary` 与 `entries` 并存），但不需要现在就为导出预留具体接口。具体的对接方式（推送时机、数据格式、鉴权）建议留给后续单独的 ADR，而不是提前在本文件里假设。
 
 ---
 
@@ -192,7 +192,7 @@ Server 的核心原则：
 * 系统级架构图与核心边界原则 → `ARCHITECTURE.md`
 * Step / Evidence / Completion 的具体契约 → `../specs/WORKFLOW_SPEC.md`
 * Capability 命名规范与 Manifest 格式 → `../specs/CAPABILITY_SPEC.md`
-* 消息 Schema → `../specs/PROTOCOL_SPEC.md`（待写）
-* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`（待建）
-* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`（待建）
+* 消息 Schema → `../specs/PROTOCOL_SPEC.md`
+* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`
+* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`
 * 关键决策记录 → `../adr/`

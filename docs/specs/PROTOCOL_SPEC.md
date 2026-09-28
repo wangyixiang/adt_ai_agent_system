@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.2（对齐 `WORKFLOW_SPEC.md` v0.2、`CAPABILITY_SPEC.md` v0.3、`RECORD_SPEC.md` v0.1，取代 v0.1）
+**Version:** v0.3（§11 引用状态同步：`REPORT_SPEC.md` 已建成；对齐 `WORKFLOW_SPEC.md` v0.3、`CAPABILITY_SPEC.md` v0.4、`RECORD_SPEC.md` v0.2，取代 v0.2）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -198,7 +198,7 @@ Client                                        Server
 
 * `mode: "full"`：`added` 即为当前全部可用 Capability,`removed` 忽略。用于连接建立时（也可以直接内联在 `session.hello.capabilities` 里，二者等价，`capability.sync` 用于连接建立**之后**的更新）。
 * `mode: "incremental"`：只携带本次变化的新增/移除项，Server 在自己的记录上做增量合并。
-* **`side_effect`、`interruptible` 为必填字段**（v0.2 新增）：对应 `CAPABILITY_SPEC.md` v0.3 §2.1、§2.2。Server 收到缺失这两个字段的声明时，应按该文件规定的保守默认值处理（`side_effect` 缺失视为 `true`，`interruptible` 缺失视为 `false`），而不是拒绝整条声明。
+* **`side_effect`、`interruptible` 为必填字段**（v0.2 新增）：对应 `CAPABILITY_SPEC.md` §2.1、§2.2。Server 收到缺失这两个字段的声明时，应按该文件规定的保守默认值处理（`side_effect` 缺失视为 `true`，`interruptible` 缺失视为 `false`），而不是拒绝整条声明。
 
 Capability 名称必须是 `CAPABILITY_SPEC.md` 中登记的标准名称；Server 收到未登记名称时不应报错拒绝整条消息，而应忽略该项并记录警告——避免因为一个新 Capability 命名还没来得及登记，整个连接被卡住。
 
@@ -237,7 +237,7 @@ Client                              Server
 { "workflow_id": "wf_001", "workflow_status": "CREATED" }
 ```
 
-`workflow_status` 完整枚举（v0.2 新增，此前只在示例里出现过 `"CREATED"`，未列全，对齐 `WORKFLOW_SPEC.md` v0.2 §2）：
+`workflow_status` 完整枚举（v0.2 新增，此前只在示例里出现过 `"CREATED"`，未列全，对齐 `WORKFLOW_SPEC.md` §2）：
 
 ```text
 CREATED | RUNNING | CANCELLING | COMPLETED | FAILED | CANCELLED
@@ -486,7 +486,7 @@ step.status   step.status
 }
 ```
 
-* `options.detail_level` 的具体取值范围（例如 `full` / `summary`）留给 `REPORT_SPEC.md`（待建）定义，本版本先约定字段位置。
+* `options.detail_level` 的具体取值范围（`summary` / `full`）由 `REPORT_SPEC.md` §3 定义；`report.format` 的取值（本版本固定为 `markdown`）由 `REPORT_SPEC.md` §4 定义。本文件只约定字段位置。
 * 生成 Report **不修改** Record，也不创建新的 `record_id`；同一个 `record_id` 可以多次调用 `report.generate_request`，每次都基于当时的（不会变化的）Record 内容重新生成。
 * 请求了不存在的 `record_id` 时，同样返回 `protocol.error`（code=`unknown_record`）。
 
