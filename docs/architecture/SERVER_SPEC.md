@@ -1,9 +1,24 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
+- **Version:** v0.5（终止状态措辞对齐 `WORKFLOW_SPEC.md` v0.2，取代 v0.4）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
-- **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`（待写）。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
+- **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
+
+---
+
+## 变更记录（v0.4 → v0.5）
+
+- **§3 第14条措辞更新**：原文"已解决、未解决/放弃、已取消、失败等任一终止状态"改为和 `WORKFLOW_SPEC.md` v0.2 一致的三状态表述（`COMPLETED`/`FAILED`/`CANCELLED`）。这个措辞是在 v0.4 写的时候沿用了当时 REQUIREMENTS.md 的四分类说法，`WORKFLOW_SPEC.md` 后来把"已取消"和"未解决(放弃)"合并成一个状态，本次同步。
+
+---
+
+## 变更记录（v0.3 → v0.4）
+
+- **Knowledge 澄清为第三方系统**：§1、§3、§4 涉及 Knowledge 的措辞统一改为"从第三方 Knowledge Base 检索"，明确 Server 不自建知识库、不自建案例匹配逻辑（对齐 `PRODUCT.md` D-5，详见 `ARCHITECTURE.md` §1.1）。
+- **补充 Record / Report 职责**：v0.3 设计时 Record/Report 概念尚未被推演出来，因此完全没有出现在 Server 的职责列表里。本版本在 §1、§3 补上"保存 Record"与"按需生成 Report"（对应 `REQUIREMENTS.md` FR-12、FR-17~FR-19）。
+- **新增一条 MUST NOT**：不自行构建历史案例检索/相似问题匹配逻辑（对齐 D-5）。
+- 其余内容（LLM Role、两条关键架构决策、Server/Client 边界）未发生实质变化。
 
 ---
 
@@ -84,7 +99,7 @@ Server MUST：
 11. 根据 Evidence 更新 Context
 12. 决定是否继续 Re-plan
 13. 在达到系统可判断的完成条件后进入最终确认流程
-14. **在 Workflow 结束（已解决、未解决/放弃、已取消、失败等任一终止状态）时，保存完整 Record**（v0.4 新增，对应 REQUIREMENTS FR-12、FR-13）
+14. **在 Workflow 结束（`COMPLETED` / `FAILED` / `CANCELLED` 三种终止状态之一）时，保存完整 Record**（v0.4 新增，v0.5 措辞对齐 `WORKFLOW_SPEC.md` v0.2 的终止状态设计，对应 REQUIREMENTS FR-12、FR-13）
 15. **在 User 明确请求时，基于指定 Record 生成 Report；不请求则不生成**（v0.4 新增，对应 REQUIREMENTS FR-17~FR-19）
 
 Server MUST NOT：
