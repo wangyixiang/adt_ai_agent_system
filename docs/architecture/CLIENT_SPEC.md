@@ -1,6 +1,6 @@
 # CLIENT_SPEC.md
 
-- **Version:** v0.3
+- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
 - **Role:** AI Client / User Interaction + Local Execution Runtime
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
@@ -22,6 +22,8 @@ Client 不负责整个问题的规划，而负责：
 * 收集并返回 Evidence
 * 在需要时向 User 获取信息
 * 在 Server 认为 Request 已达到完成条件后，让 User 对最终结果进行确认
+* **让 User 查看历史 Record（列表与详情）**（v0.4 新增）
+* **在 User 明确请求时，向 Server 发起 Report 生成请求，并展示结果**（v0.4 新增）
 
 核心原则：
 
@@ -49,7 +51,7 @@ Client
 └── Evidence Collector
 ```
 
-Capability Registry 与 Step Executor 遵循 `../specs/CAPABILITY_SPEC.md` 与 `../specs/WORKFLOW_SPEC.md` 中定义的契约，本文件不重复定义。
+Capability Registry 与 Step Executor 遵循 `../specs/CAPABILITY_SPEC.md` 与 `../specs/WORKFLOW_SPEC.md` 中定义的契约，本文件不重复定义。Record 的查看与 Report 的请求（§1、§3 新增职责）不需要新增内部模块，属于 User Interaction 的一部分——是否需要独立拆出（例如 "Record Viewer"）留给实现阶段决定，本文件不预设。
 
 ---
 
@@ -67,6 +69,8 @@ Client MUST：
 8. 处理当前 Step 所需的 User Interaction
 9. 展示 Workflow 最终结果
 10. 在需要时获取 User 对 Request 是否解决的最终确认
+11. **展示历史 Record 列表与详情，供 User 查看**（v0.4 新增，对应 `REQUIREMENTS.md` FR-14）
+12. **在 User 明确请求时，向 Server 发起针对指定 Record 的 Report 生成请求，并展示生成结果；User 不请求则不发起**（v0.4 新增，对应 `REQUIREMENTS.md` FR-17）
 
 Client MUST NOT：
 
@@ -75,6 +79,7 @@ Client MUST NOT：
 * 修改 Server 维护的 Workflow 状态
 * 在 Server 未要求的情况下自主创建新的全局 Workflow
 * 将本地 Agent 的判断直接作为 Workflow 最终状态
+* **自行生成 Report 内容，或在未收到 Server 返回结果前展示"已生成"的报告**（v0.4 新增）：Report 的内容必须来自 Server 基于 Record 生成的结果（`REQUIREMENTS.md` FR-18），Client 只负责发起请求和展示，不能本地拼凑或缓存伪造内容
 
 ---
 
@@ -156,7 +161,7 @@ v0.3 只定义最基本的边界：
 
 Client 可以根据本地权限、用户授权或运行环境拒绝某个 Step。
 
-具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec；Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）见 `../specs/WORKFLOW_SPEC.md` §11 的待补项。
+具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec；Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）见 `../specs/WORKFLOW_SPEC.md` §11 的待补项。查看 Record、请求 Report 是否需要额外的权限校验（例如 Q-2：Record 谁能查看），留给该安全规格统一处理，本文件不重复定义。
 
 ---
 
@@ -166,9 +171,9 @@ Client 的核心原则：
 
 > **Client 是 User Interaction + Local Execution Runtime，而不是 Workflow Planner。**
 
-Server 决定：**下一步做什么。**
-Client 决定：**本地是否允许做，以及如何利用本地能力执行。**
-User 最终决定：**这个 Request 是否真的解决了。**
+Server 决定：**下一步做什么，以及 Record/Report 的内容。**
+Client 决定：**本地是否允许做、如何利用本地能力执行，以及如何呈现 Record 与 Report 的用户入口。**
+User 最终决定：**这个 Request 是否真的解决了，以及是否需要生成报告。**
 
 ---
 
@@ -177,3 +182,5 @@ User 最终决定：**这个 Request 是否真的解决了。**
 * 系统级架构图与核心边界原则 → `ARCHITECTURE.md`
 * Step / Evidence / Completion 的具体契约 → `../specs/WORKFLOW_SPEC.md`
 * Capability 命名规范与 Manifest 格式 → `../specs/CAPABILITY_SPEC.md`
+* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`（待建）
+* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`（待建）

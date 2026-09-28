@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.3
+- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`（待写）。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-Central Server 是整个系统的 AI Brain + Context Engine + Knowledge Engine + Workflow Orchestrator。
+Central Server 是整个系统的 AI Brain + Context Engine + Knowledge Engine（对接第三方 Knowledge Base，不自建知识库，见 `ARCHITECTURE.md` §1.1） + Workflow Orchestrator。
 
 Server 负责：
 
@@ -17,13 +17,15 @@ Server 负责：
 * 理解 User Request
 * 管理 Workflow
 * 组合 Context
-* 提取 Knowledge
+* 从第三方 Knowledge Base 检索相关 Knowledge（v0.4：措辞由"提取 Knowledge"改为强调"第三方"，避免被误读为自建检索）
 * 调用 LLM / Planner
 * 根据 Client Capability 制定下一步
 * 一次只生成一个 Step
 * 根据 Client 返回的 Evidence 重新规划
 * 判断是否达到系统可判断的完成条件
 * 将最终结果交给 Client，由 User 确认 Request 是否真正解决
+* **在 Workflow 结束（任一终止状态）时保存完整 Record**（v0.4 新增）
+* **在用户需要时，基于 Record 生成 Report**（v0.4 新增）
 
 核心原则：
 
@@ -43,7 +45,7 @@ Server 负责：
               │              │
               │ Request      │
               │ Context      │
-              │ Knowledge    │
+              │ Knowledge*   │
               │ Workflow     │
               │ Planner      │
               └──────┬───────┘
@@ -61,6 +63,8 @@ Server 负责：
                   Server
 ```
 
+*`Knowledge` = 对第三方 Knowledge Base 的检索能力，非本系统自建，见 `ARCHITECTURE.md` §1.1。
+
 ---
 
 ## 3. Responsibilities
@@ -71,7 +75,7 @@ Server MUST：
 2. 创建和维护 Workflow
 3. 管理 Workflow 状态
 4. 组合当前 Context
-5. 获取相关 Knowledge
+5. 从第三方 Knowledge Base 检索相关 Knowledge，并将其作为 Context 的一部分提供给 Planner（v0.4：措辞调整，见变更记录）
 6. 获取并考虑 Client Capability
 7. 调用 LLM / Planner
 8. 生成当前 Step
@@ -80,6 +84,8 @@ Server MUST：
 11. 根据 Evidence 更新 Context
 12. 决定是否继续 Re-plan
 13. 在达到系统可判断的完成条件后进入最终确认流程
+14. **在 Workflow 结束（已解决、未解决/放弃、已取消、失败等任一终止状态）时，保存完整 Record**（v0.4 新增，对应 REQUIREMENTS FR-12、FR-13）
+15. **在 User 明确请求时，基于指定 Record 生成 Report；不请求则不生成**（v0.4 新增，对应 REQUIREMENTS FR-17~FR-19）
 
 Server MUST NOT：
 
@@ -87,6 +93,7 @@ Server MUST NOT：
 * 绕过 Client 访问本地资源
 * 让 LLM 直接修改 Workflow authoritative state
 * 一次向 Client 下发完整的未来执行计划
+* **自行构建历史案例检索/相似问题匹配逻辑**（v0.4 新增）：这部分逻辑交给第三方 Knowledge Base 承担，不在本系统内实现（对齐 `PRODUCT.md` D-5）
 
 ---
 
@@ -99,13 +106,18 @@ User Request + Conversation + Previous Steps + Evidence
 + Client Capability + Knowledge + Current Workflow State
 ```
 
-Server 在每次 Re-plan 前重新组合 Context。Knowledge 可以从 Knowledge Base 检索获得：
+Server 在每次 Re-plan 前重新组合 Context。**Knowledge 来自第三方 Knowledge Base**（v0.4 澄清）：
 
 ```text
-User Request → Knowledge Retrieval → Relevant Knowledge → Context → LLM
+User Request → Knowledge Retrieval（查询第三方 Knowledge Base） → Relevant Knowledge → Context → LLM
 ```
 
 Knowledge 和 Context 都是 Planner 的输入，不是 Workflow State——它们可以影响 LLM 提出什么 Step，但不具备直接改变 Workflow 状态的权力（见下一节）。
+
+**关于第三方 Knowledge Base 的边界（v0.4 新增）：**
+
+* 检索逻辑（如何匹配、如何排序、知识库本身的构建与维护）都在第三方系统内，Server 只负责查询和消费结果，不实现自己的检索引擎，也不做历史案例的相似度匹配（对齐 `PRODUCT.md` D-5、`ARCHITECTURE.md` §4 MUST NOT）。
+* **本系统产生的 Record 未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用，是已确认的产品方向，但不在本版本实现范围内**——本版本不构建任何 Record → Knowledge Base 的主动推送机制。这一点影响 `RECORD_SPEC.md`（待建）的结构设计：字段设计应避免与"未来可能被导出"这个方向产生冲突，但不需要现在就为导出预留具体接口。具体的对接方式（推送时机、数据格式、鉴权）建议留给后续单独的 ADR，而不是提前在本文件里假设。
 
 ---
 
@@ -136,6 +148,8 @@ LLM 不负责：
 
 Step/Workflow 的具体状态机、Step Schema、Evidence 结构、Completion 判定流程，均已抽取到 `../specs/WORKFLOW_SPEC.md`，作为 Client 与 Server 共享的唯一权威契约，本文件不再重复定义。
 
+> **v0.4 备注：** 是否需要为"Server 与第三方 Knowledge Base 的集成方式"、"Record 未来导出到 Knowledge Base"单独补一条 ADR，建议在下一次架构评审时决定——这两点目前只是在本文件和 `ARCHITECTURE.md` §1.1 里做了文字说明，还没有经过"排除替代方案"的决策过程，不应该被当作已经定案的架构决策。
+
 ---
 
 ## 7. Server / Client 边界
@@ -150,7 +164,7 @@ Server 的核心原则：
 
 > **Server 不负责执行整个解决方案，而是持续决定当前最合理的下一步。**
 
-整个系统形成：**Request → Plan → Step → Execute → Evidence → Re-plan → ... → User Confirmation**
+整个系统形成：**Request → Plan → Step → Execute → Evidence → Re-plan → ... → User Confirmation → Record → (按需) Report**
 
 最终：
 
@@ -164,4 +178,6 @@ Server 的核心原则：
 * Step / Evidence / Completion 的具体契约 → `../specs/WORKFLOW_SPEC.md`
 * Capability 命名规范与 Manifest 格式 → `../specs/CAPABILITY_SPEC.md`
 * 消息 Schema → `../specs/PROTOCOL_SPEC.md`（待写）
+* Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`（待建）
+* Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`（待建）
 * 关键决策记录 → `../adr/`

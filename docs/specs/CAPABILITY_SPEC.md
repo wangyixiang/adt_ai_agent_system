@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.2（对齐 HiL 场景与 side_effect 声明，取代 v0.1）
+- **Version:** v0.3（补充 interruptible 声明，取代 v0.2）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -42,6 +42,17 @@ Server 根据这些 Capability 决定是否以及如何利用 Client 的本地�
 * `side_effect: false`：只读/无副作用操作。Server 可以直接下发对应 Step，不需要工程师确认即可执行。
 * `side_effect: true`：会改变硬件、被测对象或本地环境状态的操作。Server 下发这类 Step 前，必须先让工程师确认（具体确认流程——Step 什么时候进入 WAITING、拒绝时如何处理——由 `WORKFLOW_SPEC.md` 定义，本文件只负责声明这个属性）。
 * 声明必须保守：无法确定是否有副作用时，应声明为 `true`，而不是默认 `false`——这条对应 `terminal.execute_command` 的处理方式，因为终端命令内容不可预知,不能假设它总是安全的。
+
+### 2.2 interruptible 声明规则（v0.2 新增）
+
+呼应 `WORKFLOW_SPEC.md` 的 Workflow 取消语义：工程师可以随时表达"取消"意图，但如果当前正在执行一个不可中途打断的物理操作（HiL 场景下很常见，例如测试台正在执行一段不能中途停止的动作），系统不能粗暴地要求 Client 立即中止。
+
+* `interruptible: true`：该 Capability 的执行可以被安全中止，Client 收到取消信号后可以立即停止。
+* `interruptible: false`：该 Capability 的执行一旦开始就必须让它自然结束，不能中途打断。
+* **未声明时默认视为 `false`**（保守处理），原因和 `side_effect` 未声明时默认 `true` 是同一个原则：宁可让取消晚一点生效，也不要在不确定的情况下贸然打断一个可能造成危害的物理操作。
+* 具体的取消流程（Workflow 何时进入 `CANCELLING`、何时最终转为 `CANCELLED`）由 `WORKFLOW_SPEC.md` 定义，本文件只负责声明这个属性。
+
+现有示例的 `interruptible` 取值：`filesystem.read_file` / `docker.inspect_container` / `test_rig.read_signal_log` 等只读操作均为 `true`（读取过程本身很短，也没有半途而废的风险）；`test_rig.trigger_reset` 视为 `false`（一旦触发重置，中途打断可能让被测对象处于不确定状态，比等它跑完更危险）。
 
 ---
 
@@ -103,7 +114,7 @@ Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capabi
 
 3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` v0.4 §4。记录于此，避免以后被重新提出、重新讨论。
 
-4. **是否需要"可中断（interruptible）"声明（v0.2 新增，待决）**：`WORKFLOW_SPEC.md` 关于 Workflow 取消语义的讨论中提出——如果一个 Step 正在执行不可打断的物理操作（例如测试台正在执行一个不能中途停止的动作），取消 Workflow 时不能粗暴地要求 Client 立即中止。这可能需要类似 `side_effect` 的声明，例如 `interruptible: true/false`，但这个字段该怎么定、由谁在什么时候使用，还没有定案，标记为待决项，不在本版本加。
+4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
 
 ---
 

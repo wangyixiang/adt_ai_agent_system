@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-- **Version:** v0.3
+- **Version:** v0.4（对齐 `PRODUCT.md` / `REQUIREMENTS.md` v0.5，取代 v0.3）
 - **层级:** Architecture — 系统应该由什么构成
 - **拆分说明:** 本文件从原 `CLIENT_SPEC.md` / `SERVER_SPEC.md` v0.2 中抽取系统级架构内容整合而成。组件各自的角色定位见 `CLIENT_SPEC.md` / `SERVER_SPEC.md`；Step/Workflow/Evidence 的具体契约见 `../specs/WORKFLOW_SPEC.md`。
 
@@ -21,7 +21,7 @@
               │   SERVER    │
               │             │
               │   Context   │
-              │   Knowledge │
+              │   Knowledge │ ←── 第三方 Knowledge Base（检索，见 §1.1）
               │   Workflow  │
               │   Planner   │
               └──────┬──────┘
@@ -56,9 +56,27 @@
                │             │
                ▼             ▼
           COMPLETED       Re-plan
+               │
+               ▼
+             Record
 ```
 
 *（原 SERVER_SPEC.md §21 "Core Architecture"、§12 "Execution Loop" 已统一术语后合并于此；原图中 §12 使用的 "Done Candidate" 与其余各处 "Completion Candidate" 不一致，本文件统一采用 "Completion Candidate"，"Done Candidate" 视为废弃写法。）*
+
+**说明（v0.4 新增）：**
+
+* `COMPLETED` 之后补充了 `Record` 一步，表示 Workflow 结束时保存完整记录。这不只发生在 `Solved` 分支——已取消、失败、未解决（放弃）等其他终止状态同样会保存 Record（这些终止状态的完整定义见 `../specs/WORKFLOW_SPEC.md`，本图只画主循环，不是完整状态机）。
+* `Not Solved` 分支指向 `Re-plan`，代表"工程师认为还没解决，继续排查"这条**非终止**路径；工程师主动放弃/取消 Workflow 是另一条独立的终止路径，同样会导向 `Record`，具体状态区分见 `WORKFLOW_SPEC.md`，本图不重复展开。
+
+### 1.1 关于 Knowledge：第三方系统，不是本系统自建
+
+`Knowledge` 在图上是 Server 组合 Context 时的一个输入来源，具体含义是：
+
+> **Server 通过集成/查询的方式，从一个第三方 Knowledge Base 系统里检索相关知识，作为 Planner 的输入之一。检索逻辑、知识库的构建和维护都在第三方系统内，本系统不实现自己的检索引擎，也不在内部做历史案例的相似度匹配。**
+
+这与 `PRODUCT.md` D-5（"不在本系统内建设知识库或历史案例检索能力"）是一致的：D-5 排除的是"自己造一个检索引擎/知识库"，不是"完全不能查任何知识库"。
+
+一个相关但**明确不在本版本范围内**的问题：本系统产生的 Record，未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用？——产品侧已经确认这是未来方向，但本版本不实现任何主动推送机制。这意味着 Record 的具体结构设计（`RECORD_SPEC.md`，待建）需要考虑"以后可能要被导出"，但不需要现在就构建导出通道。具体的第三方系统接口形态，留给后续架构决策（建议后续单独出一条 ADR，而不是散落在本文件里）。
 
 ---
 
@@ -67,7 +85,7 @@
 | 组件 | 职责 | 详见 |
 |---|---|---|
 | **Client** | User Interaction + Local Execution Runtime | `CLIENT_SPEC.md` |
-| **Server** | AI Brain + Context Engine + Knowledge Engine + Workflow Orchestrator | `SERVER_SPEC.md` |
+| **Server** | AI Brain + Context Engine + Knowledge Engine（对接第三方 Knowledge Base，见 §1.1） + Workflow Orchestrator | `SERVER_SPEC.md` |
 | **Workflow Engine**（Server 内部） | Workflow / Step 状态的唯一权威 | `SERVER_SPEC.md`, ADR-001 |
 | **Local Capability / Agent**（Client 内部） | 实际执行本地操作、产生 Evidence | `CLIENT_SPEC.md`, `../specs/CAPABILITY_SPEC.md` |
 
@@ -116,6 +134,7 @@ Local Capability
 * 绕过 Client 访问本地资源
 * 让 LLM 直接修改 Workflow authoritative state
 * 一次向 Client 下发完整的未来执行计划
+* **自行构建历史案例检索/相似问题匹配逻辑**（v0.4 新增）：历史 Record 的沉淀与检索交由第三方 Knowledge Base 承担，不在本系统内实现（对齐 `PRODUCT.md` D-5、§1.1）
 
 ---
 
@@ -128,4 +147,6 @@ Local Capability
 | Step / Workflow / Evidence / Completion 的具体契约（唯一权威定义） | `specs/WORKFLOW_SPEC.md` |
 | Capability 命名规范与 Manifest 格式 | `specs/CAPABILITY_SPEC.md` |
 | 消息 Schema、通信机制 | `specs/PROTOCOL_SPEC.md`（待写） |
+| Record 的结构与保存时机 | `specs/RECORD_SPEC.md`（待建，见 §1.1） |
+| Report 的触发与内容约束 | `specs/REPORT_SPEC.md`（待建） |
 | 关键架构决策及其被否决的替代方案 | `adr/` |
