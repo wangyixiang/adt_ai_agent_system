@@ -3,7 +3,7 @@
 - **Version:** v0.2
 - **层级:** Requirements — 必须做什么
 - **关联:** 承接 `PRODUCT.md`。本文件中的场景与约束会反过来要求 `WORKFLOW_SPEC.md` / `CAPABILITY_SPEC.md` / `PROTOCOL_SPEC.md` 做相应扩展，具体在各节末尾标注"待补"。
-**修订说明 (v0.2):** 同步 `PRODUCT.md` v0.2 的决策——移除记录的"可审计/不可篡改"要求，报告改为完全按需生成。原 FR-6（记录不可篡改）已删除，NFR-1 已简化为普通的数据完整性要求。
+
 
 ---
 
@@ -31,17 +31,16 @@
 | FR-2 | 诊断过程中动态生成信息收集类 Step，无需预先固定诊断脚本 | 已被 One-Step Planning（`ADR-002`）覆盖 |
 | FR-3 | Capability 需要区分"只读/无副作用"与"有副作用/需人工确认" | **待补**：`CAPABILITY_SPEC.md` 需新增分类字段 |
 | FR-4 | 有副作用的 Capability，在工程师明确确认之前不得执行 | **待补**：需要定义"确认"这个动作本身如何建模——是否复用 `WORKFLOW_SPEC.md` 的 `WAITING` 状态，还是需要专门的确认机制，目前未设计 |
-| FR-5 | Workflow 进入 `COMPLETED` 后自动生成一份完整记录（Record），不要求不可篡改 | **待补**：全新概念，见 §5，建议独立输出 `RECORD_SPEC.md` |
-| ~~FR-6~~ | ~~Record 不可被篡改~~ | **已删除 (v0.2)**：审计/防篡改需求已被 `PRODUCT.md` v0.2 明确排除，不再作为需求 |
-| FR-7 | 支持基于 Record 按需生成人类可读报告；是否生成、何时生成由客户/工程师决定，不是自动触发的必需步骤 | **待补**：全新，见 §6 |
-| FR-8 | 工程师可在诊断进行中查看当前已收集的证据和进展，不必等到 Completion | **待补**：当前协议只有 Server 主动推送 Step，没有"中途查询已有 Evidence"的读接口 |
-| FR-9 | Capability 集合可插拔，不同 HiL 测试环境可注册各自的 Capability 而不改动核心 Workflow 逻辑 | 命名规范已被 `CAPABILITY_SPEC.md` 覆盖，但"注册/发现机制"目前只有 `capability.sync`，缺少更完整的领域包管理设计 |
+| FR-5 | Workflow 进入 `COMPLETED` 后自动生成一份完整记录（Record）| **待补**：全新概念，见 §5，建议独立输出 `RECORD_SPEC.md` |
+| FR-6 | 支持基于 Record 按需生成人类可读报告；是否生成、何时生成由客户/工程师决定，不是自动触发的必需步骤 | **待补**：全新，见 §6 |
+| FR-7 | 工程师可在诊断进行中查看当前已收集的证据和进展，不必等到 Completion | **待补**：当前协议只有 Server 主动推送 Step，没有"中途查询已有 Evidence"的读接口 |
+| FR-8 | Capability 集合可插拔，不同 HiL 测试环境可注册各自的 Capability 而不改动核心 Workflow 逻辑 | 命名规范已被 `CAPABILITY_SPEC.md` 覆盖，但"注册/发现机制"目前只有 `capability.sync`，缺少更完整的领域包管理设计 |
 
 ---
 
 ## 3. 非功能需求（NFR）
 
-* **NFR-1 记录完整性**：生成的 Record 应包含完整的 Step / Evidence / 人工确认信息，避免遗漏关键字段；不要求审计级别的防篡改机制（原 v0.1 的"不可篡改性"要求已在 v0.2 明确移除）。
+* **NFR-1 记录完整性**：生成的 Record 应包含完整的 Step / Evidence / 人工确认信息，避免遗漏关键字段；
 * **NFR-2 记录保留期限**：不再有合规驱动的强制要求，具体保留多久由客户实际需要决定，本版本未定，见 §7 开放问题。
 * **NFR-3 并发性**：`PROTOCOL_SPEC.md` 已支持同一工程师在一个 session 内并行多个 Workflow；但多个工程师是否可能针对**同一套物理测试硬件**同时报告问题、Workflow 之间要不要感知彼此以避免冲突的修复动作，目前完全没有考虑，见 §7 开放问题。
 * **NFR-4 时延**：诊断辅助是工程师现场实时交互场景，Step 往返延迟需要控制在可接受范围内；具体阈值取决于 Capability 本身的执行耗时（"查询状态"和"重新烧录固件"的耗时数量级完全不同），本版本不设统一数值。
@@ -57,12 +56,12 @@
 
 ---
 
-## 5. 新概念：Audit Record（需要独立 Spec）
+## 5. 新概念：Record（需要独立 Spec）
 
-Audit Record 应至少包含：
+Record 应至少包含：
 
 ```text
-Audit Record
+Record
 ├── original_user_request     原始自然语言问题
 ├── workflow_id / 时间范围
 ├── steps[]                   每个 Step 的 objective / capability / input
@@ -71,13 +70,13 @@ Audit Record
 └── final_resolution           最终结论（问题是什么、如何解决的）
 ```
 
-Audit Record **不是** Evidence 的另一个名字：Evidence 是诊断过程中的临时依据（`WORKFLOW_SPEC.md` 里定位为 Re-plan 的输入），Audit Record 是 Workflow 结束后对整个生命周期的完整封存，两者的可变性、保留策略、访问权限都应该不同。具体 Schema 本文件不展开，建议单独输出 `AUDIT_SPEC.md`。
+Record **不是** Evidence 的另一个名字：Evidence 是诊断过程中的临时依据（`WORKFLOW_SPEC.md` 里定位为 Re-plan 的输入）， Record 是 Workflow 结束后对整个生命周期的完整封存，两者的可变性、保留策略、访问权限都应该不同。具体 Schema 本文件不展开，建议单独输出 `RECORD_SPEC.md`。
 
 ---
 
 ## 6. 新概念：Report（需要独立 Spec 或功能规格）
 
-报告的受众、格式、模板化程度目前都是开放问题（见 §7）。本文件只确认这是一个必须支持的功能：基于 Audit Record 按需生成，不需要重新收集数据。
+报告的受众、格式、模板化程度目前都是开放问题（见 §7）。本文件只确认这是一个必须支持的功能：基于 Record 按需生成，不需要重新收集数据。
 
 ---
 
@@ -85,7 +84,7 @@ Audit Record **不是** Evidence 的另一个名字：Evidence 是诊断过程�
 
 1. 报告的受众/格式：面向内部工程师的简报，还是要满足特定认证机构的格式要求？两者对模板设计的要求差异很大。
 2. 谁有权限确认执行有副作用的修复动作：报告问题的工程师本人，还是需要更高权限的审批？
-3. Audit Record 的访问权限模型：谁能查看/导出，是否需要脱敏？
+3. Record 的访问权限模型：谁能查看/导出，是否需要脱敏？
 4. 记录保留期限的具体要求（取决于最终落地的具体行业/客户）。
 5. 多工程师是否可能针对同一套物理测试硬件同时报告问题？如果可能，Workflow 之间要不要感知彼此，避免同时对同一硬件执行冲突的修复动作？
 
@@ -95,6 +94,5 @@ Audit Record **不是** Evidence 的另一个名字：Evidence 是诊断过程�
 
 ## 8. 非目标（承接 `PRODUCT.md`，具体化）
 
-* 不在 v0.1 定义具体的报告模板格式。
-* 不在 v0.1 解决多工程师并发操作同一物理硬件的冲突问题（见 §7-5，作为开放问题保留）。
-* 不在 v0.1 选型具体的不可篡改存储技术方案（见 NFR-1）。
+* 不定义具体的报告模板格式。
+* 不解决多工程师并发操作同一物理硬件的冲突问题（见 §7-5，作为开放问题保留）。
