@@ -424,6 +424,7 @@ import { DEFAULT_GUARDRAILS } from "../../src/workflow/guardrails";
 import { TEST_DATABASE_URL } from "@adt/test-support";
 
 let pool: ReturnType<typeof createPool>;
+let store: PostgresWorkflowStore;
 let engine: WorkflowEngine;
 const clock = { t: 1000 };
 
@@ -434,10 +435,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   await pool.query("TRUNCATE workflows, workflow_steps, workflow_events");
   clock.t = 1000;
-  engine = new WorkflowEngine({
-    store: new PostgresWorkflowStore(pool),
-    now: () => clock.t,
-  });
+  store = new PostgresWorkflowStore(pool);
+  engine = new WorkflowEngine({ store, now: () => clock.t });
 });
 afterAll(async () => { await pool.end(); });
 
@@ -496,6 +495,22 @@ describe("WorkflowEngine basics", () => {
 
     await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow();
   });
+
+  it("fails with time_budget when the workflow runs too long", async () => {
+    const limited = new WorkflowEngine({
+      store,
+      now: () => clock.t,
+      guardrails: { ...DEFAULT_GUARDRAILS, timeBudgetMs: 500 },
+    });
+    const wf = await limited.create("usr_1", "sess_1", { text: "x" }, open);
+    clock.t = 2000;
+
+    await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow(/time_budget/);
+
+    const after = await limited.get(wf.id);
+    expect(after!.state).toBe("FAILED");
+    expect(after!.terminalReason).toBe("time_budget");
+  });
 });
 ```
 
@@ -506,7 +521,9 @@ Expected: FAIL
 
 - [ ] **Step 3: 实现**
 
-`create`：写入 `CREATED` + `workflow_created` 事件。`dispatchStep`：若 Workflow 为终态 → 抛 `GuardrailError`（拒绝新 Step）；若为 `CREATED` → 转 `RUNNING`；计算 `stepCount` 并检查护栏（`step_limit`）→ 触顶则 `FAILED(step_limit)` + `guardrail_triggered` + `workflow_terminated`，并抛 `GuardrailError`，不再下发；否则创建 `PENDING` Step + `step_dispatched`。`applyStepStatus`：读 Step；若已是终态 → 忽略（除 `UNKNOWN` 对账，见 Task 6）并返回当前 Workflow；否则校验 `canTransitionStep`，写入新状态 + `step_status` 事件；若 Workflow 为 `CANCELLING` 且该 Step 到达终态 → 收敛 `CANCELLED`（见 Task 6）；`FAILED` 且为只读时累计连续重试并检查 `retry_limit`。`confirmCompletion("solved")` → `COMPLETED` + `workflow_terminated`；`"not_solved"` → `notSolvedRounds + 1`，检查 `user_round_limit`，否则保持 `RUNNING` + `completion_response` 事件。`reviseCriteria` → `criteria_revised` 事件 + 新 revision。终态转换后调用 `deps.onTerminated`（Task 7 用于回收，P2b 用于生成 Record）。
+`create`：写入 `CREATED` + `workflow_created` 事件。`dispatchStep`：若 Workflow 为终态 → 抛 `GuardrailError`（拒绝新 Step）；若为 `CREATED` → 转 `RUNNING`；计算 `stepCount = 已有步数 + 1` 与 `elapsedMs = now() - createdAt`，用 `breachedGuardrail` 检查 → 触顶则 `FAILED(reason)` + `guardrail_triggered` + `workflow_terminated`，并抛 `GuardrailError`，不再下发；否则创建 `PENDING` Step + `step_dispatched`。`applyStepStatus`：读 Step；若已是终态 → 忽略并返回当前 Workflow；若 `canTransitionStep` 不允许 → 同样忽略；否则写入新状态（`WAITING` 时记录 `waitClass`）+ `step_status` 事件。`confirmCompletion("solved")` → `COMPLETED` + `workflow_terminated`；`"not_solved"` → `notSolvedRounds + 1`，用 `breachedGuardrail` 检查 `user_round_limit`（触顶则 `FAILED(user_round_limit)`），否则保持 `RUNNING` + `completion_response` 事件。`reviseCriteria` → `criteria_replaced`/`criteria_revised` 事件 + 新 revision。终态转换后调用 `deps.onTerminated`（Task 7 用于回收，P2b 用于生成 Record）。
+
+> **`retry_limit` 的执行留给 P3**：它依赖"Server 决定重试"这一步（规划行为），P2a 只提供 `breachedGuardrail` 函数（Task 3 已测）；本任务不实现连续重试累计，因此不新增 Step 排序字段。
 
 - [ ] **Step 4: 运行测试确认通过**
 
