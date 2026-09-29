@@ -1,6 +1,6 @@
 # CLIENT_SPEC.md
 
-- **Version:** v0.5（§9 引用状态同步：`RECORD_SPEC.md`、`REPORT_SPEC.md` 已建成；对齐 `PRODUCT.md` v0.6 / `REQUIREMENTS.md` v0.7，取代 v0.4）
+- **Version:** v0.6（缺口收敛：补幂等台账、迟到状态处理、确认 UI 锁定、blob 通道职责；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4，取代 v0.5）
 - **Role:** AI Client / User Interaction + Local Execution Runtime
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
@@ -24,6 +24,9 @@ Client 不负责整个问题的规划，而负责：
 * 在 Server 认为 Request 已达到完成条件后，让 User 对最终结果进行确认
 * **让 User 查看历史 Record（列表与详情）**（v0.4 新增）
 * **在 User 明确请求时，向 Server 发起 Report 生成请求，并展示结果**（v0.4 新增）
+* **持久化副作用 Step 的幂等台账，结果不确定时不得静默重执行**（v0.6 新增）
+* **对已到达终态 Step 的迟到状态更新做忽略处理，不改写本地状态**（v0.6 新增）
+* **在用户提交某一个互斥意图后锁定对应 UI**（v0.6 新增）
 
 核心原则：
 
@@ -53,6 +56,8 @@ Client
 
 Capability Registry 与 Step Executor 遵循 `../specs/CAPABILITY_SPEC.md` 与 `../specs/WORKFLOW_SPEC.md` 中定义的契约，本文件不重复定义。Record 的查看与 Report 的请求（§1、§3 新增职责）不需要新增内部模块，属于 User Interaction 的一部分——是否需要独立拆出（例如 "Record Viewer"）留给实现阶段决定，本文件不预设。
 
+幂等台账（§3 第 13 条）是 Step Executor 的**本地持久状态**，必须跨进程重启保留；blob 通道（§3 第 15 条）是 Step Executor 与本地服务 / 设备之间的协作，具体拆分留给实现阶段。
+
 ---
 
 ## 3. Responsibilities
@@ -71,6 +76,9 @@ Client MUST：
 10. 在需要时获取 User 对 Request 是否解决的最终确认
 11. **展示历史 Record 列表与详情，供 User 查看**（v0.4 新增，对应 `REQUIREMENTS.md` FR-14）
 12. **在 User 明确请求时，向 Server 发起针对指定 Record 的 Report 生成请求，并展示生成结果；User 不请求则不发起**（v0.4 新增，对应 `REQUIREMENTS.md` FR-17）
+13. **持久化 `idempotency_key` → 结果的台账；命中台账时直接返回缓存证据而不重新执行；无法确认台账时回报 `UNKNOWN` 而非重执行**（v0.6 新增，对应 `WORKFLOW_SPEC.md` §4.3）
+14. **在用户提交某一个互斥的人工意图（确认 / 拒绝 / 取消）后锁定相应 UI，避免同一确认窗口内提交第二个互斥意图**（v0.6 新增，对应 `WORKFLOW_SPEC.md` §2.1）
+15. **通过 blob 通道上传 / 下载大体积附件与 Evidence，并在消息中携带 `content_ref` 引用**（v0.6 新增，对应 `PROTOCOL_SPEC.md` §7.5）
 
 Client MUST NOT：
 
@@ -80,6 +88,7 @@ Client MUST NOT：
 * 在 Server 未要求的情况下自主创建新的全局 Workflow
 * 将本地 Agent 的判断直接作为 Workflow 最终状态
 * **自行生成 Report 内容，或在未收到 Server 返回结果前展示"已生成"的报告**（v0.4 新增）：Report 的内容必须来自 Server 基于 Record 生成的结果（`REQUIREMENTS.md` FR-18），Client 只负责发起请求和展示，不能本地拼凑或缓存伪造内容
+* **在无法确认幂等台账时静默重新执行一个有副作用的 Step**（v0.6 新增）：此时必须回报 `UNKNOWN`，由 Server 安排对账（见 `WORKFLOW_SPEC.md` §4.3）
 
 ---
 
@@ -159,9 +168,9 @@ v0.3 只定义最基本的边界：
 
 > **Server 决定"要做什么"，Client 决定"本地是否允许执行"。**
 
-Client 可以根据本地权限、用户授权或运行环境拒绝某个 Step。
+Client 可以根据本地权限、用户授权或运行环境拒绝某个 Step。信号为 `step.status(REJECTED)`，并在 `reject_reason.code` 中说明原因（`permission_denied` / `capability_unavailable` / `unsafe_operation` / `invalid_input` / `user_declined` / `other`，见 `../specs/PROTOCOL_SPEC.md` §8）——与"尝试执行但失败"（`FAILED`）严格区分。
 
-具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec；Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）见 `../specs/WORKFLOW_SPEC.md` §11 的待补项。查看 Record、请求 Report 是否需要额外的权限校验（例如 Q-2：Record 谁能查看），留给该安全规格统一处理，本文件不重复定义。
+具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec；Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）已由 `../specs/PROTOCOL_SPEC.md` §8 定义（`REJECTED` 与 `FAILED` 完全分开）。查看 Record、请求 Report 是否需要额外的权限校验（例如 Q-2：Record 谁能查看），留给该安全规格统一处理，本文件不重复定义。
 
 ---
 
