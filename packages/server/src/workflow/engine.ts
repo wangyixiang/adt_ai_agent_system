@@ -66,8 +66,8 @@ export interface NewStep {
 export type StepStatusUpdate =
   | { state: "RUNNING" }
   | { state: "WAITING"; waitClass: "human" | "execution" }
-  | { state: "COMPLETED" }
-  | { state: "FAILED" }
+  | { state: "COMPLETED"; evidence?: unknown }
+  | { state: "FAILED"; evidence?: unknown }
   | { state: "REJECTED" }
   | { state: "UNKNOWN" };
 
@@ -286,9 +286,15 @@ export class WorkflowEngine {
         // waitClass describes only the CURRENT wait; clear it on resume.
         waitClass: update.state === "WAITING" ? update.waitClass : null,
       };
+      const evidence =
+        update.state === "COMPLETED" || update.state === "FAILED"
+          ? update.evidence
+          : undefined;
       const stepEvent = this.event(workflowId, "step_status", {
         stepId,
         state: next.state,
+        // Evidence is stored verbatim; Capability schema validation is P3/P4.
+        ...(evidence === undefined ? {} : { evidence }),
       });
 
       // A queued cancel converges the moment its non-interruptible step ends —
