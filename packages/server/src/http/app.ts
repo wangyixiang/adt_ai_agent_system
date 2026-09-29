@@ -5,6 +5,8 @@ import type { MessageRouter } from "../ws/messageRouter";
 
 export interface ServerDeps {
   router: MessageRouter;
+  /** Called after a socket closes so the session can be detached (not dropped). */
+  onConnectionClosed?: (conn: Connection) => void;
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
@@ -22,7 +24,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     socket.on("message", (data: unknown) => {
       void deps.router.handle(conn, data as Buffer | string);
     });
-    socket.on("close", () => conn.markClosed());
+    socket.on("close", () => {
+      conn.markClosed();
+      deps.onConnectionClosed?.(conn);
+    });
   });
 
   return app;

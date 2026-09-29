@@ -13,6 +13,8 @@ export interface CreateServerOptions {
   pool: Pool;
   heartbeatIntervalMs?: number;
   maxMissed?: number;
+  /** How long a disconnected session stays resumable (PROTOCOL_SPEC.md §5.2). */
+  sessionTtlMs?: number;
   onSessionDead?: (sessionId: string) => void;
   knownCapabilities?: ReadonlySet<string>;
 }
@@ -32,9 +34,11 @@ export interface CreatedServer {
 export async function createServer(opts: CreateServerOptions): Promise<CreatedServer> {
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 15000;
   const maxMissed = opts.maxMissed ?? 3;
+  const notifyDead = opts.onSessionDead ?? (() => {});
 
   const sessions = new SessionManager({
     knownCapabilities: opts.knownCapabilities ?? KNOWN_CAPABILITIES,
+    ttlMs: opts.sessionTtlMs,
   });
   const router = new MessageRouter(sessions);
 
@@ -49,11 +53,21 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
   const monitor = new HeartbeatMonitor(sessions, {
     intervalMs: heartbeatIntervalMs,
     maxMissed,
-    onDead: opts.onSessionDead ?? (() => {}),
+    onDead: (sessionId) => {
+      // A missed-heartbeat session is disconnected but stays resumable.
+      sessions.markDisconnected(sessionId);
+      notifyDead(sessionId);
+    },
   });
   monitor.start();
 
-  const app = await buildServer({ router });
+  const app = await buildServer({
+    router,
+    onConnectionClosed: (conn) => {
+      const session = sessions.detach(conn.id);
+      if (session) notifyDead(session.id);
+    },
+  });
 
   return {
     app,

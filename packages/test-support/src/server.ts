@@ -3,10 +3,12 @@ import {
   createPool,
   createServer,
   migrate,
+  OrphanReclaimer,
   PostgresRecordStore,
   PostgresWorkflowStore,
   RecordService,
   registerWorkflowProtocol,
+  SessionLifecycle,
   UserRepository,
   WorkflowEngine,
   WorkflowOrchestrator,
@@ -26,6 +28,10 @@ export const TEST_DATABASE_URL =
 export interface TestServerOptions {
   heartbeatIntervalMs?: number;
   maxMissed?: number;
+  /** How long a disconnected session stays resumable (default 24h). */
+  sessionTtlMs?: number;
+  /** How often the session lifecycle sweeps and reclaims (default 60s). */
+  reclaimIntervalMs?: number;
   /** Scripted planner decisions; an exhausted script yields a completion candidate. */
   planner?: PlannerDecision[];
   failRecordPersistence?: boolean;
@@ -68,16 +74,8 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   await users.create("alice", "pw-alice");
   await users.create("bob", "pw-bob");
 
-  const deadSessions: string[] = [];
-  const server = await createServer({
-    pool,
-    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
-    maxMissed: opts.maxMissed ?? 3,
-    onSessionDead: (sessionId) => {
-      if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
-    },
-  });
-
+  // Workflow dependencies are built before the server so the session
+  // lifecycle can feed the orphan reclaimer from the first disconnect.
   const workflowStore = new PostgresWorkflowStore(pool);
   const engine = new WorkflowEngine({
     store: workflowStore,
@@ -113,6 +111,25 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     },
   });
 
+  const sessionTtlMs = opts.sessionTtlMs ?? 86_400_000;
+  const reclaimer = new OrphanReclaimer({
+    engine,
+    store: workflowStore,
+    graceMs: sessionTtlMs,
+  });
+
+  const deadSessions: string[] = [];
+  const server = await createServer({
+    pool,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
+    maxMissed: opts.maxMissed ?? 3,
+    sessionTtlMs,
+    onSessionDead: (sessionId) => {
+      if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
+      reclaimer.onSessionDead(sessionId);
+    },
+  });
+
   registerWorkflowProtocol({
     router: server.router,
     sessions: server.sessions,
@@ -122,6 +139,12 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     records,
     recordStore: realRecordStore,
   });
+
+  const lifecycle = new SessionLifecycle(
+    { sessions: server.sessions, reclaimer },
+    { intervalMs: opts.reclaimIntervalMs ?? 60_000 },
+  );
+  lifecycle.start();
 
   await server.app.listen({ port: 0, host: "127.0.0.1" });
   const port = (server.app.server.address() as AddressInfo).port;
@@ -142,6 +165,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       throw new Error("waitFor timed out");
     },
     close: async () => {
+      lifecycle.stop();
       await server.close();
       await pool.end();
     },

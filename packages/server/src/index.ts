@@ -9,6 +9,13 @@ export {
 export { SessionManager, type Session, type SessionManagerOptions } from "./session/sessionManager";
 export { registerHandshake, type HandshakeDeps } from "./session/handshake";
 export {
+  SessionLifecycle,
+  type LifecycleSweepResult,
+  type Reclaimable,
+  type SessionLifecycleDeps,
+  type SessionLifecycleOptions,
+} from "./session/lifecycle";
+export {
   CapabilityRegistry,
   type CapabilityDescriptor,
   type NormalizedCapability,
@@ -122,6 +129,8 @@ import { NOOP_PLANNER, type Planner } from "./workflow/planner";
 import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
+import { OrphanReclaimer } from "./workflow/reclamation";
+import { SessionLifecycle } from "./session/lifecycle";
 
 export interface StartOptions {
   port?: number;
@@ -129,6 +138,10 @@ export interface StartOptions {
   databaseUrl?: string;
   heartbeatIntervalMs?: number;
   maxMissed?: number;
+  /** How long a disconnected session stays resumable (default 24h). */
+  sessionTtlMs?: number;
+  /** How often the session lifecycle sweeps and reclaims (default 60s). */
+  reclaimIntervalMs?: number;
   onSessionDead?: (sessionId: string) => void;
   /** Defaults to a no-op planner until P3 wires the LLM planner. */
   planner?: Planner;
@@ -149,12 +162,8 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   const pool = createPool(databaseUrl);
   await migrate(pool);
 
-  const server = await createServer({
-    pool,
-    heartbeatIntervalMs: opts.heartbeatIntervalMs,
-    maxMissed: opts.maxMissed,
-    onSessionDead: opts.onSessionDead,
-  });
+  const sessionTtlMs = opts.sessionTtlMs ?? 86_400_000;
+  const reclaimIntervalMs = opts.reclaimIntervalMs ?? 60_000;
 
   const workflowStore = new PostgresWorkflowStore(pool);
   const engine = new WorkflowEngine({ store: workflowStore });
@@ -164,6 +173,22 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     engine,
     store: workflowStore,
     planner: opts.planner ?? NOOP_PLANNER,
+  });
+  const reclaimer = new OrphanReclaimer({
+    engine,
+    store: workflowStore,
+    graceMs: sessionTtlMs,
+  });
+
+  const server = await createServer({
+    pool,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs,
+    maxMissed: opts.maxMissed,
+    sessionTtlMs,
+    onSessionDead: (sessionId) => {
+      opts.onSessionDead?.(sessionId);
+      reclaimer.onSessionDead(sessionId);
+    },
   });
 
   registerWorkflowProtocol({
@@ -176,6 +201,12 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     recordStore,
   });
 
+  const lifecycle = new SessionLifecycle(
+    { sessions: server.sessions, reclaimer },
+    { intervalMs: reclaimIntervalMs },
+  );
+  lifecycle.start();
+
   const port = opts.port ?? Number(process.env.PORT ?? 8080);
   const host = opts.host ?? "0.0.0.0";
   await server.app.listen({ port, host });
@@ -187,6 +218,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     url: `ws://127.0.0.1:${actualPort}/ws`,
     sessions: server.sessions,
     close: async () => {
+      lifecycle.stop();
       await server.close();
       await pool.end();
     },
