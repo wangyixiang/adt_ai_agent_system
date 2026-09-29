@@ -1,6 +1,6 @@
 # REPORT_SPEC.md
 
-- **Version:** v0.1
+- **Version:** v0.2（缺口收敛：结论渲染覆盖 `UNKNOWN` / 未对账副作用；补齐生成失败返回 `status` / `error_code`；预留"生成人"；对齐 `PROTOCOL_SPEC.md` v0.4、`RECORD_SPEC.md` v0.3，取代 v0.1）
 - **层级:** Specification — Report 的触发、内容约束与输出形式
 - **拆分说明:** `REQUIREMENTS.md` FR-17~FR-20 定义了 Report 必须满足的产品要求（按需生成、事实可追溯、不修改 Record、至少一种人类可读形式），`PROTOCOL_SPEC.md` §11 已经在协议层留了 `report.generate_request/result` 的字段位置（`options.detail_level`、`report.format`），但两边都没有定义这些字段具体取什么值、Report 的内容该怎么组织。本文件补上这一环，承接 `RECORD_SPEC.md` 定义的 Record 结构。
 
@@ -38,12 +38,15 @@
   "type": "report.generate_result",
   "payload": {
     "record_id": "rec_001",
-    "report": { "format": "markdown", "content": "..." }
+    "status": "ok",
+    "report": { "format": "markdown", "content": "..." },
+    "error_code": null,
+    "message": null
   }
 }
 ```
 
-本文件的任务就是把 `options.detail_level` 和 `report.format` 这两个此前留白的字段定下来。
+本文件的任务是把 `options.detail_level`、`report.format` 这两个此前留白的字段定下来，并（v0.2）定义 `status` / `error_code` 的失败形态（见 §6）。
 
 ---
 
@@ -111,7 +114,15 @@
   COMPLETED → root_cause + resolution_summary
   FAILED → failure_summary
   CANCELLED → cancelled_summary（如有）}
+
+{所有终止态通用（v0.2 新增）：若 final_result 含 unresolved_side_effects，
+ 追加一段醒目提示：
+   "以下副作用动作在 Workflow 结束时未被对账，可能已执行："
+ 逐条列出 step_id / capability / last_known_state，
+ 不推断其成功或失败（忠实原则，见 RECORD_SPEC.md §3）。}
 ```
+
+`summary` 档（§5.1）同样必须体现未对账事实（若存在）：`result_short` 应包含"存在未对账的副作用动作"这一事实，不允许只给一个看起来已解决的结论。
 
 ### 5.3 可追溯性的具体做法
 
@@ -121,7 +132,8 @@
 
 ## 6. 与 Record 的边界
 
-* Report 生成失败（例如 Record 不存在）时，走 `PROTOCOL_SPEC.md` §12 的 `protocol.error`（code=`unknown_record`），不是 Report 内容层面的问题。
+* **Record 不存在** → 协议层错误：走 `PROTOCOL_SPEC.md` §12 的 `protocol.error`（code=`unknown_record`），不是 Report 内容层面的问题。
+* **生成过程失败**（v0.2 新增）：Record 存在但生成不成功时，返回 `report.generate_result`，`status: "failed"`，`error_code` 取值 `generation_failed` / `insufficient_content` / `invalid_option` / `timeout`，并给出 `message`。Client 可重试；失败**不写 Record**、不产生副作用。
 * Report 一旦生成并返回给 Client，之后不会被 Server 主动追踪或更新——如果 Record 后续有任何变化（正常情况下不会，Record 只读，见 `RECORD_SPEC.md` §1），已经生成的 Report 也不会跟着变。
 * Report 本身**不持久化在 Server 端**（本版本假设）——每次 `report.generate_request` 都是重新生成，Client 端如果需要保留副本，由 Client 自行决定是否本地保存。这一点如果需要改变（例如以后想让 Server 缓存生成过的 Report），是个待决项，见 §7。
 
@@ -133,4 +145,4 @@
 2. **是否需要更多输出格式**（HTML/PDF 等）：本版本只做 Markdown，见 §4。
 3. **`detail_level` 是否需要更多档位**：本版本只给 `summary`/`full` 两档，见 §3。
 4. **Report 是否需要持久化/缓存**：见 §6，本版本假设每次都重新生成，不缓存。
-5. **用户身份体系确定后，Report 要不要注明"生成人"/Workflow 中各项确认的"确认人"**：取决于 `REQUIREMENTS.md` Q-5 的结论，本版本模板里没有这个字段，待身份体系定了之后回来补。
+5. **"生成人" / "确认人"**：`RECORD_SPEC.md` §4 已为条目预留可选 `actor`，`PROTOCOL_SPEC.md` §2 已预留 `user_id`；待身份体系（`REQUIREMENTS.md` Q-5）确定后，Report 模板再填充"生成人"字段。本版本只预留、不展示。
