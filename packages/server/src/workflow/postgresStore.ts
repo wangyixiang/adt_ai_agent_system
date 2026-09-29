@@ -180,6 +180,14 @@ export class PostgresWorkflowStore implements WorkflowStore {
     return result.rows.map(toWorkflow);
   }
 
+  async listWorkflowsBySession(sessionId: string): Promise<WorkflowSnapshot[]> {
+    const result = await this.pool.query<WorkflowRow>(
+      "SELECT * FROM workflows WHERE session_id = $1 ORDER BY created_at, id",
+      [sessionId],
+    );
+    return result.rows.map(toWorkflow);
+  }
+
   async findActiveWorkflows(): Promise<WorkflowSnapshot[]> {
     const result = await this.pool.query<WorkflowRow>(
       "SELECT * FROM workflows WHERE state NOT IN ('COMPLETED','FAILED','CANCELLED') ORDER BY created_at",

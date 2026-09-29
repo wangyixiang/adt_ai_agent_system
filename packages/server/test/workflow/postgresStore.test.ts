@@ -146,4 +146,26 @@ describe("PostgresWorkflowStore", () => {
       failingStore.createWorkflow(wf, ev("ev_x", "workflow_created")),
     ).rejects.toThrow("original failure");
   });
+
+  it("lists workflows by session, oldest first", async () => {
+    // A dedicated session id: earlier tests leave workflows in `sess_1`.
+    await store.createWorkflow(
+      { ...wf, id: "wf_s1a", sessionId: "sess_list" },
+      evFor("wf_s1a", "ev_s1a", "workflow_created"),
+    );
+    await store.createWorkflow(
+      { ...wf, id: "wf_s1b", sessionId: "sess_list" },
+      evFor("wf_s1b", "ev_s1b", "workflow_created"),
+    );
+    await store.createWorkflow(
+      { ...wf, id: "wf_s2", sessionId: "sess_other" },
+      evFor("wf_s2", "ev_s2", "workflow_created"),
+    );
+
+    expect((await store.listWorkflowsBySession("sess_list")).map((w) => w.id)).toEqual([
+      "wf_s1a",
+      "wf_s1b",
+    ]);
+    expect(await store.listWorkflowsBySession("sess_missing")).toEqual([]);
+  });
 });

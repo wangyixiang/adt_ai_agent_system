@@ -56,6 +56,8 @@ export interface WorkflowStore {
   createWorkflow(workflow: WorkflowSnapshot, event: WorkflowEvent): Promise<void>;
   getWorkflow(id: string): Promise<WorkflowSnapshot | null>;
   listWorkflowsByUser(userId: string): Promise<WorkflowSnapshot[]>;
+  /** Workflows owned by a logical session, oldest first (session.resume/state_sync). */
+  listWorkflowsBySession(sessionId: string): Promise<WorkflowSnapshot[]>;
   saveWorkflow(workflow: WorkflowSnapshot, event: WorkflowEvent): Promise<void>;
   /** Workflow change plus several events, atomically. */
   saveWorkflowWithEvents(workflow: WorkflowSnapshot, events: WorkflowEvent[]): Promise<void>;
