@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.7（缺口收敛：补完成条件、终止护栏、会话级副作用串行、幂等键生成与对账、孤儿回收、"先落盘 Record 后通知"；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4，取代 v0.6）
+- **Version:** v0.8（部署/信任模型落地：本地账号与会话管理、认证校验、Record 按用户过滤、KB 导出出站；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.7）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -46,6 +46,8 @@ Server 负责：
 * **保证同一 `session` 内副作用 Step 串行**（v0.7 新增）
 * **为有副作用的 Step 生成幂等键，并执行"结果未知 → 对账"**（v0.7 新增）
 * **回收失联的孤儿 Workflow；终止时先落盘 Record、再通知**（v0.7 新增）
+* **管理本地账号与会话，校验 Client 认证**（v0.8 新增）
+* **保证 Record 只对提交人可见，并执行 KB 导出出站**（v0.8 新增）
 
 核心原则：
 
@@ -111,6 +113,10 @@ Server MUST：
 18. **保证同一 `session` 内任意时刻最多一个副作用 Step 处于活跃状态**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.4）
 19. **为 `side_effect: true` 的 Step 生成 Workflow 内稳定的 `idempotency_key`；对结果不确定的副作用 Step 判为 `UNKNOWN` 并对账（不自动重试，除非该 Capability 声明 `idempotent`）**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.3）
 20. **按可配置宽限期回收失联的孤儿 Workflow（未请求取消 → `FAILED(client_unreachable)`；已请求取消 → `CANCELLED`）；并在任何终止状态先持久化 Record、成功后再发 `workflow.terminated`**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §2.2、`PROTOCOL_SPEC.md` §7.4）
+21. **管理本地账号（创建 / 禁用 / 改密）与会话，校验 Client 认证；未认证连接不得进入业务消息**（v0.8 新增，对应 `ADR-003` §3、`PROTOCOL_SPEC.md` §5.1）
+22. **在所有 Record 查询上按 `user_id` 过滤，保证只返回提交人自己的 Record**（v0.8 新增，对应 `ADR-003` §6、`PROTOCOL_SPEC.md` §10）
+23. **只接受提交人本人对副作用动作的确认**（v0.8 新增，对应 `ADR-003` §5）
+24. **在提交人请求时，把指定 Record/Report 导出到第三方 Knowledge Base（出站）；不追踪 KB 侧审核状态**（v0.8 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3）
 
 Server MUST NOT：
 
@@ -142,7 +148,8 @@ Knowledge 和 Context 都是 Planner 的输入，不是 Workflow State——它�
 **关于第三方 Knowledge Base 的边界（v0.4 新增）：**
 
 * 检索逻辑（如何匹配、如何排序、知识库本身的构建与维护）都在第三方系统内，Server 只负责查询和消费结果，不实现自己的检索引擎，也不做历史案例的相似度匹配（对齐 `PRODUCT.md` D-5、`ARCHITECTURE.md` §4 MUST NOT）。
-* **本系统产生的 Record 未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用，是已确认的产品方向，但不在本版本实现范围内**——本版本不构建任何 Record → Knowledge Base 的主动推送机制。这一点已经落到 `RECORD_SPEC.md` §8 的结构设计约束（结构化字段自足、`narrative` 用领域语言书写、`summary` 与 `entries` 并存），但不需要现在就为导出预留具体接口。具体的对接方式（推送时机、数据格式、鉴权）建议留给后续单独的 ADR，而不是提前在本文件里假设。
+* **导出半边已实现（v0.8）**：本版本提供"提交人显式发起导出"（Record/Report → KB 的出站，见 `PROTOCOL_SPEC.md` §10.3）。KB 侧的**接收与审核不在本系统内**，本系统**不追踪审核状态**。`RECORD_SPEC.md` §8 的导出友好设计继续有效。
+* **仍未实现（v0.8）**：KB **检索**（FR-23）的接口，以及导出的出站协议 / 鉴权 / 数据格式——由后续 **KB 集成 ADR** 定义。
 
 ---
 
@@ -207,4 +214,6 @@ Server 的核心原则：
 * 消息 Schema → `../specs/PROTOCOL_SPEC.md`
 * Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`
 * Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`
+* 部署与信任模型 → `../adr/ADR-003-deployment-and-trust-model.md`
+* MVP 范围与完成标准 → `../superpowers/specs/2026-09-29-mvp-scope.md`
 * 关键决策记录 → `../adr/`
