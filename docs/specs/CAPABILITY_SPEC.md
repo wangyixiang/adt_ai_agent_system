@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.4（§4 消息名对齐 `PROTOCOL_SPEC.md` v0.3 的 `capability.sync`；§6 `human.manual_action` 条文已落地；取代 v0.3）
+- **Version:** v0.5（缺口收敛：新增 I/O Schema（JSON Schema 受限子集）、`idempotent` / `timeout_hint` 声明、`revision` 声明版本、`manual_action_result` 结构；对齐 `PROTOCOL_SPEC.md` v0.4、`WORKFLOW_SPEC.md` v0.4，取代 v0.4）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -54,34 +54,68 @@ Server 根据这些 Capability 决定是否以及如何利用 Client 的本地�
 
 现有示例的 `interruptible` 取值：`filesystem.read_file` / `docker.inspect_container` / `test_rig.read_signal_log` 等只读操作均为 `true`（读取过程本身很短，也没有半途而废的风险）；`test_rig.trigger_reset` 视为 `false`（一旦触发重置，中途打断可能让被测对象处于不确定状态，比等它跑完更危险）。
 
+### 2.3 idempotent 声明规则（v0.5 新增）
+
+呼应 `WORKFLOW_SPEC.md` §4.3 的"结果未知与对账"：有副作用的 Step 若结果不确定，默认不自动重试，而是进入 `UNKNOWN` 并对账。若某个 Capability 的副作用**本身是幂等**的（重复执行与执行一次效果相同），则允许在结果不确定时携带 `idempotency_key` 重试。
+
+* `idempotent: true`：该 Capability 的副作用可安全重复执行；Server 可在结果不确定时重试（携带同一 `idempotency_key`）。
+* `idempotent: false`（缺省）：不可自动重试，结果不确定时走 `UNKNOWN` + 对账。
+* **仅对 `side_effect: true` 有意义**；对只读 Capability 该字段可省略（只读操作本就安全可重试）。
+* 声明必须保守：无法确定是否幂等时，声明为 `false`。
+
+现有示例中，`test_rig.trigger_reset` 属于 `idempotent: false`（复位是可重复动作，但"重置"的语义不保证重复执行无害，保守声明为否）；`terminal.execute_command` 同样缺省 `false`。
+
+### 2.4 timeout_hint 声明规则（v0.5 新增）
+
+对应 `PROTOCOL_SPEC.md` §9：Server 需要按 Capability 类型决定 Step 超时，但不同的 Capability 合理耗时差异很大。因此：
+
+* `timeout_hint`（可选，毫秒）：该 Capability 的建议超时 / 预期时长。
+* Server 可以覆盖它，并对其设硬上限；未声明时使用全局默认。
+* 它只是**建议**，不构成安全边界；`step_timeout` 的最终判定权在 Server。
+
+现有一处明显需要它的示例：`test_rig.trigger_reset` 这类物理动作的合理耗时可能远大于一个只读查询，应在登记时给出 `timeout_hint`。
+
 ---
 
 ## 3. Capability Manifest
 
-Client 通过 Manifest 向 Server 声明当前可用能力，**每一项都必须携带 side_effect**（v0.2 新增要求）：
+Client 通过 Manifest 向 Server 声明当前可用能力。每一项 Capability 声明的字段（v0.5 起完整如下）：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | 是 | §2 登记的标准名称 |
+| `side_effect` | 是 | 见 §2.1；缺失视为 `true`（保守） |
+| `interruptible` | 是 | 见 §2.2；缺失视为 `false`（保守） |
+| `idempotent` | 否 | 见 §2.3；缺省 `false` |
+| `timeout_hint` | 否 | 见 §2.4（毫秒） |
+| `input_schema` | 是（v0.5 起新登记） | 见 §5；缺失时 Server 不强校验并告警 |
+| `output_schema` | 是（v0.5 起新登记） | 见 §5；缺失时 Server 不强校验并告警 |
 
 ```text
 Capability Manifest（示例）
 ├── git
-│   └── collect_diagnostics        side_effect: false
+│   └── collect_diagnostics   side_effect: false, interruptible: true,
+│                             input_schema: {...}, output_schema: {...}
 ├── filesystem
-│   └── read_file                  side_effect: false
+│   └── read_file             side_effect: false, interruptible: true, ...
 ├── terminal
-│   └── execute_command            side_effect: true
+│   └── execute_command       side_effect: true, interruptible: false, idempotent: false, ...
 ├── docker
-│   └── inspect_container          side_effect: false
+│   └── inspect_container     side_effect: false, interruptible: true, ...
 ├── browser
-│   └── open_page                  side_effect: false
+│   └── open_page             side_effect: false, interruptible: true, ...
 ├── local-agent
-│   └── diagnose_project           side_effect: false
+│   └── diagnose_project      side_effect: false, interruptible: true, ...
 └── test_rig
-    ├── read_signal_log            side_effect: false
-    ├── query_dut_info             side_effect: false
-    ├── read_fault_code            side_effect: false
-    └── trigger_reset              side_effect: true
+    ├── read_signal_log       side_effect: false, interruptible: true, ...
+    ├── query_dut_info        side_effect: false, interruptible: true, ...
+    ├── read_fault_code       side_effect: false, interruptible: true, ...
+    └── trigger_reset         side_effect: true, interruptible: false, idempotent: false,
+                              timeout_hint: 60000, ...
 ```
 
-具体在协议层如何传输 side_effect 字段（`capability.sync` payload 的结构调整），留给 `PROTOCOL_SPEC.md` 处理，本文件只定义"必须有这个字段"。
+* 具体 schema 内容见 §5（文档权威），Manifest 在运行时携带同一份 schema（自包含）。
+* 协议层如何传输上述字段（`capability.sync` payload 结构、`revision`）由 `PROTOCOL_SPEC.md` §6 定义，本文件只定义"必须具备这些字段"。
 
 ---
 
@@ -93,37 +127,93 @@ Client 的 Capability 可以动态变化：
 Capability Available → Local Service Started → Capability Updated
 ```
 
-Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capability.sync`：`mode: "full"` 用于初次全量声明、`mode: "incremental"` 用于增量更新，具体字段见 `PROTOCOL_SPEC.md` §6）。更新时 side_effect 声明必须一并携带，不能只更新名称。
+Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capability.sync`：`mode: "full"` 用于初次全量声明、`mode: "incremental"` 用于增量更新，具体字段见 `PROTOCOL_SPEC.md` §6）。更新时 `side_effect`、schema 等字段必须一并携带，不能只更新名称。
+
+**声明版本（v0.5 新增）：** 每次能力声明携带一个会话内**单调递增的 `revision`**；首次全量声明（含 `session.hello` 内联能力）为 `revision: 0`。Server 只应用更高 `revision` 的声明，陈旧 / 乱序的声明丢弃并告警——这解决了重连或乱序时"旧声明覆盖新声明"的问题。
+
+**在途规则（v0.5 新增）：** 能力变化**只影响未来的 `step.dispatch`**，不影响已下发的 Step；若 Client 收到引用已不可用能力的 Step，回 `step.status(REJECTED, reject_reason.code = capability_unavailable)`（见 `PROTOCOL_SPEC.md` §8）。
 
 ---
 
-## 5. 已知待补项（Open Items）
+## 5. Capability 输入/输出 Schema（v0.5 新增）
 
-1. **输入/输出 Schema 缺失**：目前每个 Capability 只有一个名字，没有声明它接受什么参数、返回什么结构。Planner 生成 `Step.input` 时缺乏依据。建议后续版本给每个 Capability 补充最小的字段声明，例如：
+### 5.1 声明语言
 
-   ```text
-   filesystem.read_file:
-     input:
-       path: string
-     output:
-       content: string
-       encoding: string
-   ```
+采用 **JSON Schema 的一个受限子集**：`type` / `properties` / `required` / `enum` / `items` / `description` / `default`；**不引入外部 `$ref` 与复杂组合（`oneOf` / `anyOf` / `allOf` / `not`）**，以保持两端校验器简单、可互操作。
 
-2. **Capability 声明的真实性**：Client 自主上报"我有什么能力"，Server 直接采信。除了后续 Security Spec 要处理的认证授权问题之外，即使排除恶意场景，"声明与实际实现不一致"也是一个工程问题——建议约定：声明的 Capability 在实际调用时若无法执行，应作为 `execution.failed`（或 `WORKFLOW_SPEC.md` §11 提到的"拒绝执行"信号）处理，而不是静默失败。
+### 5.2 载体与校验职责（双重载体 + 两端校验）
 
-3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
+| 载体 | 内容 | 权威性 |
+|---|---|---|
+| 本文件 §5.3 | 标准 Capability 的 canonical schema | **文档权威** |
+| Capability Manifest / `session.hello` | 运行时携带同一份 schema | 自包含 |
 
-4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
+* Server 在生成 / 下发 Step 前，用对应 Capability 的 `input_schema` 校验 `step.dispatch.input`；不合 schema 属 Server 侧问题，不应下发。
+* Client 收到不合 `input_schema` 的 `input` → `step.status(REJECTED, reject_reason.code = invalid_input)`。
+* Client 返回的 `evidence.result` 必须通过对应 `output_schema`；不合 schema 或 `type` 与声明不一致 → Server 记 `FAILED`，`fail_reason.code = invalid_output`，并告警。
+* `Step.expected_output` 是 output schema 的**名称引用**（例如 `git_status`），不再是自由文本。
+
+### 5.3 标准 Capability 的 Schema 登记（示例）
+
+```text
+filesystem.read_file:
+  input:  { type: object, required: [path], properties: { path: {type: string} } }
+  output: { type: object, required: [content, encoding],
+            properties: { content: {type: string}, encoding: {type: string},
+                          path: {type: string} } }
+
+git.collect_diagnostics:
+  input:  { type: object, properties: { project_path: {type: string} } }
+  output: git_status
+          { type: object, required: [branch],
+            properties: { branch: {type: string},
+                          modified_files: {type: integer},
+                          untracked_files: {type: integer} } }
+
+test_rig.trigger_reset:
+  input:  { type: object, properties: { reason: {type: string} } }
+  output: { type: object, required: [reset_ack],
+            properties: { reset_ack: {type: boolean} } }
+```
+
+> 上表给出格式示例，不代表完整清单。新增 Capability 时，**input/output schema 与 `side_effect` 一样是登记的必要项**（见 §2、§3）。
+
+### 5.4 缺失 schema 的兼容处理
+
+尚未补 schema 的旧接入方：Server 不做强校验，记录告警；一旦补齐即恢复校验。这是为平滑迁移保留的过渡口子，不应被当作长期状态。
 
 ---
 
-## 6. 保留 Capability 名称（v0.2 新增）
+## 6. 保留 Capability 名称（v0.2 新增；v0.5 补充 I/O）
 
 以下名称由本规范保留，具有特殊含义，**所有 Client 隐式支持，不需要在 Manifest 中声明**：
 
-| 保留名称 | 含义 | side_effect |
-|---|---|---|
-| `human.manual_action` | 用于"建议"这种解决方式——Server 生成一条指令性的 Step，Client 只需要把 `input.instruction` 展示给工程师；工程师在系统外自行执行后，把观察到的结果作为反馈传回，Client 将其包装为 Evidence。系统本身不执行任何操作，因此不需要额外的确认流程——工程师本人就是那个"决定要不要做"的人。 | `false`（固定值，不需要声明） |
+| 保留名称 | 含义 | side_effect | interruptible | idempotent | I/O |
+|---|---|---|---|---|---|
+| `human.manual_action` | 用于"建议"这种解决方式——Server 生成一条指令性的 Step，Client 只需要把 `input.instruction` 展示给工程师；工程师在系统外自行执行后，把观察到的结果作为反馈传回，Client 将其包装为 Evidence。系统本身不执行任何操作，因此不需要额外的确认流程——工程师本人就是那个"决定要不要做"的人。 | `false`（固定值） | `true`（约定：取消时可立即终止，见 `WORKFLOW_SPEC.md` §6.1） | 不适用 | 见下 |
 
-这个设计的完整流程和状态转换，由 `WORKFLOW_SPEC.md` §6.1（建议路径）定义；协议层完全复用 `step.dispatch` / `step.status`，见 `PROTOCOL_SPEC.md` §8.2。
+**`human.manual_action` 的 I/O（v0.5 新增）：**
+
+```text
+input:  { type: object, required: [instruction],
+          properties: { instruction: {type: string} } }
+output: manual_action_result
+        { type: object, required: [outcome, observation],
+          properties: {
+            outcome:     { type: string, enum: [succeeded, failed, partially, unknown] },
+            observation: { type: string },
+            details:     { type: object }
+          } }
+```
+
+* `outcome` 供确定性分支与统计使用；`observation` 保留工程师原话供 Planner 消费（见 `WORKFLOW_SPEC.md` §6.1）。
+* 完整的建议路径流程与状态转换由 `WORKFLOW_SPEC.md` §6.1 定义；协议层完全复用 `step.dispatch` / `step.status`，见 `PROTOCOL_SPEC.md` §8.2。
+
+---
+
+## 7. 已知待补项（Open Items）
+
+1. ~~**输入/输出 Schema 缺失**~~ **已解决（v0.5）**：见 §5，采用 JSON Schema 受限子集，双重载体 + 两端校验。
+2. ~~**Capability 声明的真实性**~~ **已解决（v0.5）**：schema 落地后，声明与实际不符会在运行时被 schema 校验与 `REJECTED` / `FAILED(invalid_output)` 捕获，不再静默（见 §5.2、`PROTOCOL_SPEC.md` §8）。认证授权部分仍留待 Security Spec。
+3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
+4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
