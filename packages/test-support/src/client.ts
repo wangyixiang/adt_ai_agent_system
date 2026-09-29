@@ -7,12 +7,13 @@ import {
   PROTOCOL_VERSION,
   type Envelope,
 } from "@adt/shared";
-import type { CapabilitySyncPayload } from "@adt/server";
+import type { CapabilityDescriptor, CapabilitySyncPayload } from "@adt/server";
 
 export interface HelloOptions {
   username: string;
   secret: string;
   versions?: string[];
+  capabilities?: CapabilityDescriptor[];
 }
 
 export class TestClient {
@@ -102,7 +103,7 @@ export class TestClient {
         supported_protocol_versions: opts.versions ?? [PROTOCOL_VERSION],
         client_info: { name: "test-client", platform: "test" },
         auth: { username: opts.username, secret: opts.secret },
-        capabilities: [],
+        capabilities: opts.capabilities ?? [],
       },
     });
     if (res.type === "session.welcome") {

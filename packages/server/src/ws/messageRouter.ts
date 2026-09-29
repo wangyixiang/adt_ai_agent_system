@@ -66,7 +66,15 @@ export class MessageRouter {
       return;
     }
 
-    await handler({ conn, session }, env);
+    try {
+      await handler({ conn, session }, env);
+    } catch (error) {
+      // A handler failure must not take down the process (an unhandled
+      // rejection would). Warn on the connection and keep it alive.
+      const detail = error instanceof Error ? error.message : String(error);
+      conn.warn(`handler error for ${env.type}: ${detail}`);
+      console.error(`[router] handler for ${env.type} threw:`, error);
+    }
   }
 
   private sendError(

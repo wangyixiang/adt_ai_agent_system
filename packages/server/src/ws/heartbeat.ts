@@ -5,6 +5,8 @@ export interface HeartbeatOptions {
   intervalMs: number;
   maxMissed: number;
   onDead: (sessionId: string) => void;
+  /** Monotonic clock (PROTOCOL_SPEC.md §2/§9); defaults to `performance.now`. */
+  now?: () => number;
 }
 
 /**
@@ -14,11 +16,14 @@ export interface HeartbeatOptions {
  */
 export class HeartbeatMonitor {
   private timer: NodeJS.Timeout | null = null;
+  private readonly now: () => number;
 
   constructor(
     private readonly sessions: SessionManager,
     private readonly opts: HeartbeatOptions,
-  ) {}
+  ) {
+    this.now = opts.now ?? (() => performance.now());
+  }
 
   start(): void {
     if (this.timer) return;
@@ -34,7 +39,7 @@ export class HeartbeatMonitor {
   }
 
   sweep(): void {
-    const now = Date.now();
+    const now = this.now();
     const threshold = this.opts.intervalMs * this.opts.maxMissed;
     for (const session of this.sessions.all()) {
       if (now - session.lastSeenAt > threshold) this.opts.onDead(session.id);

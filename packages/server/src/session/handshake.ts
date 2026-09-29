@@ -1,4 +1,4 @@
-import { makeError, newMessageId, nowUtcIso, PROTOCOL_VERSION } from "@adt/shared";
+import { makeError, newMessageId, nowUtcIso, PROTOCOL_VERSION, type CapabilityDescriptor } from "@adt/shared";
 import type { UserRepository } from "../auth/userRepository";
 import type { MessageRouter } from "../ws/messageRouter";
 import type { SessionManager } from "./sessionManager";
@@ -51,6 +51,22 @@ export function registerHandshake(router: MessageRouter, deps: HandshakeDeps): v
     }
 
     const session = deps.sessions.create(user.id, conn);
+
+    // `session.hello.capabilities` is equivalent to a full `capability.sync`
+    // at revision 0 (PROTOCOL_SPEC.md §6).
+    const inline = Array.isArray(payload.capabilities)
+      ? (payload.capabilities as CapabilityDescriptor[])
+      : [];
+    if (inline.length > 0) {
+      const result = session.capabilities.apply({
+        mode: "full",
+        revision: 0,
+        added: inline,
+        removed: [],
+      });
+      for (const warning of result.warnings) conn.warn(warning);
+    }
+
     conn.send({
       protocol_version: PROTOCOL_VERSION,
       message_id: newMessageId(),

@@ -15,17 +15,30 @@ export interface Session {
   capabilities: CapabilityRegistry;
 }
 
+export interface SessionManagerOptions {
+  /** Monotonic clock (PROTOCOL_SPEC.md §2/§9); defaults to `performance.now`. */
+  now?: () => number;
+  knownCapabilities?: ReadonlySet<string>;
+}
+
 export class SessionManager implements SessionResolver {
   private readonly byId = new Map<string, Session>();
   private readonly byConn = new Map<string, Session>();
+  private readonly now: () => number;
+  private readonly known: ReadonlySet<string>;
+
+  constructor(options: SessionManagerOptions = {}) {
+    this.now = options.now ?? (() => performance.now());
+    this.known = options.knownCapabilities ?? KNOWN_CAPABILITIES;
+  }
 
   create(userId: string, connection: Connection): Session {
     const session: Session = {
       id: newSessionId(),
       userId,
       connection,
-      lastSeenAt: Date.now(),
-      capabilities: new CapabilityRegistry(KNOWN_CAPABILITIES),
+      lastSeenAt: this.now(),
+      capabilities: new CapabilityRegistry(this.known),
     };
     this.byId.set(session.id, session);
     this.byConn.set(connection.id, session);
@@ -42,7 +55,7 @@ export class SessionManager implements SessionResolver {
 
   touch(id: string): void {
     const session = this.byId.get(id);
-    if (session) session.lastSeenAt = Date.now();
+    if (session) session.lastSeenAt = this.now();
   }
 
   expire(id: string): void {

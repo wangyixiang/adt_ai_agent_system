@@ -22,15 +22,21 @@ export async function migrate(pool: pg.Pool, dir: string = MIGRATIONS_DIR): Prom
     if (seen.rowCount) continue;
 
     const sql = await readFile(path.join(dir, file), "utf8");
-    await pool.query("BEGIN");
+
+    // A dedicated client keeps BEGIN/statements/COMMIT on the same backend
+    // connection, so the transaction is actually atomic.
+    const client = await pool.connect();
     try {
-      await pool.query(sql);
-      await pool.query("INSERT INTO schema_migrations (name) VALUES ($1)", [file]);
-      await pool.query("COMMIT");
+      await client.query("BEGIN");
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [file]);
+      await client.query("COMMIT");
       applied.push(file);
     } catch (error) {
-      await pool.query("ROLLBACK");
+      await client.query("ROLLBACK");
       throw error;
+    } finally {
+      client.release();
     }
   }
 

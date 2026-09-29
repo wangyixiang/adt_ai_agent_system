@@ -62,4 +62,15 @@ describe("MessageRouter", () => {
     expect(calls).toBe(1);
     expect(c.conn.warnings.join(" ")).toMatch(/duplicate/i);
   });
+
+  it("turns a handler exception into a warning and keeps the connection", async () => {
+    const r = new MessageRouter(resolver);
+    const c = makeConn();
+    r.register("boom", () => {
+      throw new Error("kaboom");
+    });
+    await r.handle(c.conn, JSON.stringify(env("boom")));
+    expect(c.conn.warnings.join(" ")).toMatch(/handler/i);
+    expect(c.isClosed()).toBe(false);
+  });
 });

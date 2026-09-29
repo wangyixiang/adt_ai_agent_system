@@ -45,4 +45,20 @@ describe("handshake", () => {
     await c.close();
     await srv.close();
   });
+
+  it("applies capabilities declared inline in session.hello", async () => {
+    const srv = await startTestServer();
+    const c = await TestClient.connect(srv.url);
+    await c.hello({
+      username: "alice",
+      secret: "pw-alice",
+      capabilities: [
+        { name: "git.collect_diagnostics", side_effect: false, interruptible: true },
+      ],
+    });
+    await srv.waitFor(() => srv.capabilities(c.sessionId).has("git.collect_diagnostics"));
+    expect(srv.capabilities(c.sessionId).get("git.collect_diagnostics")!.side_effect).toBe(false);
+    await c.close();
+    await srv.close();
+  });
 });

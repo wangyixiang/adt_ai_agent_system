@@ -6,7 +6,7 @@ export {
   type MessageHandler,
   type SessionResolver,
 } from "./ws/messageRouter";
-export { SessionManager, type Session } from "./session/sessionManager";
+export { SessionManager, type Session, type SessionManagerOptions } from "./session/sessionManager";
 export { registerHandshake, type HandshakeDeps } from "./session/handshake";
 export {
   CapabilityRegistry,
@@ -15,37 +15,64 @@ export {
   type CapabilitySyncPayload,
 } from "./capability/capabilityRegistry";
 export { KNOWN_CAPABILITIES } from "./capability/known";
-export { registerCapabilitySync, type CapabilitySyncDeps } from "./capability/handler";
+export { registerCapabilitySync } from "./capability/handler";
 export { HeartbeatMonitor, registerHeartbeat, type HeartbeatOptions } from "./ws/heartbeat";
 export { UserRepository, type User } from "./auth/userRepository";
 export { hashPassword, verifyPassword } from "./auth/password";
 export { createPool, type Pool } from "./db/pool";
 export { migrate, MIGRATIONS_DIR } from "./db/migrate";
+export { createServer, type CreateServerOptions, type CreatedServer } from "./server";
 
-import { buildServer } from "./http/app";
-import { MessageRouter } from "./ws/messageRouter";
+import { createPool } from "./db/pool";
+import { migrate } from "./db/migrate";
+import { createServer } from "./server";
+import type { SessionManager } from "./session/sessionManager";
 
 export interface StartOptions {
   port?: number;
   host?: string;
+  databaseUrl?: string;
+  heartbeatIntervalMs?: number;
+  maxMissed?: number;
+  onSessionDead?: (sessionId: string) => void;
 }
 
-export async function start(
-  opts: StartOptions = {},
-): Promise<{ close: () => Promise<void>; url: string }> {
-  const router = new MessageRouter({ byConnection: () => null });
-  const app = await buildServer({ router });
+export interface RunningServer {
+  url: string;
+  sessions: SessionManager;
+  close(): Promise<void>;
+}
+
+export async function start(opts: StartOptions = {}): Promise<RunningServer> {
+  const databaseUrl =
+    opts.databaseUrl ??
+    process.env.DATABASE_URL ??
+    "postgres://adt:adt@localhost:55432/adt";
+
+  const pool = createPool(databaseUrl);
+  await migrate(pool);
+
+  const server = await createServer({
+    pool,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs,
+    maxMissed: opts.maxMissed,
+    onSessionDead: opts.onSessionDead,
+  });
 
   const port = opts.port ?? Number(process.env.PORT ?? 8080);
   const host = opts.host ?? "0.0.0.0";
-  await app.listen({ port, host });
+  await server.app.listen({ port, host });
 
-  const address = app.server.address();
+  const address = server.app.server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
 
   return {
     url: `ws://127.0.0.1:${actualPort}/ws`,
-    close: () => app.close(),
+    sessions: server.sessions,
+    close: async () => {
+      await server.close();
+      await pool.end();
+    },
   };
 }
 

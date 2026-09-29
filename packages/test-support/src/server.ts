@@ -1,18 +1,12 @@
 import type { AddressInfo } from "node:net";
 import {
-  buildServer,
   createPool,
-  HeartbeatMonitor,
-  KNOWN_CAPABILITIES,
-  MessageRouter,
+  createServer,
   migrate,
-  registerCapabilitySync,
-  registerHandshake,
-  registerHeartbeat,
-  SessionManager,
   UserRepository,
   type NormalizedCapability,
   type Pool,
+  type SessionManager,
 } from "@adt/server";
 
 export const TEST_DATABASE_URL =
@@ -26,6 +20,7 @@ export interface TestServerOptions {
 export interface TestServer {
   url: string;
   deadSessions: string[];
+  sessions: SessionManager;
   capabilities(sessionId: string): Map<string, NormalizedCapability>;
   warnings(sessionId: string): string[];
   waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void>;
@@ -40,36 +35,25 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   const users = new UserRepository(pool);
   await users.create("alice", "pw-alice");
 
-  const sessions = new SessionManager();
-  const router = new MessageRouter(sessions);
-  registerHandshake(router, {
-    users,
-    sessions,
-    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
-  });
-  registerCapabilitySync(router, { known: KNOWN_CAPABILITIES });
-  registerHeartbeat(router, sessions);
-
   const deadSessions: string[] = [];
-  const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 15000;
-  const monitor = new HeartbeatMonitor(sessions, {
-    intervalMs: heartbeatIntervalMs,
+  const server = await createServer({
+    pool,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
     maxMissed: opts.maxMissed ?? 3,
-    onDead: (sessionId) => {
+    onSessionDead: (sessionId) => {
       if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
     },
   });
-  monitor.start();
 
-  const app = await buildServer({ router });
-  await app.listen({ port: 0, host: "127.0.0.1" });
-  const port = (app.server.address() as AddressInfo).port;
+  await server.app.listen({ port: 0, host: "127.0.0.1" });
+  const port = (server.app.server.address() as AddressInfo).port;
 
   return {
     url: `ws://127.0.0.1:${port}/ws`,
     deadSessions,
-    capabilities: (sessionId: string) => sessions.capabilitiesOf(sessionId),
-    warnings: (sessionId: string) => sessions.get(sessionId)?.connection.warnings ?? [],
+    sessions: server.sessions,
+    capabilities: (sessionId: string) => server.sessions.capabilitiesOf(sessionId),
+    warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection.warnings ?? [],
     waitFor: async (predicate: () => boolean, timeoutMs = 5000) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
@@ -79,8 +63,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       throw new Error("waitFor timed out");
     },
     close: async () => {
-      monitor.stop();
-      await app.close();
+      await server.close();
       await pool.end();
     },
   };
