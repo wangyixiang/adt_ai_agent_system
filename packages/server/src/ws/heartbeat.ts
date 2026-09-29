@@ -53,8 +53,13 @@ export class HeartbeatMonitor {
 export function registerHeartbeat(
   router: MessageRouter,
   sessions: SessionManager,
+  onAlive?: (sessionId: string) => void,
 ): void {
   router.register("session.heartbeat", ({ session }) => {
-    if (session) sessions.touch(session.id);
+    if (!session) return;
+    sessions.touch(session.id);
+    // Activity revives a session the monitor may have declared dead: a pending
+    // reclamation countdown must not outlive the outage that started it.
+    onAlive?.(session.id);
   });
 }

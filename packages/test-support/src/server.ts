@@ -21,6 +21,7 @@ import {
   type RecordStore,
   type SessionManager,
   type WorkflowEngine as WorkflowEngineType,
+  type RecordDocument,
   type WorkflowSnapshot,
 } from "@adt/server";
 
@@ -50,6 +51,7 @@ export interface TestServer {
   capabilities(sessionId: string): Map<string, NormalizedCapability>;
   warnings(sessionId: string): string[];
   workflows(sessionId: string): Promise<WorkflowSnapshot[]>;
+  recordForWorkflow(workflowId: string): Promise<RecordDocument | null>;
   waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -119,6 +121,9 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     engine,
     store: workflowStore,
     graceMs: sessionTtlMs,
+    onReclaimed: async (workflowId) => {
+      await records.finalize(workflowId);
+    },
   });
 
   const deadSessions: string[] = [];
@@ -131,6 +136,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
       reclaimer.onSessionDead(sessionId);
     },
+    onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 
   registerWorkflowProtocol({
@@ -169,6 +175,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     capabilities: (sessionId: string) => server.sessions.capabilitiesOf(sessionId),
     warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection?.warnings ?? [],
     workflows: (sessionId: string) => workflowStore.listWorkflowsBySession(sessionId),
+    recordForWorkflow: (workflowId: string) => finalizeStore.findByWorkflow(workflowId),
     waitFor: async (predicate: () => boolean, timeoutMs = 5000) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {

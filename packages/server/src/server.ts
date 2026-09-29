@@ -16,6 +16,8 @@ export interface CreateServerOptions {
   /** How long a disconnected session stays resumable (PROTOCOL_SPEC.md §5.2). */
   sessionTtlMs?: number;
   onSessionDead?: (sessionId: string) => void;
+  /** Heartbeat activity revived a session (cancel a pending reclamation). */
+  onSessionAlive?: (sessionId: string) => void;
   knownCapabilities?: ReadonlySet<string>;
 }
 
@@ -35,6 +37,7 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 15000;
   const maxMissed = opts.maxMissed ?? 3;
   const notifyDead = opts.onSessionDead ?? (() => {});
+  const notifyAlive = opts.onSessionAlive ?? (() => {});
 
   const sessions = new SessionManager({
     knownCapabilities: opts.knownCapabilities ?? KNOWN_CAPABILITIES,
@@ -48,7 +51,7 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
     heartbeatIntervalMs,
   });
   registerCapabilitySync(router);
-  registerHeartbeat(router, sessions);
+  registerHeartbeat(router, sessions, notifyAlive);
 
   const monitor = new HeartbeatMonitor(sessions, {
     intervalMs: heartbeatIntervalMs,

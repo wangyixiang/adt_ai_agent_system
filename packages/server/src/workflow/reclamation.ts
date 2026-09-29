@@ -7,6 +7,11 @@ export interface ReclamationDeps {
   /** Grace window before a disconnected session's workflows are reclaimed. */
   graceMs: number;
   now?: () => number;
+  /**
+   * Called after a workflow is reclaimed, so the caller can persist its
+   * Record (WORKFLOW_SPEC.md §2.2: reclamation saves the Record too).
+   */
+  onReclaimed?: (workflowId: string) => Promise<void> | void;
 }
 
 /**
@@ -44,6 +49,7 @@ export class OrphanReclaimer {
       for (const workflow of active) {
         if (workflow.sessionId !== sessionId) continue;
         await this.deps.engine.reclaimOrphan(workflow.id);
+        await this.deps.onReclaimed?.(workflow.id);
         reclaimed.push(workflow.id);
       }
       this.pending.delete(sessionId);

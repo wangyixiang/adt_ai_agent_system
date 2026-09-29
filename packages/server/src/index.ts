@@ -187,6 +187,10 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     engine,
     store: workflowStore,
     graceMs: sessionTtlMs,
+    // WORKFLOW_SPEC.md §2.2: a reclaimed workflow still gets its Record.
+    onReclaimed: async (workflowId) => {
+      await records.finalize(workflowId);
+    },
   });
 
   const server = await createServer({
@@ -198,6 +202,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
       opts.onSessionDead?.(sessionId);
       reclaimer.onSessionDead(sessionId);
     },
+    onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 
   registerWorkflowProtocol({
