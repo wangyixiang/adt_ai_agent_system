@@ -12,6 +12,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@adt/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
+      "@adt/server": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+      "@adt/test-support": fileURLToPath(
+        new URL("../test-support/src/index.ts", import.meta.url),
+      ),
     },
   },
 });

@@ -1,3 +1,19 @@
+export { buildServer, type ServerDeps } from "./http/app";
+export { Connection, type SocketLike } from "./ws/connection";
+export {
+  MessageRouter,
+  type MessageContext,
+  type MessageHandler,
+  type RouterSession,
+  type SessionResolver,
+} from "./ws/messageRouter";
+export { SessionManager, type Session } from "./session/sessionManager";
+export { registerHandshake, type HandshakeDeps } from "./session/handshake";
+export { UserRepository, type User } from "./auth/userRepository";
+export { hashPassword, verifyPassword } from "./auth/password";
+export { createPool, type Pool } from "./db/pool";
+export { migrate, MIGRATIONS_DIR } from "./db/migrate";
+
 import { buildServer } from "./http/app";
 import { MessageRouter } from "./ws/messageRouter";
 
@@ -6,7 +22,9 @@ export interface StartOptions {
   host?: string;
 }
 
-export async function start(opts: StartOptions = {}): Promise<{ close: () => Promise<void>; url: string }> {
+export async function start(
+  opts: StartOptions = {},
+): Promise<{ close: () => Promise<void>; url: string }> {
   const router = new MessageRouter({ byConnection: () => null });
   const app = await buildServer({ router });
 

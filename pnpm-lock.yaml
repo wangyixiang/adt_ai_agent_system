@@ -54,6 +54,28 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.4)
 
+  packages/test-support:
+    dependencies:
+      '@adt/server':
+        specifier: workspace:*
+        version: link:../server
+      '@adt/shared':
+        specifier: workspace:*
+        version: link:../shared
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.0
+        version: 22.20.4
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.1
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
@@ -616,6 +638,9 @@ packages:
 
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@vitest/expect@2.1.9':
     resolution: {integrity: sha512-UJCIkTBenHeKT1TTlKMJWy1laZewsRIzYighyYiJKZreqtdxSos/S1t+ktRMQWu2CKqaarrkeszJx1cgC5tGZw==}
@@ -1421,6 +1446,10 @@ snapshots:
       '@types/node': 22.20.4
       pg-protocol: 1.16.0
       pg-types: 2.2.0
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.20.4
 
   '@vitest/expect@2.1.9':
     dependencies:
