@@ -33,6 +33,11 @@ export class SessionManager implements SessionResolver {
   }
 
   create(userId: string, connection: Connection): Session {
+    // Re-handshake on the same connection replaces the old session rather
+    // than orphaning it.
+    const existing = this.byConn.get(connection.id);
+    if (existing) this.expire(existing.id);
+
     const session: Session = {
       id: newSessionId(),
       userId,

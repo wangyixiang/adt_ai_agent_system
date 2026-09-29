@@ -1,5 +1,5 @@
-import { makeError } from "@adt/shared";
 import type { MessageRouter } from "../ws/messageRouter";
+import { sendError } from "../ws/errors";
 import type { CapabilitySyncPayload } from "./capabilityRegistry";
 
 /**
@@ -16,9 +16,7 @@ export function registerCapabilitySync(router: MessageRouter): void {
     const payload = env.payload as Partial<CapabilitySyncPayload> | null;
     const validMode = payload?.mode === "full" || payload?.mode === "incremental";
     if (!payload || !validMode || typeof payload.revision !== "number") {
-      conn.send(
-        makeError("malformed_payload", "invalid capability.sync payload", env.message_id),
-      );
+      sendError(conn, session, "malformed_payload", "invalid capability.sync payload", env.message_id);
       return;
     }
 

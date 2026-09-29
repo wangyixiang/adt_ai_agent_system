@@ -730,3 +730,11 @@ git commit -m "test(protocol): P1 end-to-end acceptance suite"
 ## 后续
 
 P1 验收通过后，再写 **P2（Server 引擎与持久化）**：Workflow/Step 状态机、`UNKNOWN`/终态不可变、护栏、`completion_criteria`、Record 生成与保存、孤儿回收、Record/Report 查询。
+
+### 移交给 P2 的待办（P1 收尾时确认延后）
+
+1. **让错误处置真正驱动行为**：`ERROR_DISPOSITION`（`packages/shared/src/protocol/errors.ts`）目前只是声明表，路由/握手仍硬编码 fatal/ignore。P2 会大量使用错误分级，届时让代码消费这张表，消除"规范 vs 实现"两处真相。
+2. **补测试覆盖**：显式保留 `side_effect: false` / `interruptible: true`（当前只断言缺省值）、增量 `removed` 生效、畸形 `capability.sync` 形态。
+3. **去重窗口改为逻辑会话生命周期**：目前 `DedupWindow` 绑在物理 `Connection` 上；`PROTOCOL_SPEC.md` §2 定义的是"会话生命周期"。P2 实现 `session.resume` 时，必须让窗口跨重连携带，否则重连后的重传会被当作新消息。
+
+> 以上三条是 P1 整支评审的延后项，不是缺陷遗漏；P1 的 Critical / Important 已全部修复。

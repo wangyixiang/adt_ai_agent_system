@@ -61,4 +61,18 @@ describe("handshake", () => {
     await c.close();
     await srv.close();
   });
+
+  it("rejects a mismatched session_id after the handshake", async () => {
+    const srv = await startTestServer();
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+    const e = await c.sendRaw({
+      ...c.base("capability.sync"),
+      session_id: "sess_wrong",
+      payload: { mode: "full", revision: 0, added: [], removed: [] },
+    });
+    expect((e.payload as { code: string }).code).toBe("malformed_payload");
+    await c.close();
+    await srv.close();
+  });
 });

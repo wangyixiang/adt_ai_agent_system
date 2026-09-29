@@ -1,6 +1,7 @@
-import { decodeEnvelope, makeError, type Envelope, type ErrorCode } from "@adt/shared";
+import { decodeEnvelope, type Envelope } from "@adt/shared";
 import type { Connection } from "./connection";
 import type { Session } from "../session/sessionManager";
+import { sendError } from "./errors";
 
 export interface SessionResolver {
   byConnection(connectionId: string): Session | null;
@@ -30,7 +31,7 @@ export class MessageRouter {
     try {
       env = decodeEnvelope(raw);
     } catch (error) {
-      this.sendError(conn, null, "malformed_payload", (error as Error).message, null);
+      sendError(conn, null, "malformed_payload", (error as Error).message, null);
       return;
     }
 
@@ -42,13 +43,17 @@ export class MessageRouter {
 
     const session = this.resolver.byConnection(conn.id);
 
-    // Post-handshake messages must carry the authenticated user (ADR-003 §3).
-    if (session && env.user_id !== session.userId) {
-      this.sendError(
+    // Post-handshake messages must carry the authenticated user and session
+    // (ADR-003 §3, PROTOCOL_SPEC.md §2).
+    if (
+      session &&
+      (env.user_id !== session.userId || env.session_id !== session.id)
+    ) {
+      sendError(
         conn,
         session,
         "malformed_payload",
-        "user_id missing or does not match the authenticated user",
+        "user_id or session_id missing or does not match the authenticated session",
         env.message_id,
       );
       return;
@@ -56,7 +61,8 @@ export class MessageRouter {
 
     const handler = this.handlers.get(env.type);
     if (!handler) {
-      this.sendError(
+      conn.warn(`unknown message type: ${env.type}`);
+      sendError(
         conn,
         session,
         "unknown_message_type",
@@ -75,20 +81,5 @@ export class MessageRouter {
       conn.warn(`handler error for ${env.type}: ${detail}`);
       console.error(`[router] handler for ${env.type} threw:`, error);
     }
-  }
-
-  private sendError(
-    conn: Connection,
-    session: Session | null,
-    code: ErrorCode,
-    message: string,
-    inReplyTo: string | null,
-  ): void {
-    const envelope = makeError(code, message, inReplyTo);
-    if (session) {
-      envelope.session_id = session.id;
-      envelope.user_id = session.userId;
-    }
-    conn.send(envelope);
   }
 }

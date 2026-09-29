@@ -40,6 +40,7 @@ describe("MessageRouter", () => {
     await r.handle(c.conn, JSON.stringify(env("nope.unknown")));
     expect(c.last().payload.code).toBe("unknown_message_type");
     expect(c.isClosed()).toBe(false);
+    expect(c.conn.warnings.join(" ")).toMatch(/unknown message type/i);
   });
 
   it("replies malformed_payload on bad JSON", async () => {

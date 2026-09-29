@@ -65,4 +65,17 @@ describe("capability.sync", () => {
     await c.close();
     await srv.close();
   });
+
+  it("correlates capability.sync errors with the session", async () => {
+    const { srv, c } = await authed();
+    const err = await c.sendRaw({
+      ...c.base("capability.sync"),
+      payload: { mode: "bogus", revision: 0, added: [], removed: [] },
+    });
+    expect((err.payload as { code: string }).code).toBe("malformed_payload");
+    expect(err.session_id).toBe(c.sessionId);
+    expect(err.user_id).toBe(c.userId);
+    await c.close();
+    await srv.close();
+  });
 });

@@ -50,6 +50,12 @@ export class DaemonConnection {
 
       const fail = (error: Error) => {
         clearTimeout(timer);
+        // Do not leak the socket when the handshake is rejected.
+        try {
+          ws.close();
+        } catch {
+          // already closing/closed
+        }
         reject(error);
       };
 
