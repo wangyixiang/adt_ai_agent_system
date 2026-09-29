@@ -1,6 +1,6 @@
 # REPORT_SPEC.md
 
-- **Version:** v0.2（缺口收敛：结论渲染覆盖 `UNKNOWN` / 未对账副作用；补齐生成失败返回 `status` / `error_code`；预留"生成人"；对齐 `PROTOCOL_SPEC.md` v0.4、`RECORD_SPEC.md` v0.3，取代 v0.1）
+- **Version:** v0.3（部署/信任模型落地：Report 仅提交人可生成 / 查看；Report 可作为 KB 导出对象；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.2）
 - **层级:** Specification — Report 的触发、内容约束与输出形式
 - **拆分说明:** `REQUIREMENTS.md` FR-17~FR-20 定义了 Report 必须满足的产品要求（按需生成、事实可追溯、不修改 Record、至少一种人类可读形式），`PROTOCOL_SPEC.md` §11 已经在协议层留了 `report.generate_request/result` 的字段位置（`options.detail_level`、`report.format`），但两边都没有定义这些字段具体取什么值、Report 的内容该怎么组织。本文件补上这一环，承接 `RECORD_SPEC.md` 定义的 Record 结构。
 
@@ -22,6 +22,7 @@
 2. **事实可追溯**（FR-18）：Report 中每一条事实性陈述，都能定位回 Record 的某个 `entry_id` 或 `final_result` 字段（见 §5.3）。
 3. **不修改 Record，可重复生成**（FR-19）：生成 Report 是纯读取操作；同一份 Record 可以用不同 `detail_level` 生成多次，互不影响，也不影响 Record 本身。
 4. **至少一种人类可读输出形式**（FR-20）：本版本选定 Markdown（见 §4），预留扩展其他格式的空间，但不在本版本设计。
+5. **仅提交人可用，且可作为导出对象（v0.3 新增）**：只有 Record 的提交人（`owner_user_id`）可以生成与查看该 Record 的 Report（`ADR-003` §6）；Report 也可以作为 KB 导出的对象（`PROTOCOL_SPEC.md` §10.3），导出同样不修改 Record。
 
 ---
 
@@ -134,6 +135,8 @@
 
 * **Record 不存在** → 协议层错误：走 `PROTOCOL_SPEC.md` §12 的 `protocol.error`（code=`unknown_record`），不是 Report 内容层面的问题。
 * **生成过程失败**（v0.2 新增）：Record 存在但生成不成功时，返回 `report.generate_result`，`status: "failed"`，`error_code` 取值 `generation_failed` / `insufficient_content` / `invalid_option` / `timeout`，并给出 `message`。Client 可重试；失败**不写 Record**、不产生副作用。
+* **可见性（v0.3 新增）**：只有 Record 的提交人可生成 / 查看其 Report；请求他人 Record 的 Report 走 `protocol.error`（code=`unknown_record`），不泄露存在性。
+* **导出（v0.3 新增）**：Report 可作为 KB 导出对象（`record.export_request(object="report")`）；导出不修改 Record、也不持久化 Report。
 * Report 一旦生成并返回给 Client，之后不会被 Server 主动追踪或更新——如果 Record 后续有任何变化（正常情况下不会，Record 只读，见 `RECORD_SPEC.md` §1），已经生成的 Report 也不会跟着变。
 * Report 本身**不持久化在 Server 端**（本版本假设）——每次 `report.generate_request` 都是重新生成，Client 端如果需要保留副本，由 Client 自行决定是否本地保存。这一点如果需要改变（例如以后想让 Server 缓存生成过的 Report），是个待决项，见 §7。
 
@@ -145,4 +148,4 @@
 2. **是否需要更多输出格式**（HTML/PDF 等）：本版本只做 Markdown，见 §4。
 3. **`detail_level` 是否需要更多档位**：本版本只给 `summary`/`full` 两档，见 §3。
 4. **Report 是否需要持久化/缓存**：见 §6，本版本假设每次都重新生成，不缓存。
-5. **"生成人" / "确认人"**：`RECORD_SPEC.md` §4 已为条目预留可选 `actor`，`PROTOCOL_SPEC.md` §2 已预留 `user_id`；待身份体系（`REQUIREMENTS.md` Q-5）确定后，Report 模板再填充"生成人"字段。本版本只预留、不展示。
+5. **"生成人" / "确认人"**：v0.3 起已有最小身份（`user_id` 必填并由 Server 校验，见 `ADR-003` §3），但 `RECORD_SPEC.md` §4 的 `actor` 仍为预留，Report 模板仍未展示"生成人"。待身份体系完善（`REQUIREMENTS.md` Q-5 的剩余部分）后再填充。
