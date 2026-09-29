@@ -20,11 +20,13 @@ export interface RecordServiceDeps {
  *
  * Ordering is the caller's job: persist first, then notify
  * (PROTOCOL_SPEC.md §7.4 / decision D-D3). This service never sends anything.
+ * The original user request is read from the workflow row, so a restart does
+ * not lose it (RECORD_SPEC.md §3).
  */
 export class RecordService {
   constructor(private readonly deps: RecordServiceDeps) {}
 
-  async finalize(workflowId: string, userRequest: unknown): Promise<FinalizeResult> {
+  async finalize(workflowId: string): Promise<FinalizeResult> {
     const existing = await this.deps.store.findByWorkflow(workflowId);
     if (existing) {
       return { recordId: existing.record_id, persistenceFailed: false };
@@ -40,7 +42,7 @@ export class RecordService {
       workflow,
       steps,
       events,
-      userRequest,
+      userRequest: workflow.userRequest,
       recordId: `rec_${randomUUID()}`,
     });
 
@@ -50,7 +52,12 @@ export class RecordService {
         await this.deps.store.save(document);
         return { recordId: document.record_id, persistenceFailed: false };
       } catch {
-        // Retry; the last failure is reported below.
+        // The insert may have committed without acknowledging; if so, the
+        // record exists and this is not a failure.
+        const recovered = await this.deps.store.findByWorkflow(workflowId).catch(() => null);
+        if (recovered) {
+          return { recordId: recovered.record_id, persistenceFailed: false };
+        }
       }
     }
 

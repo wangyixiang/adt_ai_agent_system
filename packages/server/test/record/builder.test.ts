@@ -11,6 +11,7 @@ const workflow: WorkflowSnapshot = {
   id: "wf_1",
   userId: "usr_1",
   sessionId: "sess_1",
+  userRequest: { text: "svc down" },
   state: "COMPLETED",
   terminalReason: null,
   criteria: { mode: "open", revision: 0 },
@@ -167,5 +168,30 @@ describe("record builder", () => {
         evidence: { source: "capability", type: "git_status", result: { branch: "main" } },
       }),
     ).toContain("git_status");
+  });
+
+  it("records a declined side-effect action as a user confirmation", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "RUNNING" },
+      steps: [
+        step({
+          id: "step_7",
+          state: "REJECTED",
+          capability: "sim_rig.trigger_reset",
+          sideEffect: true,
+          interruptible: false,
+        }),
+      ],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_7", capability: "sim_rig.trigger_reset" }),
+        ev("step_status", { stepId: "step_7", state: "REJECTED" }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_5",
+    });
+
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "user_confirmation"]);
+    expect(record.entries[1]!.ref).toEqual({ step_id: "step_7", decision: "declined" });
   });
 });

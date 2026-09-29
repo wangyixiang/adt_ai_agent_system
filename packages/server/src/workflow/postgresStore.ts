@@ -11,6 +11,7 @@ interface WorkflowRow {
   id: string;
   user_id: string;
   session_id: string;
+  user_request: unknown;
   state: string;
   terminal_reason: string | null;
   criteria: unknown;
@@ -44,6 +45,7 @@ const toWorkflow = (row: WorkflowRow): WorkflowSnapshot => ({
   id: row.id,
   userId: row.user_id,
   sessionId: row.session_id,
+  userRequest: row.user_request,
   state: row.state as WorkflowSnapshot["state"],
   terminalReason: row.terminal_reason,
   criteria: row.criteria as WorkflowSnapshot["criteria"],
@@ -97,8 +99,8 @@ export class PostgresWorkflowStore implements WorkflowStore {
 
   private insertWorkflow(client: pg.PoolClient, w: WorkflowSnapshot): Promise<unknown> {
     return client.query(
-      `INSERT INTO workflows (id, user_id, session_id, state, terminal_reason, criteria, created_at, ended_at, not_solved_rounds)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO workflows (id, user_id, session_id, user_request, state, terminal_reason, criteria, created_at, ended_at, not_solved_rounds)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT (id) DO UPDATE SET
          state = EXCLUDED.state,
          terminal_reason = EXCLUDED.terminal_reason,
@@ -106,8 +108,9 @@ export class PostgresWorkflowStore implements WorkflowStore {
          ended_at = EXCLUDED.ended_at,
          not_solved_rounds = EXCLUDED.not_solved_rounds`,
       [
-        w.id, w.userId, w.sessionId, w.state, w.terminalReason,
-        JSON.stringify(w.criteria), w.createdAt, w.endedAt, w.notSolvedRounds,
+        w.id, w.userId, w.sessionId, JSON.stringify(w.userRequest ?? {}), w.state,
+        w.terminalReason, JSON.stringify(w.criteria), w.createdAt, w.endedAt,
+        w.notSolvedRounds,
       ],
     );
   }

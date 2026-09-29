@@ -28,7 +28,7 @@ export class SessionManager implements SessionResolver {
   private readonly known: ReadonlySet<string>;
 
   constructor(options: SessionManagerOptions = {}) {
-    this.now = options.now ?? (() => performance.now());
+    this.now = options.now ?? (() => Math.floor(performance.now()));
     this.known = options.knownCapabilities ?? KNOWN_CAPABILITIES;
   }
 

@@ -22,7 +22,7 @@ export class HeartbeatMonitor {
     private readonly sessions: SessionManager,
     private readonly opts: HeartbeatOptions,
   ) {
-    this.now = opts.now ?? (() => performance.now());
+    this.now = opts.now ?? (() => Math.floor(performance.now()));
   }
 
   start(): void {

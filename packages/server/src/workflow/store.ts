@@ -6,6 +6,8 @@ export interface WorkflowSnapshot {
   id: string;
   userId: string;
   sessionId: string;
+  /** The original request, persisted so the Record survives a restart. */
+  userRequest: unknown;
   state: WorkflowState;
   terminalReason: string | null;
   criteria: CompletionCriteria;

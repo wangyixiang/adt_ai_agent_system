@@ -131,4 +131,101 @@ describe("workflow protocol", () => {
     await b.close();
     await srv.close();
   });
+
+  it("notifies and persists a record when a guardrail breach terminates the workflow", async () => {
+    const srv = await startTestServer({
+      guardrails: {
+        maxStepsPerWorkflow: 1,
+        maxConsecutiveRetriesPerCapability: 2,
+        maxNotSolvedRounds: 5,
+        timeBudgetMs: null,
+      },
+      planner: [
+        {
+          kind: "step",
+          step: {
+            objective: "a",
+            capability: "git.collect_diagnostics",
+            sideEffect: false,
+            interruptible: true,
+          },
+        },
+        {
+          kind: "step",
+          step: {
+            objective: "b",
+            capability: "git.collect_diagnostics",
+            sideEffect: false,
+            interruptible: true,
+          },
+        },
+      ],
+    });
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+
+    const created = await c.sendRaw({
+      ...c.base("workflow.request"),
+      payload: {
+        client_request_id: "req_1",
+        user_request: { text: "x", attachments: [], context: {} },
+      },
+    });
+    const workflowId = (created.payload as { workflow_id: string }).workflow_id;
+    const dispatch = await c.next();
+    const stepId = (dispatch.payload as { step_id: string }).step_id;
+
+    c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    // Completing step 1 makes the orchestrator propose step 2, which breaches
+    // the step limit — the engine terminates AND throws.
+    const terminated = await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "COMPLETED" },
+    });
+
+    expect(terminated.type).toBe("workflow.terminated");
+    expect((terminated.payload as { terminal_state: string }).terminal_state).toBe("FAILED");
+    expect((terminated.payload as { terminal_reason: string }).terminal_reason).toBe("step_limit");
+    expect((terminated.payload as { record_id: string }).record_id).toMatch(/^rec_/);
+
+    await c.close();
+    await srv.close();
+  });
+
+  it("still notifies when record finalization throws", async () => {
+    const srv = await startTestServer({ planner: [], throwOnFinalize: true });
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+    const created = await c.sendRaw({
+      ...c.base("workflow.request"),
+      payload: {
+        client_request_id: "req_1",
+        user_request: { text: "x", attachments: [], context: {} },
+      },
+    });
+    const workflowId = (created.payload as { workflow_id: string }).workflow_id;
+    await c.next(); // drain the completion candidate
+
+    const ack = await c.sendRaw({
+      ...c.base("workflow.cancel_request"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, reason: "user_cancelled" },
+    });
+    expect((ack.payload as { workflow_status: string }).workflow_status).toBe("CANCELLED");
+
+    const terminated = await c.next();
+    expect(terminated.type).toBe("workflow.terminated");
+    expect((terminated.payload as { record_id: string | null }).record_id).toBeNull();
+    expect(
+      (terminated.payload as { record_persistence_failed: boolean }).record_persistence_failed,
+    ).toBe(true);
+
+    await c.close();
+    await srv.close();
+  });
 });

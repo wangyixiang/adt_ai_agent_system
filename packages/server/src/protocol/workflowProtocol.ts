@@ -53,7 +53,6 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
   const { router, engine, store, orchestrator, records, recordStore } = deps;
-  const requestText = new Map<string, unknown>();
   const notified = new Set<string>();
 
   const send = (
@@ -103,7 +102,8 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
 
   /**
    * Persist the Record FIRST, then notify (PROTOCOL_SPEC.md §7.4 / D-D3).
-   * Exactly one `workflow.terminated` per workflow.
+   * Exactly one `workflow.terminated` per workflow, and a finalize failure
+   * still notifies (with `record_id = null`).
    */
   const finalizeIfTerminated = async (
     conn: Connection,
@@ -113,9 +113,18 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     const workflow = await engine.get(workflowId);
     if (!workflow || !isTerminalWorkflow(workflow.state)) return;
     if (notified.has(workflowId)) return;
-    notified.add(workflowId);
 
-    const result = await records.finalize(workflowId, requestText.get(workflowId) ?? null);
+    let result;
+    try {
+      result = await records.finalize(workflowId);
+    } catch (error) {
+      conn.warn(`record finalize failed for ${workflowId}: ${(error as Error).message}`);
+      result = { recordId: null, persistenceFailed: true };
+    }
+
+    // Mark only once we are actually about to notify, so a throw above does
+    // not permanently suppress the termination message.
+    notified.add(workflowId);
 
     send(conn, session, "workflow.terminated", workflowId, {
       workflow_id: workflowId,
@@ -131,14 +140,20 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     session: Session,
     workflowId: string,
   ): Promise<void> => {
-    const result = await orchestrator.advance(workflowId);
-    if (result.dispatched) {
-      sendStepDispatch(conn, session, result.dispatched);
-    } else if (result.completionCandidate) {
-      send(conn, session, "workflow.completion_candidate", workflowId, {
-        summary: result.completionCandidate.summary,
-        evidence_refs: result.completionCandidate.evidenceRefs,
-      });
+    try {
+      const result = await orchestrator.advance(workflowId);
+      if (result.dispatched) {
+        sendStepDispatch(conn, session, result.dispatched);
+      } else if (result.completionCandidate) {
+        send(conn, session, "workflow.completion_candidate", workflowId, {
+          summary: result.completionCandidate.summary,
+          evidence_refs: result.completionCandidate.evidenceRefs,
+        });
+      }
+    } catch (error) {
+      // A guardrail breach terminates the workflow and THEN throws; other
+      // failures leave it non-terminal, so finalize below is a safe no-op.
+      conn.warn(`advance failed for ${workflowId}: ${(error as Error).message}`);
     }
     await finalizeIfTerminated(conn, session, workflowId);
   };
@@ -154,11 +169,10 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    const workflow = await engine.create(session.userId, session.id, { text }, {
+    const workflow = await engine.create(session.userId, session.id, request, {
       mode: "open",
       revision: 0,
     });
-    requestText.set(workflow.id, request);
 
     send(
       conn,

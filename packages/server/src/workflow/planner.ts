@@ -19,3 +19,16 @@ export type PlannerDecision =
 export interface Planner {
   proposeNext(input: PlannerInput): Promise<PlannerDecision>;
 }
+
+/**
+ * Placeholder used until the LLM planner lands (P3): it proposes no step and
+ * immediately offers a completion candidate, so a workflow terminates cleanly
+ * rather than hanging.
+ */
+export const NOOP_PLANNER: Planner = {
+  proposeNext: async () => ({
+    kind: "completion_candidate",
+    summary: "未配置规划器（P3 接入 LLM）",
+    evidenceRefs: [],
+  }),
+};

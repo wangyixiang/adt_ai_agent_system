@@ -76,6 +76,7 @@ export {
   type PlannerDecision,
   type PlannerInput,
 } from "./workflow/orchestrator";
+export { NOOP_PLANNER } from "./workflow/planner";
 export {
   PostgresRecordStore,
 } from "./record/postgresRecordStore";
@@ -113,6 +114,13 @@ import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";
 import { createServer } from "./server";
 import type { SessionManager } from "./session/sessionManager";
+import { PostgresWorkflowStore } from "./workflow/postgresStore";
+import { WorkflowEngine } from "./workflow/engine";
+import { WorkflowOrchestrator } from "./workflow/orchestrator";
+import { NOOP_PLANNER, type Planner } from "./workflow/planner";
+import { PostgresRecordStore } from "./record/postgresRecordStore";
+import { RecordService } from "./record/service";
+import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
 
 export interface StartOptions {
   port?: number;
@@ -121,6 +129,8 @@ export interface StartOptions {
   heartbeatIntervalMs?: number;
   maxMissed?: number;
   onSessionDead?: (sessionId: string) => void;
+  /** Defaults to a no-op planner until P3 wires the LLM planner. */
+  planner?: Planner;
 }
 
 export interface RunningServer {
@@ -143,6 +153,26 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     heartbeatIntervalMs: opts.heartbeatIntervalMs,
     maxMissed: opts.maxMissed,
     onSessionDead: opts.onSessionDead,
+  });
+
+  const workflowStore = new PostgresWorkflowStore(pool);
+  const engine = new WorkflowEngine({ store: workflowStore });
+  const recordStore = new PostgresRecordStore(pool);
+  const records = new RecordService({ store: recordStore, workflowStore });
+  const orchestrator = new WorkflowOrchestrator({
+    engine,
+    store: workflowStore,
+    planner: opts.planner ?? NOOP_PLANNER,
+  });
+
+  registerWorkflowProtocol({
+    router: server.router,
+    sessions: server.sessions,
+    engine,
+    store: workflowStore,
+    orchestrator,
+    records,
+    recordStore,
   });
 
   const port = opts.port ?? Number(process.env.PORT ?? 8080);

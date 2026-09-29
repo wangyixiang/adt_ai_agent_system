@@ -97,6 +97,12 @@ function toEntry(
         return { ...base, kind: "step_outcome_unknown", ref, narrative: renderNarrative("step_outcome_unknown", ref) };
       }
 
+      // A rejection IS a human decision that happened, so it must appear.
+      if (payload.state === "REJECTED") {
+        const ref = { step_id: stepId, decision: "declined" };
+        return { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
+      }
+
       if ((payload.state === "COMPLETED" || payload.state === "FAILED") && payload.evidence !== undefined) {
         const ref = { step_id: stepId, evidence: payload.evidence };
         return { ...base, kind: "evidence_received", ref, narrative: renderNarrative("evidence_received", ref) };

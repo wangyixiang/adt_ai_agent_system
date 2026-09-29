@@ -93,7 +93,8 @@ export class WorkflowEngine {
   constructor(deps: EngineDeps) {
     this.store = deps.store;
     this.guardrails = deps.guardrails ?? DEFAULT_GUARDRAILS;
-    this.now = deps.now ?? (() => performance.now());
+    // Monotonic and integer-valued (the DB stores bigint milliseconds).
+    this.now = deps.now ?? (() => Math.floor(performance.now()));
     this.onTerminated = deps.onTerminated;
   }
 
@@ -159,13 +160,14 @@ export class WorkflowEngine {
   async create(
     userId: string,
     sessionId: string,
-    request: { text: string },
+    request: unknown,
     criteria: CompletionCriteria,
   ): Promise<WorkflowSnapshot> {
     const workflow: WorkflowSnapshot = {
       id: newWorkflowId(),
       userId,
       sessionId,
+      userRequest: request,
       state: "CREATED",
       terminalReason: null,
       criteria,

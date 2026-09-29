@@ -22,6 +22,7 @@ const wf: WorkflowSnapshot = {
   id: "wf_1",
   userId: "usr_1",
   sessionId: "sess_1",
+  userRequest: { text: "svc down" },
   state: "CREATED",
   terminalReason: null,
   criteria: { mode: "open", revision: 0 },

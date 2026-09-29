@@ -10,6 +10,7 @@ import {
   UserRepository,
   WorkflowEngine,
   WorkflowOrchestrator,
+  type GuardrailConfig,
   type NormalizedCapability,
   type PlannerDecision,
   type Pool,
@@ -28,6 +29,9 @@ export interface TestServerOptions {
   /** Scripted planner decisions; an exhausted script yields a completion candidate. */
   planner?: PlannerDecision[];
   failRecordPersistence?: boolean;
+  /** Makes `RecordService.finalize` throw (as if a DB read failed). */
+  throwOnFinalize?: boolean;
+  guardrails?: GuardrailConfig;
 }
 
 export interface TestServer {
@@ -75,12 +79,29 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   });
 
   const workflowStore = new PostgresWorkflowStore(pool);
-  const engine = new WorkflowEngine({ store: workflowStore, now: () => Date.now() });
-  const realRecordStore = new PostgresRecordStore(pool);
-  const records = new RecordService({
-    store: opts.failRecordPersistence ? failingRecordStore() : realRecordStore,
-    workflowStore,
+  const engine = new WorkflowEngine({
+    store: workflowStore,
+    now: () => Date.now(),
+    guardrails: opts.guardrails,
   });
+  const realRecordStore = new PostgresRecordStore(pool);
+
+  const finalizeStore: RecordStore = opts.throwOnFinalize
+    ? {
+        save: async () => {
+          throw new Error("finalize read failed");
+        },
+        get: async () => null,
+        findByWorkflow: async () => {
+          throw new Error("finalize read failed");
+        },
+        listByOwner: async () => emptyPage,
+      }
+    : opts.failRecordPersistence
+      ? failingRecordStore()
+      : realRecordStore;
+
+  const records = new RecordService({ store: finalizeStore, workflowStore });
 
   const script = [...(opts.planner ?? [])];
   const orchestrator = new WorkflowOrchestrator({

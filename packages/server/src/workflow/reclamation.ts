@@ -21,7 +21,7 @@ export class OrphanReclaimer {
   private readonly now: () => number;
 
   constructor(private readonly deps: ReclamationDeps) {
-    this.now = deps.now ?? (() => performance.now());
+    this.now = deps.now ?? (() => Math.floor(performance.now()));
   }
 
   onSessionDead(sessionId: string): void {
