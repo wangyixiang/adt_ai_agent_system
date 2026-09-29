@@ -1,8 +1,21 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.4（缺口收敛：信封补 `user_id` / `in_reply_to` 分类 / UTC；新增 `client_request_id`、`idempotency_key`、`revision`、`session.heartbeat`、blob 通道；`step.status` 新增 `UNKNOWN`；`record.list` 语义；Report `status`；错误处置矩阵；协议版本与文档版本解耦。对齐 `WORKFLOW_SPEC.md` v0.4、`CAPABILITY_SPEC.md` v0.5、`RECORD_SPEC.md` v0.3、`REPORT_SPEC.md` v0.2，取代 v0.3）
+**Version:** v0.5（部署/信任模型落地：`session.hello` 认证、`user_id` 必填并由 Server 校验、新增 `auth_failed`；Record 查询按用户过滤；新增 `record.export_request/result`（导出半边）。依据 `ADR-003` 与 MVP 范围说明，取代 v0.4）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
+
+---
+
+## 变更记录（v0.4 → v0.5）
+
+依据 `ADR-003`（部署与信任模型）与 MVP 范围说明：
+
+- **认证握手**（§5.1）：`session.hello` 携带认证凭据；认证失败返回 `protocol.error(code=auth_failed)` 并断开。
+- **`user_id` 启用**（§2）：从 v0.4 的"预留"变为握手后**必填、由 Server 校验**。
+- **Record 按用户过滤**（§10）：`record.list` / `record.get` 只能访问当前认证用户自己的 Record。
+- **KB 导出半边**（§10.3 新增）：`record.export_request` / `record.export_result`，提交人显式发起，KB 侧接收与审核不在本系统内。
+- **错误码**（§12）：新增 `auth_failed`（致命）。
+- 消息目录从 24 种增加到 26 种（§4）。
 
 ---
 
@@ -93,7 +106,7 @@
 * `message_id`：每条消息唯一，用于 `in_reply_to` 关联和去重（同一 `message_id` 因重传被收到两次时，接收方应识别并忽略重复）。**去重窗口 = 会话生命周期**（会话结束即清空）；超出窗口的重传视为新消息。注意：`message_id` 去重只挡"同一条消息重传"，"同一意图的语义重复"由 §3 的 `idempotency_key` 负责，两者不可互相替代。
 * `session_id`：握手完成前为 `null`，此后所有消息必填。
 * `workflow_id`：只有 Workflow 生命周期内的消息才需要；握手、Capability 声明、Record/Report 查询等消息为 `null`（Record/Report 查询携带的是 `record_id`，不是 `workflow_id`，见 §10、§11）。
-* `user_id`（v0.4 新增，**预留字段**）：当前恒为 `null`，两端均**不校验**。它存在的目的只是避免未来引入身份体系时造成破坏性协议变更（见 `REQUIREMENTS.md` Q-5、NFR-6）。实际身份与鉴权由后续 Security Spec 定义。
+* `user_id`（v0.4 预留，v0.5 **启用**）：握手完成后**必填**，由 Server 依据认证结果填充并校验；未认证的连接不得进入业务消息（详见 §5.1、`ADR-003` §3）。
 * `ts`：发生时间，**一律 UTC（ISO 8601 带 `Z`）**，仅用于展示/调试。消息排序与超时判定以 **Server 侧单调时钟/序列**为准，不做跨端 wall clock 比较（见 §9）。
 * `in_reply_to`：**必须**设置的消息（指向被应答消息的 `message_id`）：`session.welcome`、`workflow.created`、`workflow.cancel_ack`、`workflow.state_sync`、`record.list_response`、`record.get_response`、`report.generate_result`、`blob.allocate_response`，以及回应某消息的 `protocol.error`。**主动推送**（`session.heartbeat` 除外）为 `null`：`step.dispatch`、`workflow.completion_candidate`、`workflow.terminated`。`step.status` 为**可选**：可指向对应的 `step.dispatch` 便于调试，但关联仍以 `step_id` 为准。
 
@@ -147,9 +160,11 @@ session_id   一次逻辑会话（可跨越多次物理连接，见 §5 重连�
 | `session.heartbeat`（v0.4 新增） | Client → Server | 应用层心跳，仅当 transport 不提供原生保活时启用（§5、§9） |
 | `blob.allocate_request`（v0.4 新增） | Client → Server | 申请一个内容引用与 blob 传输通道（上传或下载，§7.5） |
 | `blob.allocate_response`（v0.4 新增） | Server → Client | 返回 `content_ref` 与带鉴权、有生命周期的传输地址（§7.5） |
+| `record.export_request`（v0.5 新增） | Client → Server | 提交人请求把某条 Record/Report 导出到第三方 Knowledge Base（§10.3） |
+| `record.export_result`（v0.5 新增） | Server → Client | 返回导出结果（成功 / 失败） |
 | `protocol.error` | 双向 | 协议层错误 |
 
-共 24 种（v0.3 为 21 种；本版本新增 3 种：`session.heartbeat` + blob 申请/响应）。
+共 26 种（v0.4 为 24 种；本版本新增 2 种：KB 导出请求 / 结果）。
 
 ---
 
@@ -175,6 +190,7 @@ Client                                Server
 {
   "supported_protocol_versions": ["0.3"],
   "client_info": { "name": "string", "platform": "string" },
+  "auth": { "username": "engineer_a", "token": "..." },
   "capabilities": [
     {"name": "filesystem.read_file", "side_effect": false, "interruptible": true,
      "idempotent": false, "timeout_hint": 2000,
@@ -191,11 +207,14 @@ Client                                Server
 {
   "protocol_version": "0.3",
   "session_id": "sess_abc",
+  "user_id": "usr_a",
   "heartbeat_interval_ms": 15000
 }
 ```
 
 若 Server 不支持 Client 声明的任何一个版本，回复 `protocol.error`（code=`unsupported_version`）后主动断开连接，不下发 `session.welcome`。
+
+**认证（v0.5 新增，依据 `ADR-003` §3）：** `session.hello.auth` 携带凭据（用户名 + 密码/令牌）。Server 校验通过后，在 `session.welcome.user_id` 返回该用户的稳定标识；此后信封中的 `user_id` **必填**且必须与之匹配。认证失败：回复 `protocol.error`（code=`auth_failed`）后主动断开，不下发 `session.welcome`。凭据的具体形态（密码 / 令牌 / 过期与刷新）由实现决定；本版本**不要求 TLS**（见 `ADR-003` §4）。
 
 **应用层心跳（v0.4 新增）：** `heartbeat_interval_ms` 表示建议的**应用层心跳**间隔（其字段名沿用 v0.3，语义由此明确）。若 transport 自身提供等价保活（如 WebSocket ping/pong），Client 可忽略该值、不发送 `session.heartbeat`；否则 Client 应按该间隔发送 `session.heartbeat`（`in_reply_to` 为 `null`，无响应）。Server 连续多个间隔未收到时判连接失效，触发 `WORKFLOW_SPEC.md` §2.2 的孤儿宽限 / 回收。具体失效判定阈值由 Server 配置。
 
@@ -524,6 +543,8 @@ step.status   step.status
 
 对应 `REQUIREMENTS.md` FR-14，结构定义见 `RECORD_SPEC.md`。
 
+**可见性（v0.5 新增，依据 `ADR-003` §6）：** 只能访问**当前认证用户自己**的 Record。Server 必须按 `user_id` 过滤 `record.list_request` / `record.get_request`；请求他人的 `record_id` 返回 `protocol.error`（code=`unknown_record`），不泄露其存在。
+
 ### 10.1 列表
 
 ```json
@@ -583,6 +604,27 @@ step.status   step.status
 
 请求了不存在的 `record_id` 时，Server 返回 `protocol.error`（code=`unknown_record`，v0.2 新增错误码，见 §12）。
 
+### 10.3 导出到第三方 Knowledge Base（v0.5 新增，"导出半边"）
+
+对应 `REQUIREMENTS.md` FR-24（v0.10 调整）与 `ADR-003` §6。**提交人自己决定**是否把某条 Record/Report 沉淀给第三方 Knowledge Base；KB 是否接收由其审核人员决定——**审核完全在 KB 侧，本系统不追踪审核状态**。
+
+```json
+{ "type": "record.export_request",
+  "payload": { "record_id": "rec_001", "object": "record", "target": "knowledge_base" } }
+```
+
+```json
+{ "type": "record.export_result",
+  "payload": { "record_id": "rec_001", "object": "record",
+               "status": "ok", "error_code": null, "message": null } }
+```
+
+* `object`：`record`（默认）| `report`。`report` 时导出的是基于该 Record 生成的 Report（生成规则见 `REPORT_SPEC.md`）。
+* `status`：`ok` | `failed`；`failed` 时 `error_code` 取值 `export_unavailable` / `export_failed` / `invalid_object`，并给出 `message`。
+* 只能导出**自己**的 Record（同 §10 的可见性规则）；`record_id` 不存在或不属于自己 → `protocol.error(code=unknown_record)`。
+* 导出**不修改** Record，可重复发起。
+* 实际出站（Server → KB 的协议、鉴权、数据格式）由后续 **KB 集成 ADR** 定义；本版本只固定这一层最小协议面。
+
 ---
 
 ## 11. Report 生成（v0.2 新增）
@@ -640,8 +682,9 @@ step.status   step.status
 | `unknown_message_type` | 可忽略 + 告警 | **不得断开连接**，忽略该消息并记录告警 |
 | `malformed_payload` | 请求级失败 | 丢弃该消息 + 告警，连接继续 |
 | `blob_rejected`（v0.4 新增） | 请求级失败 | `blob.allocate_request` 被拒（超尺寸 / 类型不在白名单等），连接继续 |
+| `auth_failed`（v0.5 新增） | 致命 | 认证失败：断开，不下发 `session.welcome`（§5.1） |
 
-最小 `code` 集合（v0.4）：`unsupported_version` / `session_expired` / `unknown_message_type` / `malformed_payload` / `unknown_workflow` / `unknown_step` / `unknown_record` / `blob_rejected`。
+最小 `code` 集合（v0.5）：`unsupported_version` / `session_expired` / `auth_failed` / `unknown_message_type` / `malformed_payload` / `unknown_workflow` / `unknown_step` / `unknown_record` / `blob_rejected`。
 
 `protocol.error` 描述的是**协议层面**的问题（消息格式错、版本不兼容、引用了不存在的 workflow_id/record_id），不同于 `step.status(FAILED)` 描述的**业务执行层面**的失败——不要把两者混用。
 
@@ -810,6 +853,8 @@ session.heartbeat → session.heartbeat → ...
 | Record 落盘失败（v0.4 新增） | 本次缺口评审发现 | §7.4 `record_persistence_failed` + 先落盘后通知 |
 | Report 生成失败（v0.4 新增） | 本次缺口评审发现 | §11 `status` / `error_code` |
 | 错误处置分级（v0.4 新增） | 本次缺口评审发现 | §12 处置矩阵 |
+| 身份与可见性（v0.5 新增） | `ADR-003`、`REQUIREMENTS.md` Q-1/Q-2 | §5.1 认证、§2 `user_id` 必填、§10 按用户过滤 |
+| KB 导出半边（v0.5 新增） | `REQUIREMENTS.md` FR-24 | §10.3 `record.export_request/result` |
 
 **说明**：v0.3 曾在此处指出"Capability 输入/输出 Schema 没有在本文件解决"。该空白已在 v0.4 关闭：语言选定为 JSON Schema 受限子集，schema 由 `capability.sync` 携带（见 §6），校验职责见 `CAPABILITY_SPEC.md` §5.2。
 
@@ -817,10 +862,10 @@ session.heartbeat → session.heartbeat → ...
 
 ## 16. 仍未解决 / 明确留给后续版本
 
-1. **认证与授权**：连接建立、Capability 调用的权限校验，明确留给后续的 Security Spec，本文件不涉及。`user_id` 仅预留、不校验（§2）。
+1. **认证与授权的完整形态**：v0.5 已实现**最小身份与授权**（本地账号认证、`user_id` 必填并由 Server 校验、副作用确认仅限提交人、Record 仅提交人可见，见 §5.1、§10 与 `ADR-003`）。仍延后：沙箱、多租户、角色体系、组织 SSO 联邦、TLS 启用。
 2. **跨 Client 续接同一 Workflow**：例如手机发起、电脑继续同一个 `workflow_id`。本版本明确不支持——`session.resume` 只在同一逻辑 session（同一个 Client 实例）内工作。
 3. **多 Server 实例下的 Workflow 路由**：一个 Workflow 该固定在哪个 Server 实例上处理，如何做水平扩展，不在本文件范围内。
-4. **第三方 Knowledge Base 集成、Record 导出到该系统**（v0.2 新增明确说明）：`SERVER_SPEC.md` v0.4 已经确认第三方 Knowledge Base 检索由 Server 直接对接，不经过 Client，因此**不经过这条 Client-Server 协议**；Record 未来是否导出到该系统（`REQUIREMENTS.md` FR-24）同样不在本文件范围内——本版本明确不涉及，不是遗漏。
+4. **第三方 Knowledge Base 的完整集成**：v0.5 已实现**导出半边**的最小协议面（§10.3）。仍延后：KB 检索（FR-23）的接口、导出的出站协议 / 鉴权 / 数据格式、审核状态回读——由后续 KB 集成 ADR 定义。
 5. **blob 通道的具体传输协议与鉴权**（v0.4 新增）：§7.5 只定义"引用 + 申请制通道"的形态与字段位置；具体是 HTTP PUT/GET、分块协议还是对象存储直传，以及其鉴权方式，留给实现与安全规格决定。
 
 > v0.3 的第 2 条（Schema 语言选型）与第 4 条（大体积 Evidence 传输）已在 v0.4 解决，不再列为未决项。
