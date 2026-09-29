@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.2（§7 引用状态同步：`REPORT_SPEC.md` 已建成，取代 v0.1）
+- **Version:** v0.3（缺口收敛：结构补 `completion_criteria`、`UNKNOWN` 的 `final_result` 标注、条目 `actor`；新增对账/未知/护栏 entry kind；`narrative` 生成规则落地；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4、`REPORT_SPEC.md` v0.2，取代 v0.2）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -52,7 +52,8 @@ Record
 ├── created_at             Workflow 创建时间
 ├── ended_at               Workflow 终止时间
 ├── terminal_state         COMPLETED | FAILED | CANCELLED
-├── terminal_reason        可选。CANCELLED 时区分"取消"/"放弃"等意图（见 WORKFLOW_SPEC.md §2）
+├── terminal_reason        可选。CANCELLED 时区分"取消"/"放弃"等意图；FAILED 时区分失败原因（v0.3 扩展，取值见 WORKFLOW_SPEC.md §2）
+├── completion_criteria    v0.3 新增：Request 级完成条件及其修订历史（见 WORKFLOW_SPEC.md §8.1）
 ├── user_request           原始问题描述（含附件/环境信息引用）
 ├── summary                列表视图用的最小摘要（见 §5）
 ├── entries[]              详情视图：按时间顺序排列的完整过程（见 §4）
@@ -77,6 +78,20 @@ terminal_state = CANCELLED:
     cancelled_summary: <可选，工程师取消/放弃时留下的说明，没有则为 null>
 ```
 
+**跨终止态的可选字段：未对账副作用（v0.3 新增）：**
+
+```text
+final_result:
+  ...
+  unresolved_side_effects:      # 可选；存在未对账的副作用 Step 时必填
+    - step_id: step_007
+      capability: test_rig.trigger_reset
+      idempotency_key: idem_9
+      last_known_state: UNKNOWN
+```
+
+当 Workflow 终止时仍有未对账的 `UNKNOWN` 副作用 Step（工程师取消、或 Server 判定无法继续），必须在 `final_result` 中标注"存在未对账的副作用动作（可能已执行）"，既不谎称成功也不谎称失败。这是"忠实"原则（§1）在 `UNKNOWN` 上的落地（见 `WORKFLOW_SPEC.md` §4.3）。
+
 ---
 
 ## 4. Entry 的结构（详情视图的主体）
@@ -86,10 +101,11 @@ terminal_state = CANCELLED:
 ```text
 Entry
 ├── entry_id
-├── ts                  发生时间
-├── kind                事件类型（见下）
-├── ref                 结构化引用（因 kind 而不同，见下）
-└── narrative            一句人类可读的描述
+├── ts                    发生时间（Server 权威时间，v0.3）
+├── kind                  事件类型（见下）
+├── ref                   结构化引用（因 kind 而不同，见下）
+├── actor                 可选。做出该人工决定的人（v0.3 预留，见 §9-5）
+└── narrative              一句人类可读的描述
 ```
 
 `kind` 的取值和对应的 `ref`：
@@ -103,6 +119,11 @@ Entry
 | `completion_candidate` | Server 提出"可能已解决" | `summary`, `evidence_refs` |
 | `completion_response` | 工程师对 Completion Candidate 的回应 | `resolution`（solved \| not_solved）, `feedback` |
 | `cancellation_requested` | 工程师表达了取消意图（对齐 `WORKFLOW_SPEC.md` §2.1） | 无（时间点本身就是信息） |
+| `step_outcome_unknown`（v0.3 新增） | 某副作用 Step 被判为结果未知（对齐 `WORKFLOW_SPEC.md` §4.3） | `step_id`, `capability`, `idempotency_key` |
+| `reconciliation_resolved`（v0.3 新增） | 对账把原 `UNKNOWN` 裁定为某个终态 | `step_id`, `resolved_to`（`COMPLETED` \| `FAILED`）, `evidence_refs` |
+| `guardrail_triggered`（v0.3 新增） | 终止护栏触顶导致 Workflow 失败（对齐 `WORKFLOW_SPEC.md` §13） | `guardrail`, `threshold` |
+
+> 大体积 Evidence（日志、截图）在 `ref.evidence` 中以 `content_ref` 引用（见 `PROTOCOL_SPEC.md` §7.5），Record 保留该引用；`narrative` 仍只描述领域事实，不描述存储细节。
 
 示例：
 
@@ -119,7 +140,15 @@ entry:
   narrative: "读取了测试台 CAN2 通道的信号日志，发现 10:11:50-10:12:00 时间窗口内有帧丢失。"
 ```
 
-`narrative` 具体怎么生成（模板拼接，还是让 LLM 在生成 Record 的那一刻现场写一句话）留给实现阶段决定，本文件只规定：**每条 entry 必须有 narrative，且 narrative 的内容不能超出 `ref` 里的结构化事实**（呼应 §1 原则1，"忠实"这条对 narrative 同样适用，不能借着"叙事"的名义添油加醋）。
+**`narrative` 的生成方式（v0.3 定案，关闭原 §9-1）：**
+
+* 结构化字段（`ref` / `summary` 等）一律由**确定性代码**生成，不依赖 LLM。
+* `narrative` **优先用确定性模板**（基于 `kind` + `ref` 拼接）；仅当涉及无法模板化的自然语言时（例如 `user_input` 反馈的原话复述），才用 **LLM 润色**。
+* 无论哪种方式，生成后必须做**一致性校验**：`narrative` 不得引入 `ref` 之外的实体、数值或结论。
+* 校验失败 → 回退为最小模板句。
+* **`narrative` 生成失败绝不阻塞 Record 落盘**（Record 必须一次性写出，见 §2）。
+
+本文件只规定：**每条 entry 必须有 narrative，且 narrative 的内容不能超出 `ref` 里的结构化事实**（呼应 §1 原则1，"忠实"这条对 narrative 同样适用，不能借着"叙事"的名义添油加醋）。
 
 ---
 
@@ -178,7 +207,8 @@ spec_versions
 
 ## 9. 已知待补项（Open Items）
 
-1. **`narrative` 的具体生成方式**：模板拼接 vs. LLM 现场生成，没有定案。如果用 LLM 生成，需要额外约束"不能超出结构化事实"这条规则怎么校验（例如生成后再做一次一致性检查）。
-2. **Record 的存储介质与查询方式**：本文件只定义结构，不定义存在哪（关系型/文档型/对象存储）、`record.list_request` 对应的查询条件（按时间、按关键字）怎么实现，留给实现阶段。
+1. ~~**`narrative` 的具体生成方式**~~ **已解决（v0.3）**：模板优先 + LLM 润色 + 一致性校验 + 失败回退，见 §4。
+2. **Record 的存储介质与查询方式**：本文件只定义结构，不定义存在哪（关系型 / 文档型 / 对象存储）。查询的**条件语义**已在 `PROTOCOL_SPEC.md` §10 明确（时间区间、关键字匹配范围、分页上限、排序）；具体实现仍留给实现阶段。
 3. **修订机制**：§1 提到"只读，如需纠错应该是显式追加修订"，具体怎么设计（是否需要 `revisions[]` 字段）留给后续版本，本版本不支持修改已生成的 Record。
-4. **`terminal_reason` 的取值枚举**：`WORKFLOW_SPEC.md` §2 提到 CANCELLED 可以带 `reason`（例如 `user_cancelled` / `abandoned` / `superseded`），但具体枚举值和触发场景的对应关系还没有完整列出，留给下一次和 `WORKFLOW_SPEC.md` 一起细化。
+4. ~~**`terminal_reason` 的取值枚举**~~ **已解决（v0.3）**：`CANCELLED` 与 `FAILED` 的取值统一列在 `WORKFLOW_SPEC.md` §2。
+5. **`actor` 的实际填充**：§4 的条目已预留可选 `actor`，但系统当前没有身份体系（`REQUIREMENTS.md` Q-5）。待安全规格确定身份后填充；本版本允许为 `null`。
