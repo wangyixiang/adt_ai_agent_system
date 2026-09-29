@@ -1,0 +1,85 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createPool } from "../../src/db/pool";
+import { migrate } from "../../src/db/migrate";
+import { PostgresWorkflowStore } from "../../src/workflow/postgresStore";
+import type { WorkflowEvent, WorkflowEventKind, WorkflowSnapshot } from "../../src/workflow/store";
+import { TEST_DATABASE_URL } from "@adt/test-support";
+
+let pool: ReturnType<typeof createPool>;
+let store: PostgresWorkflowStore;
+
+beforeAll(async () => {
+  pool = createPool(TEST_DATABASE_URL);
+  await migrate(pool);
+  await pool.query("TRUNCATE workflows, workflow_steps, workflow_events");
+  store = new PostgresWorkflowStore(pool);
+});
+afterAll(async () => {
+  await pool.end();
+});
+
+const wf: WorkflowSnapshot = {
+  id: "wf_1",
+  userId: "usr_1",
+  sessionId: "sess_1",
+  state: "CREATED",
+  terminalReason: null,
+  criteria: { mode: "open", revision: 0 },
+  createdAt: 100,
+  endedAt: null,
+  notSolvedRounds: 0,
+};
+
+const ev = (id: string, kind: WorkflowEventKind): WorkflowEvent => ({
+  id,
+  workflowId: "wf_1",
+  kind,
+  ts: 100,
+  payload: {},
+});
+
+describe("PostgresWorkflowStore", () => {
+  it("round-trips a workflow and its event atomically", async () => {
+    await store.createWorkflow(wf, ev("ev_1", "workflow_created"));
+    expect(await store.getWorkflow("wf_1")).toEqual(wf);
+    expect((await store.listEvents("wf_1")).map((e) => e.kind)).toEqual(["workflow_created"]);
+  });
+
+  it("persists state changes and lists by user", async () => {
+    await store.saveWorkflow({ ...wf, state: "RUNNING" }, ev("ev_2", "step_dispatched"));
+    expect((await store.getWorkflow("wf_1"))!.state).toBe("RUNNING");
+    expect(await store.listWorkflowsByUser("usr_1")).toHaveLength(1);
+    expect(await store.listWorkflowsByUser("usr_other")).toHaveLength(0);
+  });
+
+  it("round-trips steps", async () => {
+    await store.createStep(
+      {
+        id: "step_1",
+        workflowId: "wf_1",
+        state: "PENDING",
+        objective: "check",
+        capability: "git.collect_diagnostics",
+        sideEffect: false,
+        interruptible: true,
+        idempotencyKey: null,
+        attempt: 1,
+        waitClass: null,
+      },
+      ev("ev_3", "step_dispatched"),
+    );
+    const step = (await store.getStep("step_1"))!;
+    await store.saveStep({ ...step, state: "RUNNING" }, ev("ev_4", "step_status"));
+    expect((await store.getStep("step_1"))!.state).toBe("RUNNING");
+    expect(await store.listSteps("wf_1")).toHaveLength(1);
+  });
+
+  it("finds only non-terminal workflows", async () => {
+    expect((await store.findActiveWorkflows()).map((w) => w.id)).toEqual(["wf_1"]);
+    await store.saveWorkflow(
+      { ...wf, state: "CANCELLED", terminalReason: "user_cancelled" },
+      ev("ev_5", "workflow_terminated"),
+    );
+    expect(await store.findActiveWorkflows()).toEqual([]);
+  });
+});
