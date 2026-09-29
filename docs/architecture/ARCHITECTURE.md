@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-- **Version:** v0.6（缺口收敛引用同步：§1 主循环补终止护栏、孤儿回收与 Step 终态 `UNKNOWN` 说明；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4，取代 v0.5）
+- **Version:** v0.7（部署/信任模型：新增 §6 部署视图（多用户共享 Server、本地账号、按用户隔离、TLS 延后）；依据 `ADR-003`，取代 v0.6）
 - **层级:** Architecture — 系统应该由什么构成
 - **拆分说明:** 本文件从原 `CLIENT_SPEC.md` / `SERVER_SPEC.md` v0.2 中抽取系统级架构内容整合而成。组件各自的角色定位见 `CLIENT_SPEC.md` / `SERVER_SPEC.md`；Step/Workflow/Evidence 的具体契约见 `../specs/WORKFLOW_SPEC.md`。
 
@@ -152,3 +152,36 @@ Local Capability
 | Record 的结构与保存时机 | `specs/RECORD_SPEC.md` |
 | Report 的触发与内容约束 | `specs/REPORT_SPEC.md` |
 | 关键架构决策及其被否决的替代方案 | `adr/` |
+
+---
+
+## 6. 部署视图与信任边界（v0.7 新增）
+
+> 完整决策与被否决的替代方案见 `../adr/ADR-003-deployment-and-trust-model.md`。本节只画形态。
+
+```text
+   工程师 A                工程师 B                工程师 C
+   ┌────────┐              ┌────────┐              ┌────────┐
+   │ Client │              │ Client │              │ Client │
+   │  +测试台│              │  +测试台│              │  +测试台│
+   └───┬────┘              └───┬────┘              └───┬────┘
+       │                       │                       │
+       └───────────┬───────────┴───────────┬───────────┘
+                   ▼                       ▼
+             ┌───────────────────────────────────┐
+             │             Server                │
+             │  （实验室内网；长连接；本地账号）    │
+             └───────────────────────────────────┘
+                          │
+                          ▼
+                 第三方 Knowledge Base
+                 （出站导出半边；审核在对方系统内）
+```
+
+**要点：**
+
+* **一个 Server 服务多位工程师的 Client**（`NFR-7`）；一个 Client 对应一个 `session`，`session` 归属某个 `user_id`。
+* **每位工程师独占自己的测试台**（`A-2` 澄清）→ **不引入硬件资源 / 目标模型**；副作用 Step 仍按 `session` 串行（`WORKFLOW_SPEC.md` §4.4）。
+* **身份与隔离**：Server 本地账号认证；`user_id` 必填；Record **仅提交人可见**；副作用确认**仅限提交人本人**（`ADR-003` §3/§5/§6）。
+* **传输加密（TLS）v0.1 不强制**：属传输层关注点，后加不改应用层协议（`ADR-003` §4）。
+* **出站**：提交人可按需把 Record/Report 导出到第三方 KB（导出半边）；KB 的接收与审核不在本系统内（`PROTOCOL_SPEC.md` §10.3）。
