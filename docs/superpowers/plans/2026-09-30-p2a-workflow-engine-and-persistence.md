@@ -240,14 +240,16 @@ describe("guardrails", () => {
     });
   });
   it("breaches on step count", () => {
-    expect(breachedGuardrail({ ...base, stepCount: 50 }, DEFAULT_GUARDRAILS)).toBe("step_limit");
-    expect(breachedGuardrail({ ...base, stepCount: 49 }, DEFAULT_GUARDRAILS)).toBeNull();
+    expect(breachedGuardrail({ ...base, stepCount: 51 }, DEFAULT_GUARDRAILS)).toBe("step_limit");
+    expect(breachedGuardrail({ ...base, stepCount: 50 }, DEFAULT_GUARDRAILS)).toBeNull();
   });
   it("breaches on consecutive retries", () => {
     expect(breachedGuardrail({ ...base, consecutiveRetries: 3 }, DEFAULT_GUARDRAILS)).toBe("retry_limit");
+    expect(breachedGuardrail({ ...base, consecutiveRetries: 2 }, DEFAULT_GUARDRAILS)).toBeNull();
   });
   it("breaches on not_solved rounds", () => {
-    expect(breachedGuardrail({ ...base, notSolvedRounds: 5 }, DEFAULT_GUARDRAILS)).toBe("user_round_limit");
+    expect(breachedGuardrail({ ...base, notSolvedRounds: 6 }, DEFAULT_GUARDRAILS)).toBe("user_round_limit");
+    expect(breachedGuardrail({ ...base, notSolvedRounds: 5 }, DEFAULT_GUARDRAILS)).toBeNull();
   });
   it("only breaches on time when a budget is configured", () => {
     expect(breachedGuardrail({ ...base, elapsedMs: 10_000 }, DEFAULT_GUARDRAILS)).toBeNull();
@@ -275,7 +277,7 @@ Expected: FAIL
 
 - [ ] **Step 3: 实现**
 
-`breachedGuardrail` 按固定顺序返回**第一个**触顶原因（`step_limit` → `retry_limit` → `user_round_limit` → `time_budget`），`timeBudgetMs === null` 时跳过时间项。`reviseCriteria` 返回 `{ ...next, revision: current.revision + 1 }`。
+`breachedGuardrail` 按固定顺序返回**第一个**触顶原因（`step_limit` → `retry_limit` → `user_round_limit` → `time_budget`），判定一律为**严格大于上限**（`> max`：允许恰好达到上限），`timeBudgetMs === null` 时跳过时间项。`reviseCriteria` 返回 `{ ...next, revision: current.revision + 1 }`。
 
 - [ ] **Step 4: 运行测试确认通过**
 
