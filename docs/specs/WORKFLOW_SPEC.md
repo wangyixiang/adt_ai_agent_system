@@ -43,7 +43,7 @@ CREATED ──▶ RUNNING ──▶ COMPLETED
 * `CANCELLING`（v0.2 新增，**过渡态，不是终止态**）：工程师已表达取消意图，但当前有一个不可中断的 Step 在执行，Server 不再下发新 Step，等待该 Step 自然结束后终止
 * `COMPLETED`：Request 已完成最终确认（见 §9）——**终止态**
 * `FAILED`：Server 判定 Workflow 无法继续完成——**终止态**。v0.4 起，判定不再只依赖 LLM 判断：至少还包括 §13 的终止护栏触发、以及 §2.2 的孤儿回收。可携带可选的 `terminal_reason`，取值见下。
-* `CANCELLED`（v0.2 新增）：工程师主动终止（无论理由是"取消"还是"放弃"）——**终止态**。可携带一个可选的 `reason` 字段（例如 `user_cancelled` / `abandoned` / `superseded` 等），用于区分终止的具体意图，但这只是元数据，不影响状态机的转换逻辑。
+* `CANCELLED`（v0.2 新增）：工程师主动终止（无论理由是"取消"还是"放弃"）——**终止态**。可携带一个可选的 `terminal_reason`（例如 `user_cancelled` / `abandoned` / `superseded` 等），用于区分终止的具体意图，但这只是元数据，不影响状态机的转换逻辑。（`workflow.cancel_request` 的**输入字段**名为 `reason`；写入 Workflow 状态后即 `terminal_reason`，见 `PROTOCOL_SPEC.md` §7.3、§7.4。）
 
 **`terminal_reason` 枚举（v0.4 扩展，原先只用于 `CANCELLED`）：**
 
@@ -426,6 +426,8 @@ User 不直接修改 Workflow State；User 的输入始终通过 Client 返回 S
 2. **Capability 输入/输出 Schema**：Step 的 `input` 字段该填什么结构，取决于对应 Capability 的参数声明，目前只有名字没有 Schema，见 `CAPABILITY_SPEC.md` §5。（**已由 `CAPABILITY_SPEC.md` v0.5 §5 与 `PROTOCOL_SPEC.md` v0.4 §6 解决**：采用 JSON Schema 受限子集，`step.dispatch.input` / `evidence.result` 按 schema 校验）
 3. **"Client 拒绝执行" 与 "execution.failed" 的区分**：Client 有权拒绝执行某个 Step（架构层面的权利，见 `architecture/CLIENT_SPEC.md` §7），但这应该是一种独立于"尝试执行但失败了"的信号——"拒绝"通常意味着 Server 应该换一个 Capability 或换一种方式，而"失败"更可能意味着换个参数重试。（**已由 `PROTOCOL_SPEC.md` §8 解决**：`REJECTED` 与 `FAILED` 完全分开）
 4. **Step 超时 / Liveness**：Step 处于 RUNNING 却长时间无响应时 Server 该怎么办（等待、超时转 FAILED、主动查询 Client 状态），目前未定义。（**已由 `PROTOCOL_SPEC.md` §9 解决**）
+
+> **v0.4 说明：** 以上四项均已解决（分别见 `PROTOCOL_SPEC.md` §2/§3、`CAPABILITY_SPEC.md` §5、`PROTOCOL_SPEC.md` §8、`PROTOCOL_SPEC.md` §9）。本节保留编号仅作历史追溯，不再是待办。
 
 ---
 

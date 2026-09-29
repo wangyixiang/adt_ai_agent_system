@@ -325,7 +325,7 @@ Server                                        Client
 }
 ```
 
-`reason` 可选，取值参考 `RECORD_SPEC.md` §9-4（枚举尚未最终定案，本版本允许自由字符串，不强制校验）。
+`reason` 可选，取值见 `WORKFLOW_SPEC.md` §2 的 `terminal_reason` 枚举（`user_cancelled` / `abandoned` / `superseded` 等）；本版本允许自由字符串，不强制校验。
 
 Server 的响应分两种情况（v0.4：判定依据从"Step 在 RUNNING"推广为"活跃 Step"，见 `WORKFLOW_SPEC.md` §2.1）：
 
@@ -463,7 +463,7 @@ Client                                    Server
 
 **终态与迟到更新（v0.4 新增）：** `COMPLETED` / `FAILED` / `REJECTED` / `UNKNOWN` 均为 Step 终态。到达终态后，同一 `step_id` 的后续 `step.status` 一律忽略并告警（终态互不覆盖，先到为准）；**唯一例外是 `UNKNOWN` 可被对账收敛**。同一 `(step_id, 终态)` 只接受一次，避免重连补报在 Record 中产生重复条目。迟到的只读证据可由 Server 选择性并入 Context，但不改变 Step 状态（详见 `WORKFLOW_SPEC.md` §4）。
 
-`FAILED` 与 `REJECTED` 的区分直接对应 `WORKFLOW_SPEC.md` §11-3 留的待补项：两者都会让 Server 决定"要不要换一种方式"，但含义不同——`FAILED` 通常意味着"这条路能走,这次没走通,可以重试或调整参数"；`REJECTED` 通常意味着"这条路本身不该走,换 Capability 或提请人工授权，而不是重试同样的请求"。
+`FAILED` 与 `REJECTED` 的区分对应 `WORKFLOW_SPEC.md` §11-3（该待补项已由本文件解决）：两者都会让 Server 决定"要不要换一种方式"，但含义不同——`FAILED` 通常意味着"这条路能走,这次没走通,可以重试或调整参数"；`REJECTED` 通常意味着"这条路本身不该走,换 Capability 或提请人工授权，而不是重试同样的请求"。
 
 ### 8.1 受控执行的确认流程（v0.2 新增）
 
