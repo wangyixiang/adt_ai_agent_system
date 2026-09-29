@@ -849,7 +849,8 @@ Expected: FAIL
 - `workflow.completion_response`：归属校验；`engine.confirmCompletion`；若终止 → `finalizeTermination`。
 - `workflow.cancel_request`：归属校验；`engine.cancel`；回 `workflow.cancel_ack`（`CANCELLING` 或 `CANCELLED`）；若已终止 → `finalizeTermination`。
 - `finalizeTermination(workflowId, userRequest)`：`records.finalize` → 发 `workflow.terminated { workflow_id, terminal_state, terminal_reason, record_id, record_persistence_failed }`；**只发一次**（用 `Set<string>` 记录已通知的 workflow）。
-- `startTestServer`（`@adt/test-support`）增加 `planner?: PlannerDecision[]` 与 `failRecordPersistence?: boolean`，并注册本协议、把 `SessionManager`/`engine` 暴露给断言。
+- `startTestServer`（`@adt/test-support`）增加 `planner?: PlannerDecision[]` 与 `failRecordPersistence?: boolean`，并注册本协议、把 `SessionManager`/`engine` 暴露给断言；同时**种入两个账号**：`alice`/`pw-alice` 与 `bob`/`pw-bob`（越权测试需要第二个用户）。
+- **归属检查按 `session`**：`workflow.sessionId === session.id` 才允许操作（`session.resume` 尚未实现，跨 session 续接在 P2c）。不匹配 → `protocol.error(code=unknown_workflow)`。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -923,8 +924,10 @@ describe("record and report protocol", () => {
 
   it("hides another user's record behind unknown_record", async () => {
     const { srv, c, recordId } = await completedWorkflow(script);
+    // A DIFFERENT user: record visibility is scoped by owner_user_id
+    // (ADR-003 §6). `@adt/test-support` seeds `alice` and `bob`.
     const other = await TestClient.connect(srv.url);
-    await other.hello({ username: "alice", secret: "pw-alice" });
+    await other.hello({ username: "bob", secret: "pw-bob" });
 
     const err = await other.sendRaw({ ...other.base("record.get_request"), payload: { record_id: recordId } });
     expect((err.payload as any).code).toBe("unknown_record");
