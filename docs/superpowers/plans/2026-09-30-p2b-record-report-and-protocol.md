@@ -781,10 +781,16 @@ describe("workflow protocol", () => {
     const dispatch = await c.next();
     expect(dispatch.type).toBe("step.dispatch");
     expect((dispatch.payload as any).capability).toBe("git.collect_diagnostics");
+    const stepId = (dispatch.payload as any).step_id;
 
-    await c.sendRaw({ ...c.base("step.status"), workflow_id: workflowId,
-      payload: { workflow_id: workflowId, step_id: (dispatch.payload as any).step_id, status: "RUNNING" } });
-    const candidate = await c.next();
+    // RUNNING produces no reply (the step is still active — One-Step Planning),
+    // so it is a fire-and-forget send.
+    c.send({ ...c.base("step.status"), workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" } });
+
+    const candidate = await c.sendRaw({ ...c.base("step.status"), workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "COMPLETED",
+        evidence: { source: "capability", type: "git_status", result: {} } } });
     expect(candidate.type).toBe("workflow.completion_candidate");
 
     const terminated = await c.sendRaw({ ...c.base("workflow.completion_response"), workflow_id: workflowId,
@@ -798,12 +804,14 @@ describe("workflow protocol", () => {
   });
 
   it("acks a cancel and terminates without a record when persistence fails", async () => {
+    // An exhausted planner script yields a completion candidate by default.
     const srv = await startTestServer({ planner: [], failRecordPersistence: true });
     const c = await TestClient.connect(srv.url);
     await c.hello({ username: "alice", secret: "pw-alice" });
     const created = await c.sendRaw({ ...c.base("workflow.request"),
       payload: { client_request_id: "req_1", user_request: { text: "x", attachments: [], context: {} } } });
     const workflowId = (created.payload as any).workflow_id;
+    await c.next(); // drain the completion_candidate
 
     const ack = await c.sendRaw({ ...c.base("workflow.cancel_request"), workflow_id: workflowId,
       payload: { workflow_id: workflowId, reason: "user_cancelled" } });

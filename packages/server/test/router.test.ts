@@ -74,4 +74,23 @@ describe("MessageRouter", () => {
     expect(c.conn.warnings.join(" ")).toMatch(/handler/i);
     expect(c.isClosed()).toBe(false);
   });
+
+  it("processes one connection's messages strictly in arrival order", async () => {
+    const r = new MessageRouter(resolver);
+    const c = makeConn();
+    const order: string[] = [];
+    r.register("slow", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      order.push("slow");
+    });
+    r.register("fast", () => {
+      order.push("fast");
+    });
+
+    const first = r.handle(c.conn, JSON.stringify(env("slow", { message_id: "msg_a" })));
+    const second = r.handle(c.conn, JSON.stringify(env("fast", { message_id: "msg_b" })));
+    await Promise.all([first, second]);
+
+    expect(order).toEqual(["slow", "fast"]);
+  });
 });

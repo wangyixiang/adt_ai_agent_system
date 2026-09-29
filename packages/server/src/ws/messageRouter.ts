@@ -19,6 +19,8 @@ export type MessageHandler = (
 
 export class MessageRouter {
   private readonly handlers = new Map<string, MessageHandler>();
+  /** Per-connection chain: a connection's messages are handled in arrival order. */
+  private readonly chains = new WeakMap<Connection, Promise<unknown>>();
 
   constructor(private readonly resolver: SessionResolver) {}
 
@@ -26,7 +28,23 @@ export class MessageRouter {
     this.handlers.set(type, handler);
   }
 
-  async handle(conn: Connection, raw: string | Buffer): Promise<void> {
+  handle(conn: Connection, raw: string | Buffer): Promise<void> {
+    const previous = this.chains.get(conn) ?? Promise.resolve();
+    const run = previous.then(
+      () => this.process(conn, raw),
+      () => this.process(conn, raw),
+    );
+    this.chains.set(
+      conn,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  private async process(conn: Connection, raw: string | Buffer): Promise<void> {
     let env: Envelope;
     try {
       env = decodeEnvelope(raw);

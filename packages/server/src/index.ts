@@ -68,6 +68,46 @@ export type {
   TerminalWorkflowState,
   WorkflowState,
 } from "./workflow/types";
+export {
+  WorkflowOrchestrator,
+  type AdvanceResult,
+  type OrchestratorDeps,
+  type Planner,
+  type PlannerDecision,
+  type PlannerInput,
+} from "./workflow/orchestrator";
+export {
+  PostgresRecordStore,
+} from "./record/postgresRecordStore";
+export {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  type RecordListFilters,
+  type RecordListItem,
+  type RecordListPage,
+  type RecordStore,
+} from "./record/store";
+export { RecordService, type FinalizeResult, type RecordServiceDeps } from "./record/service";
+export { buildRecord, renderNarrative, type BuildRecordInput } from "./record/builder";
+export type {
+  RecordDocument,
+  RecordEntry,
+  RecordEntryKind,
+  RecordSummary,
+  UnresolvedSideEffect,
+} from "./record/types";
+export {
+  generateReport,
+  resolveDetailLevel,
+  type DetailLevel,
+  type ReportErrorCode,
+  type ReportResult,
+} from "./report/generate";
+export {
+  registerWorkflowProtocol,
+  toStepStatusUpdate,
+  type WorkflowProtocolDeps,
+} from "./protocol/workflowProtocol";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";

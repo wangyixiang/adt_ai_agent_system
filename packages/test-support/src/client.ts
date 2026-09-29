@@ -51,14 +51,19 @@ export class TestClient {
     const queued = this.inbox.shift();
     if (queued) return Promise.resolve(queued);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("timeout waiting for a message")),
-        timeoutMs,
-      );
-      this.waiters.push((env) => {
+      let timer: NodeJS.Timeout;
+      const waiter = (env: Envelope): void => {
         clearTimeout(timer);
         resolve(env);
-      });
+      };
+      timer = setTimeout(() => {
+        // A timed-out waiter must be removed, otherwise it swallows the next
+        // message (resolve-after-reject is a no-op and the message is lost).
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        reject(new Error("timeout waiting for a message"));
+      }, timeoutMs);
+      this.waiters.push(waiter);
     });
   }
 
