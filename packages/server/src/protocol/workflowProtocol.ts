@@ -4,6 +4,9 @@ import type { Connection } from "../ws/connection";
 import { sendError } from "../ws/errors";
 import type { MessageRouter } from "../ws/messageRouter";
 import type { RecordService } from "../record/service";
+import type { RecordListFilters, RecordStore } from "../record/store";
+import { DEFAULT_PAGE_SIZE } from "../record/store";
+import { generateReport, resolveDetailLevel } from "../report/generate";
 import type { StepStatusUpdate, WorkflowEngine } from "../workflow/engine";
 import type { WorkflowOrchestrator } from "../workflow/orchestrator";
 import { isTerminalWorkflow } from "../workflow/stateMachine";
@@ -16,6 +19,7 @@ export interface WorkflowProtocolDeps {
   store: WorkflowStore;
   orchestrator: WorkflowOrchestrator;
   records: RecordService;
+  recordStore: RecordStore;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -48,7 +52,7 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
-  const { router, engine, store, orchestrator, records } = deps;
+  const { router, engine, store, orchestrator, records, recordStore } = deps;
   const requestText = new Map<string, unknown>();
   const notified = new Set<string>();
 
@@ -240,4 +244,119 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
 
   // Kept so the module owns its store dependency explicitly.
   void store;
+
+  // ---- Record query (PROTOCOL_SPEC.md §10) --------------------------------
+
+  router.register("record.list_request", async ({ conn, session }, env) => {
+    if (!session) return;
+    const payload = asRecord(env.payload);
+    const raw = asRecord(payload.filters);
+
+    const filters: RecordListFilters = {};
+    const range = asRecord(raw.time_range);
+    if (typeof range.from === "string" && typeof range.to === "string") {
+      filters.timeRange = { from: Date.parse(range.from), to: Date.parse(range.to) };
+    }
+    if (typeof raw.keyword === "string") filters.keyword = raw.keyword;
+    if (typeof raw.terminal_state === "string") filters.terminalState = raw.terminal_state;
+
+    const cursor = typeof payload.cursor === "string" ? payload.cursor : null;
+    const pageSize =
+      typeof payload.page_size === "number" ? payload.page_size : DEFAULT_PAGE_SIZE;
+
+    const page = await recordStore.listByOwner(session.userId, filters, cursor, pageSize);
+    send(
+      conn,
+      session,
+      "record.list_response",
+      null,
+      { records: page.records, next_cursor: page.next_cursor },
+      env.message_id,
+    );
+  });
+
+  router.register("record.get_request", async ({ conn, session }, env) => {
+    if (!session) return;
+    const recordId = asRecord(env.payload).record_id;
+    if (typeof recordId !== "string") {
+      sendError(conn, session, "malformed_payload", "invalid record.get_request", env.message_id);
+      return;
+    }
+
+    // Owner-scoped: "missing" and "not yours" are indistinguishable.
+    const record = await recordStore.get(recordId, session.userId);
+    if (!record) {
+      sendError(conn, session, "unknown_record", "unknown record", env.message_id);
+      return;
+    }
+
+    send(conn, session, "record.get_response", null, { record }, env.message_id);
+  });
+
+  // ---- Report generation (PROTOCOL_SPEC.md §11) ---------------------------
+
+  router.register("report.generate_request", async ({ conn, session }, env) => {
+    if (!session) return;
+    const payload = asRecord(env.payload);
+    const recordId = payload.record_id;
+    if (typeof recordId !== "string") {
+      sendError(
+        conn,
+        session,
+        "malformed_payload",
+        "invalid report.generate_request",
+        env.message_id,
+      );
+      return;
+    }
+
+    const record = await recordStore.get(recordId, session.userId);
+    if (!record) {
+      sendError(conn, session, "unknown_record", "unknown record", env.message_id);
+      return;
+    }
+
+    const detailLevel = resolveDetailLevel(asRecord(payload.options).detail_level);
+    if (!detailLevel) {
+      send(
+        conn,
+        session,
+        "report.generate_result",
+        null,
+        {
+          record_id: recordId,
+          status: "failed",
+          report: null,
+          error_code: "invalid_option",
+          message: "unknown detail_level",
+        },
+        env.message_id,
+      );
+      return;
+    }
+
+    const result = generateReport(record, detailLevel);
+    send(
+      conn,
+      session,
+      "report.generate_result",
+      null,
+      result.status === "ok"
+        ? {
+            record_id: recordId,
+            status: "ok",
+            report: { format: result.format, content: result.content },
+            error_code: null,
+            message: null,
+          }
+        : {
+            record_id: recordId,
+            status: "failed",
+            report: null,
+            error_code: result.error_code,
+            message: result.message,
+          },
+      env.message_id,
+    );
+  });
 }

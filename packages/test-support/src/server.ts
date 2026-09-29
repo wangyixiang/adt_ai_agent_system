@@ -99,6 +99,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     store: workflowStore,
     orchestrator,
     records,
+    recordStore: realRecordStore,
   });
 
   await server.app.listen({ port: 0, host: "127.0.0.1" });
