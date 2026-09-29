@@ -25,6 +25,8 @@ export { createServer, type CreateServerOptions, type CreatedServer } from "./se
 export {
   WorkflowEngine,
   GuardrailError,
+  WorkflowBusyError,
+  WorkflowTerminalError,
   type EngineDeps,
   type NewStep,
   type StepStatusUpdate,

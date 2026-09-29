@@ -38,6 +38,14 @@ const ev = (id: string, kind: WorkflowEventKind): WorkflowEvent => ({
   payload: {},
 });
 
+const evFor = (workflowId: string, id: string, kind: WorkflowEventKind): WorkflowEvent => ({
+  id,
+  workflowId,
+  kind,
+  ts: 100,
+  payload: {},
+});
+
 describe("PostgresWorkflowStore", () => {
   it("round-trips a workflow and its event atomically", async () => {
     await store.createWorkflow(wf, ev("ev_1", "workflow_created"));
@@ -98,5 +106,43 @@ describe("PostgresWorkflowStore", () => {
 
     expect((await store.getStep("step_1"))!.state).toBe("RUNNING");
     expect((await store.getWorkflow("wf_1"))!.state).toBe("CANCELLED");
+  });
+
+  it("orders events by insertion, not by timestamp", async () => {
+    const wf2: WorkflowSnapshot = { ...wf, id: "wf_2" };
+    await store.createWorkflow(wf2, evFor("wf_2", "ev_b", "workflow_created"));
+    await store.saveWorkflow(
+      { ...wf2, state: "RUNNING" },
+      evFor("wf_2", "ev_a", "step_dispatched"),
+    );
+    await store.saveWorkflow(
+      { ...wf2, state: "COMPLETED" },
+      evFor("wf_2", "ev_c", "workflow_terminated"),
+    );
+
+    // ids sort as a < b < c, so a (ts,id) order would return them out of
+    // insertion order; the log must follow insertion order.
+    const kinds = (await store.listEvents("wf_2")).map((e) => e.kind);
+    expect(kinds).toEqual(["workflow_created", "step_dispatched", "workflow_terminated"]);
+  });
+
+  it("preserves the original error when ROLLBACK also fails", async () => {
+    const failingClient = {
+      query: async (sql: string) => {
+        if (sql === "BEGIN") return {};
+        if (sql === "ROLLBACK") throw new Error("rollback failed");
+        throw new Error("original failure");
+      },
+      release: () => {},
+    };
+    const fakePool = {
+      connect: async () => failingClient,
+      query: async () => ({ rows: [] }),
+    } as unknown as ReturnType<typeof createPool>;
+    const failingStore = new PostgresWorkflowStore(fakePool);
+
+    await expect(
+      failingStore.createWorkflow(wf, ev("ev_x", "workflow_created")),
+    ).rejects.toThrow("original failure");
   });
 });

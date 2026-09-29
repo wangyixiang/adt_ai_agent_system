@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { createPool } from "../../src/db/pool";
 import { migrate } from "../../src/db/migrate";
 import { PostgresWorkflowStore } from "../../src/workflow/postgresStore";
-import { WorkflowEngine } from "../../src/workflow/engine";
+import { WorkflowEngine, GuardrailError, WorkflowTerminalError, WorkflowBusyError } from "../../src/workflow/engine";
 import { DEFAULT_GUARDRAILS } from "../../src/workflow/guardrails";
 import { TEST_DATABASE_URL } from "@adt/test-support";
 
@@ -75,7 +75,9 @@ describe("WorkflowEngine basics", () => {
       guardrails: { ...DEFAULT_GUARDRAILS, maxStepsPerWorkflow: 1 },
     });
     const wf = await limited.create("usr_1", "sess_1", { text: "x" }, open);
-    await limited.dispatchStep(wf.id, readOnly);
+    const first = await limited.dispatchStep(wf.id, readOnly);
+    await limited.applyStepStatus(wf.id, first.id, { state: "RUNNING" });
+    await limited.applyStepStatus(wf.id, first.id, { state: "COMPLETED" });
 
     await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow(/step_limit/);
 
@@ -125,6 +127,44 @@ describe("WorkflowEngine basics", () => {
     await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
 
     expect((await store.listEvents(wf.id)).length).toBe(before);
+  });
+
+  it("rejects dispatch on a terminal workflow with a distinct error", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    await engine.confirmCompletion(wf.id, "solved");
+
+    const error = await engine.dispatchStep(wf.id, readOnly).catch((e) => e);
+
+    expect(error).toBeInstanceOf(WorkflowTerminalError);
+    expect(error).not.toBeInstanceOf(GuardrailError);
+    expect((error as WorkflowTerminalError).state).toBe("COMPLETED");
+  });
+
+  it("refuses to dispatch while a step is still active", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    await engine.dispatchStep(wf.id, readOnly);
+
+    const error = await engine.dispatchStep(wf.id, readOnly).catch((e) => e);
+
+    expect(error).toBeInstanceOf(WorkflowBusyError);
+    expect(await store.listSteps(wf.id)).toHaveLength(1);
+  });
+
+  it("serializes concurrent dispatches so the guardrail cannot be bypassed", async () => {
+    const limited = new WorkflowEngine({
+      store,
+      now: () => 1000,
+      guardrails: { ...DEFAULT_GUARDRAILS, maxStepsPerWorkflow: 1 },
+    });
+    const wf = await limited.create("usr_1", "sess_1", { text: "x" }, open);
+
+    const results = await Promise.allSettled([
+      limited.dispatchStep(wf.id, readOnly),
+      limited.dispatchStep(wf.id, readOnly),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await store.listSteps(wf.id)).toHaveLength(1);
   });
 });
 

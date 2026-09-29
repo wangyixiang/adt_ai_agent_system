@@ -84,7 +84,11 @@ export class PostgresWorkflowStore implements WorkflowStore {
       await client.query("COMMIT");
       return result;
     } catch (error) {
-      await client.query("ROLLBACK");
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original failure; a rollback error must not mask it.
+      }
       throw error;
     } finally {
       client.release();
@@ -209,7 +213,9 @@ export class PostgresWorkflowStore implements WorkflowStore {
 
   async listEvents(workflowId: string): Promise<WorkflowEvent[]> {
     const result = await this.pool.query<EventRow>(
-      "SELECT * FROM workflow_events WHERE workflow_id = $1 ORDER BY ts, id",
+      // `seq` (bigserial) is the insertion order; `ts` is a monotonic clock
+      // that resets across restarts and can tie.
+      "SELECT * FROM workflow_events WHERE workflow_id = $1 ORDER BY seq",
       [workflowId],
     );
     return result.rows.map(toEvent);
