@@ -1,6 +1,6 @@
 # REQUIREMENTS.md
 
-- **Version:** v0.8（引用状态同步：`RECORD_SPEC.md`、`REPORT_SPEC.md` 已建成，§7 影响表对应行更新；取代 v0.7）
+- **Version:** v0.9（缺口收敛引用同步：NFR-3 范围澄清；A-2 补充会话级串行；§7 影响表对应行更新并关闭 CAPABILITY_SPEC 的"完成条件"待办；取代 v0.8）
 - **层级:** Requirements — 必须做什么
 - **关联:** 承接 `PRODUCT.md`。需求编号一经使用即保持稳定；被删除的需求保留编号并标注"已删除"，不重排。
 - **优先级:** P0 = v0.1 必须；P1 = 后续版本。
@@ -85,7 +85,7 @@
 |---|---|---|
 | NFR-1 | P0 | **来源可追溯**：Record 中每条 Evidence 标明来源（哪个 Capability，或工程师输入）和产生时间 |
 | NFR-2 | P0 | **持久性**：Record 保存成功后，不因系统重启或服务重新部署而丢失 |
-| NFR-3 | P0 | **断线恢复**：网络中断后，进行中的 Workflow 可以恢复，已收集的证据不丢失 |
+| NFR-3 | P0 | **断线恢复**：网络中断后，进行中的 Workflow 可以恢复，已收集的证据不丢失。**范围（v0.9 澄清）**：仅覆盖**同一逻辑会话内**的网络中断（`session_id` 有效时按 `PROTOCOL_SPEC.md` §5.2 恢复）；会话过期或 Server 重启不保证恢复——未完成工作由用户重新提交为新 Workflow，旧 Workflow 按 `WORKFLOW_SPEC.md` §2.2 回收，不静默遗留 |
 | NFR-4 | P0 | **并行**：同一工程师可以同时进行多个 Workflow |
 | NFR-5 | P0 | **响应可感知**：工程师提交、确认、拒绝等操作后，界面应给出及时反馈；具体时延目标待取得基线后设定，本版本不预设数字 |
 | NFR-6 | P0 | **安全前置**：认证、授权、沙箱等安全要求不在本文件定义，由后续安全规格承担（待建）；本文件仅规定 FR-7 的确认要求作为最低保障 |
@@ -112,7 +112,7 @@
 | 编号 | 假设 | 影响的需求 |
 |---|---|---|
 | A-1 | Record 对**所有**终止状态的 Workflow 保存（`COMPLETED`/`FAILED`/`CANCELLED`），不只是"已解决" | FR-11、FR-12 |
-| A-2 | v0.1 部署中，一套硬件在同一时刻只由一位工程师操作，因此不处理多人对同一硬件的冲突 | 非目标、FR-7 |
+| A-2 | v0.1 部署中，一套硬件在同一时刻只由一位工程师操作，因此不处理多人对同一硬件的冲突（v0.9 补充：同一工程师并发多个 Workflow 时，同一 `session` 内副作用 Step 串行，见 `WORKFLOW_SPEC.md` §4.4） | 非目标、FR-7 |
 | A-3 | v0.1 中 Record 只读，不提供编辑/删除功能；这只是"不提供功能"，不构成防篡改承诺 | FR-12、FR-13 |
 | A-4 | 请求生成报告的人就是提交问题的工程师 | FR-17 |
 | A-5 | 建议方式下，修复结果通过工程师的主动反馈获得，系统不能自行得知 | FR-8 |
@@ -129,7 +129,7 @@
 | Q-2 | Record 谁能查看：仅提交人，还是团队可见？ | FR-14 |
 | Q-3 | Record 保留多久？ | NFR-2 |
 | Q-4 | 报告的读者是谁，需要什么格式与模板？ | FR-20 |
-| Q-5 | 系统是否有用户身份体系？Record 中的人工决定是否需要记录"是哪位工程师做的"？ | FR-12，协议是否携带用户身份 |
+| Q-5 | 系统是否有用户身份体系？Record 中的人工决定是否需要记录"是哪位工程师做的"？ | FR-12，协议是否携带用户身份（v0.9：已在 `PROTOCOL_SPEC.md` §2 预留 `user_id`、`RECORD_SPEC.md` §4 预留 `actor`，本版本不校验、不填充） |
 | Q-6（v0.6 新增） | 第三方 Knowledge Base 的具体接入方式（协议、鉴权、检索接口形态）？Record 导出到该系统的触发时机与数据格式？ | FR-23、FR-24；建议后续单独出 ADR，而不是提前假设 |
 
 ---
@@ -138,15 +138,17 @@
 
 | 文档 | 需要的变化 | 来源需求 |
 |---|---|---|
-| `CAPABILITY_SPEC.md` | 增加"有副作用/需确认"声明；示例改为 HiL 场景（现有示例偏软件开发工具）；评估"完成条件"是否随 Capability 声明 | FR-21、FR-22 |
-| `WORKFLOW_SPEC.md` | 增加结束状态（已取消、未解决）；定义"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模 | FR-7~FR-11 |
-| `PROTOCOL_SPEC.md` | `step.dispatch` 需携带"需确认"标记；确认/拒绝消息；取消 Workflow；中途查看进展与证据；请求生成报告；查询 Record；（视 Q-5）用户身份 | FR-4、FR-7、FR-11、FR-14、FR-17 |
-| `SERVER_SPEC.md` | 职责中增加"保存 Record"与"按需生成 Report"；Knowledge 相关职责需说明为对接第三方系统，不自建（已在 `SERVER_SPEC.md` v0.4 落实） | FR-12、FR-17~FR-19、FR-23 |
-| `CLIENT_SPEC.md` | 职责中增加"展示历史 Record"与"发起 Report 生成请求"（已在 `CLIENT_SPEC.md` v0.4 落实） | FR-14、FR-17 |
-| `RECORD_SPEC.md`（已建成，v0.1） | 定义 Record 的结构、保存时机、与 Evidence 的关系；**不需要**为系统内检索/相似案例匹配预留结构（FR-15 已删除），**但字段设计不应与"未来可能被导出到第三方 Knowledge Base"这个方向冲突**（v0.6 新增，见 FR-24；已在 v0.1 §8 落实） | FR-12~FR-14、FR-24 |
-| `REPORT_SPEC.md`（已建成，v0.1） | 定义报告的触发、内容约束（只来自 Record）、输出形式 | FR-17~FR-20 |
-| 安全规格（待建） | 认证、授权、有副作用动作的权限边界 | NFR-6、Q-1 |
+| `CAPABILITY_SPEC.md`（已建成，v0.5） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1） | FR-21、FR-22 |
+| `WORKFLOW_SPEC.md`（已建成，v0.4） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`、会话级副作用串行（v0.4） | FR-7~FR-11 |
+| `PROTOCOL_SPEC.md`（已建成，v0.4） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 预留（v0.4） | FR-4、FR-7、FR-11、FR-14、FR-17 |
+| `SERVER_SPEC.md`（已建成，v0.7） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7） | FR-12、FR-17~FR-19、FR-23 |
+| `CLIENT_SPEC.md`（已建成，v0.6） | 展示历史 Record 与发起 Report 生成请求（v0.4）；幂等台账、迟到状态处理、确认 UI 锁定、blob 通道（v0.6） | FR-14、FR-17 |
+| `RECORD_SPEC.md`（已建成，v0.3） | Record 结构、保存时机、与 Evidence 的关系；不为系统内检索预留结构（FR-15 删除），字段设计不与未来导出冲突（v0.1 §8）；`UNKNOWN` 未对账标注、`completion_criteria`、新 entry kind、`actor`、`narrative` 规则（v0.3） | FR-12~FR-14、FR-24 |
+| `REPORT_SPEC.md`（已建成，v0.2） | 报告触发、内容约束（只来自 Record）、输出形式；`UNKNOWN`/未对账渲染、失败返回、生成人预留（v0.2） | FR-17~FR-20 |
+| 安全规格（待建） | 认证、授权、有副作用动作的权限边界；`user_id` 的实际校验 | NFR-6、Q-1、Q-5 |
 | 第三方 Knowledge Base 集成规格（待建，v0.6 新增） | 定义与第三方系统的接入协议、检索接口、鉴权 | FR-23、Q-6 |
+
+> **v0.9 说明：** 本表此前列出的"需要的变化"，除上述两份待建文档（安全规格、第三方 Knowledge Base 集成规格）外，已全部由对应 Spec 的 v0.4~v0.7 落实。
 
 ---
 
