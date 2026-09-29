@@ -1,6 +1,7 @@
-import { makeError, newMessageId, nowUtcIso, PROTOCOL_VERSION, type CapabilityDescriptor } from "@adt/shared";
+import { newMessageId, nowUtcIso, PROTOCOL_VERSION, type CapabilityDescriptor } from "@adt/shared";
 import type { UserRepository } from "../auth/userRepository";
 import type { MessageRouter } from "../ws/messageRouter";
+import { sendError } from "../ws/errors";
 import type { SessionManager } from "./sessionManager";
 
 export interface HandshakeDeps {
@@ -24,29 +25,26 @@ export function registerHandshake(router: MessageRouter, deps: HandshakeDeps): v
       ? (payload.supported_protocol_versions as string[])
       : [];
     if (!versions.includes(PROTOCOL_VERSION)) {
-      conn.send(
-        makeError(
-          "unsupported_version",
-          `server supports protocol_version ${PROTOCOL_VERSION}`,
-          env.message_id,
-        ),
+      sendError(
+        conn,
+        null,
+        "unsupported_version",
+        `server supports protocol_version ${PROTOCOL_VERSION}`,
+        env.message_id,
       );
-      conn.close();
       return;
     }
 
     const username = payload.auth?.username;
     const secret = payload.auth?.secret;
     if (typeof username !== "string" || typeof secret !== "string") {
-      conn.send(makeError("auth_failed", "missing credentials", env.message_id));
-      conn.close();
+      sendError(conn, null, "auth_failed", "missing credentials", env.message_id);
       return;
     }
 
     const user = await deps.users.verifyCredentials(username, secret);
     if (!user) {
-      conn.send(makeError("auth_failed", "invalid credentials", env.message_id));
-      conn.close();
+      sendError(conn, null, "auth_failed", "invalid credentials", env.message_id);
       return;
     }
 
