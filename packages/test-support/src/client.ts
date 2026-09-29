@@ -85,6 +85,11 @@ export class TestClient {
     this.ws.send(encodeEnvelope({ ...this.base("capability.sync"), payload }));
   }
 
+  /** Application-level heartbeat; no response (PROTOCOL_SPEC.md §5.1). */
+  heartbeat(): void {
+    this.ws.send(encodeEnvelope({ ...this.base("session.heartbeat"), payload: {} }));
+  }
+
   async hello(opts: HelloOptions): Promise<Envelope> {
     const res = await this.sendRaw({
       ...this.base("session.hello"),

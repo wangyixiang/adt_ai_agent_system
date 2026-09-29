@@ -2,11 +2,13 @@ import type { AddressInfo } from "node:net";
 import {
   buildServer,
   createPool,
+  HeartbeatMonitor,
   KNOWN_CAPABILITIES,
   MessageRouter,
   migrate,
   registerCapabilitySync,
   registerHandshake,
+  registerHeartbeat,
   SessionManager,
   UserRepository,
   type NormalizedCapability,
@@ -46,6 +48,18 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
   });
   registerCapabilitySync(router, { known: KNOWN_CAPABILITIES });
+  registerHeartbeat(router, sessions);
+
+  const deadSessions: string[] = [];
+  const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? 15000;
+  const monitor = new HeartbeatMonitor(sessions, {
+    intervalMs: heartbeatIntervalMs,
+    maxMissed: opts.maxMissed ?? 3,
+    onDead: (sessionId) => {
+      if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
+    },
+  });
+  monitor.start();
 
   const app = await buildServer({ router });
   await app.listen({ port: 0, host: "127.0.0.1" });
@@ -53,7 +67,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
 
   return {
     url: `ws://127.0.0.1:${port}/ws`,
-    deadSessions: [],
+    deadSessions,
     capabilities: (sessionId: string) => sessions.capabilitiesOf(sessionId),
     warnings: (sessionId: string) => sessions.get(sessionId)?.connection.warnings ?? [],
     waitFor: async (predicate: () => boolean, timeoutMs = 5000) => {
@@ -65,6 +79,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       throw new Error("waitFor timed out");
     },
     close: async () => {
+      monitor.stop();
       await app.close();
       await pool.end();
     },

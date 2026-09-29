@@ -16,6 +16,7 @@ export {
 } from "./capability/capabilityRegistry";
 export { KNOWN_CAPABILITIES } from "./capability/known";
 export { registerCapabilitySync, type CapabilitySyncDeps } from "./capability/handler";
+export { HeartbeatMonitor, registerHeartbeat, type HeartbeatOptions } from "./ws/heartbeat";
 export { UserRepository, type User } from "./auth/userRepository";
 export { hashPassword, verifyPassword } from "./auth/password";
 export { createPool, type Pool } from "./db/pool";
