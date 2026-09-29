@@ -405,6 +405,7 @@ git commit -m "feat(workflow): postgres schema and workflow store"
 - Produces:
   - `interface NewStep { objective: string; capability: string; sideEffect: boolean; interruptible: boolean; idempotencyKey?: string | null }`
   - `type StepStatusUpdate = { state: "RUNNING" } | { state: "WAITING"; waitClass: "human" | "execution" } | { state: "COMPLETED" } | { state: "FAILED" } | { state: "REJECTED" } | { state: "UNKNOWN" }`
+  - `class GuardrailError extends Error { readonly reason: GuardrailReason }`（`dispatchStep` 触顶或 Workflow 已终止时抛出）
   - `interface EngineDeps { store: WorkflowStore; guardrails?: GuardrailConfig; now?: () => number; onTerminated?: (w: WorkflowSnapshot) => Promise<void> | void }`
   - `class WorkflowEngine { constructor(deps: EngineDeps); create(userId: string, sessionId: string, request: { text: string }, criteria: CompletionCriteria): Promise<WorkflowSnapshot>; dispatchStep(workflowId, step: NewStep): Promise<StepSnapshot>; applyStepStatus(workflowId, stepId, update: StepStatusUpdate): Promise<WorkflowSnapshot>; confirmCompletion(workflowId, resolution: "solved" | "not_solved", feedback?): Promise<WorkflowSnapshot>; reviseCriteria(workflowId, next): Promise<WorkflowSnapshot>; get(workflowId): Promise<WorkflowSnapshot | null>; getStep(stepId): Promise<StepSnapshot | null> }`
 
@@ -417,6 +418,7 @@ import { createPool } from "../../src/db/pool";
 import { migrate } from "../../src/db/migrate";
 import { PostgresWorkflowStore } from "../../src/workflow/postgresStore";
 import { WorkflowEngine } from "../../src/workflow/engine";
+import { DEFAULT_GUARDRAILS } from "../../src/workflow/guardrails";
 import { TEST_DATABASE_URL } from "@adt/test-support";
 
 let pool: ReturnType<typeof createPool>;
@@ -474,6 +476,24 @@ describe("WorkflowEngine basics", () => {
     expect(after.state).toBe("RUNNING");
     expect(after.notSolvedRounds).toBe(1);
   });
+
+  it("fails with step_limit and refuses further steps", async () => {
+    const limited = new WorkflowEngine({
+      store,
+      now: () => 1000,
+      guardrails: { ...DEFAULT_GUARDRAILS, maxStepsPerWorkflow: 1 },
+    });
+    const wf = await limited.create("usr_1", "sess_1", { text: "x" }, open);
+    await limited.dispatchStep(wf.id, readOnly);
+
+    await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow(/step_limit/);
+
+    const after = await limited.get(wf.id);
+    expect(after!.state).toBe("FAILED");
+    expect(after!.terminalReason).toBe("step_limit");
+
+    await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow();
+  });
 });
 ```
 
@@ -484,7 +504,7 @@ Expected: FAIL
 
 - [ ] **Step 3: 实现**
 
-`create`：写入 `CREATED` + `workflow_created` 事件。`dispatchStep`：若 Workflow 为终态 → 抛错（拒绝新 Step）；若为 `CREATED` → 转 `RUNNING`；计算 `stepCount` 并检查护栏（`step_limit`）→ 触顶则 `FAILED(step_limit)` + `guardrail_triggered` + `workflow_terminated`，不再下发；否则创建 `PENDING` Step + `step_dispatched`。`applyStepStatus`：读 Step；若已是终态 → 忽略（除 `UNKNOWN` 对账，见 Task 6）并返回当前 Workflow；否则校验 `canTransitionStep`，写入新状态 + `step_status` 事件；若 Workflow 为 `CANCELLING` 且该 Step 到达终态 → 收敛 `CANCELLED`（见 Task 6）；`FAILED` 且为只读时累计连续重试并检查 `retry_limit`。`confirmCompletion("solved")` → `COMPLETED` + `workflow_terminated`；`"not_solved"` → `notSolvedRounds + 1`，检查 `user_round_limit`，否则保持 `RUNNING` + `completion_response` 事件。`reviseCriteria` → `criteria_revised` 事件 + 新 revision。终态转换后调用 `deps.onTerminated`（Task 7 用于回收，P2b 用于生成 Record）。
+`create`：写入 `CREATED` + `workflow_created` 事件。`dispatchStep`：若 Workflow 为终态 → 抛 `GuardrailError`（拒绝新 Step）；若为 `CREATED` → 转 `RUNNING`；计算 `stepCount` 并检查护栏（`step_limit`）→ 触顶则 `FAILED(step_limit)` + `guardrail_triggered` + `workflow_terminated`，并抛 `GuardrailError`，不再下发；否则创建 `PENDING` Step + `step_dispatched`。`applyStepStatus`：读 Step；若已是终态 → 忽略（除 `UNKNOWN` 对账，见 Task 6）并返回当前 Workflow；否则校验 `canTransitionStep`，写入新状态 + `step_status` 事件；若 Workflow 为 `CANCELLING` 且该 Step 到达终态 → 收敛 `CANCELLED`（见 Task 6）；`FAILED` 且为只读时累计连续重试并检查 `retry_limit`。`confirmCompletion("solved")` → `COMPLETED` + `workflow_terminated`；`"not_solved"` → `notSolvedRounds + 1`，检查 `user_round_limit`，否则保持 `RUNNING` + `completion_response` 事件。`reviseCriteria` → `criteria_revised` 事件 + 新 revision。终态转换后调用 `deps.onTerminated`（Task 7 用于回收，P2b 用于生成 Record）。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -672,12 +692,22 @@ describe("OrphanReclaimer", () => {
   it("reclaims as CANCELLED when cancel was already requested", async () => {
     const session = sessions.create("usr_1", conn());
     const wf = await engine.create("usr_1", session.id, { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, {
+      objective: "reset", capability: "sim_rig.trigger_reset",
+      sideEffect: true, interruptible: false,
+    });
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
     await engine.cancel(wf.id, "abandoned");
+    expect((await engine.get(wf.id))!.state).toBe("CANCELLING");
+
     const reclaimer = new OrphanReclaimer({ engine, store, sessions, graceMs: 5000, now: () => clock.t });
     reclaimer.onSessionDead(session.id);
     clock.t = 9000;
-    await reclaimer.reclaim();
-    expect((await engine.get(wf.id))!.state).toBe("CANCELLED");
+    expect(await reclaimer.reclaim()).toEqual([wf.id]);
+
+    const after = await engine.get(wf.id);
+    expect(after!.state).toBe("CANCELLED");
+    expect(after!.terminalReason).toBe("abandoned");
   });
 });
 ```
