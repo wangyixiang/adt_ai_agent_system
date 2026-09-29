@@ -80,6 +80,11 @@ export class TestClient {
     return this.next();
   }
 
+  /** Fire-and-forget send (for messages with no reply, or duplicates). */
+  send(envelope: Envelope): void {
+    this.ws.send(encodeEnvelope(envelope));
+  }
+
   /** `capability.sync` has no ack; the caller waits on server state instead. */
   sync(payload: CapabilitySyncPayload): void {
     this.ws.send(encodeEnvelope({ ...this.base("capability.sync"), payload }));
