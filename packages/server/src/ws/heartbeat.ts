@@ -42,6 +42,9 @@ export class HeartbeatMonitor {
     const now = this.now();
     const threshold = this.opts.intervalMs * this.opts.maxMissed;
     for (const session of this.sessions.all()) {
+      // Detached sessions are the TTL sweeper's business; a heartbeat gap on a
+      // session with no live connection is not new information.
+      if (!session.connection) continue;
       if (now - session.lastSeenAt > threshold) this.opts.onDead(session.id);
     }
   }

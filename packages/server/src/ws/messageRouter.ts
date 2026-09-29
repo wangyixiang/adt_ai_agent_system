@@ -53,13 +53,17 @@ export class MessageRouter {
       return;
     }
 
-    if (conn.dedup.has(env.message_id)) {
+    const session = this.resolver.byConnection(conn.id);
+
+    // The dedup window is session-lifetime once a session exists (so it
+    // survives a reconnect); before the handshake, the connection-scoped
+    // window is a best-effort stand-in (PROTOCOL_SPEC.md §2).
+    const window = session?.dedup ?? conn.dedup;
+    if (window.has(env.message_id)) {
       conn.warn(`duplicate message_id ${env.message_id}`);
       return;
     }
-    conn.dedup.add(env.message_id);
-
-    const session = this.resolver.byConnection(conn.id);
+    window.add(env.message_id);
 
     // Post-handshake messages must carry the authenticated user and session
     // (ADR-003 §3, PROTOCOL_SPEC.md §2).

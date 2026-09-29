@@ -1,4 +1,4 @@
-import { newSessionId } from "@adt/shared";
+import { DedupWindow, newSessionId } from "@adt/shared";
 import type { Connection } from "../ws/connection";
 import type { SessionResolver } from "../ws/messageRouter";
 import {
@@ -10,26 +10,40 @@ import { KNOWN_CAPABILITIES } from "../capability/known";
 export interface Session {
   id: string;
   userId: string;
-  connection: Connection;
+  /**
+   * The physical connection currently bound to this logical session, or
+   * `null` while the session is detached (disconnected but retained for
+   * `session.resume`, PROTOCOL_SPEC.md §5.2).
+   */
+  connection: Connection | null;
   lastSeenAt: number;
+  disconnectedAt: number | null;
   capabilities: CapabilityRegistry;
+  /** Session-lifetime dedup window; survives reconnects (PROTOCOL_SPEC.md §2). */
+  dedup: DedupWindow;
 }
 
 export interface SessionManagerOptions {
   /** Monotonic clock (PROTOCOL_SPEC.md §2/§9); defaults to `performance.now`. */
   now?: () => number;
   knownCapabilities?: ReadonlySet<string>;
+  /** How long a detached session stays resumable (PROTOCOL_SPEC.md §5.2). */
+  ttlMs?: number;
 }
+
+const DEFAULT_TTL_MS = 86_400_000;
 
 export class SessionManager implements SessionResolver {
   private readonly byId = new Map<string, Session>();
   private readonly byConn = new Map<string, Session>();
   private readonly now: () => number;
   private readonly known: ReadonlySet<string>;
+  private readonly ttlMs: number;
 
   constructor(options: SessionManagerOptions = {}) {
     this.now = options.now ?? (() => Math.floor(performance.now()));
     this.known = options.knownCapabilities ?? KNOWN_CAPABILITIES;
+    this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   }
 
   create(userId: string, connection: Connection): Session {
@@ -43,7 +57,9 @@ export class SessionManager implements SessionResolver {
       userId,
       connection,
       lastSeenAt: this.now(),
+      disconnectedAt: null,
       capabilities: new CapabilityRegistry(this.known),
+      dedup: new DedupWindow(),
     };
     this.byId.set(session.id, session);
     this.byConn.set(connection.id, session);
@@ -60,15 +76,65 @@ export class SessionManager implements SessionResolver {
 
   touch(id: string): void {
     const session = this.byId.get(id);
-    if (session) session.lastSeenAt = this.now();
+    if (!session) return;
+    session.lastSeenAt = this.now();
+    // Activity on a bound connection means the session is alive again.
+    if (session.connection) session.disconnectedAt = null;
+  }
+
+  isExpired(session: Session, now: number = this.now()): boolean {
+    return session.disconnectedAt !== null && now - session.disconnectedAt > this.ttlMs;
+  }
+
+  /** Detaches the session from a closed physical connection; it stays resumable. */
+  detach(connectionId: string): Session | null {
+    const session = this.byConn.get(connectionId);
+    if (!session) return null;
+    this.byConn.delete(connectionId);
+    session.connection = null;
+    session.disconnectedAt = this.now();
+    return session;
+  }
+
+  /** Marks a session disconnected without a socket close (heartbeat death). */
+  markDisconnected(sessionId: string): void {
+    const session = this.byId.get(sessionId);
+    if (session && session.disconnectedAt === null) {
+      session.disconnectedAt = this.now();
+    }
+  }
+
+  /** Rebinds a live, non-expired session to a new connection (`session.resume`). */
+  attach(sessionId: string, connection: Connection): Session | null {
+    const session = this.byId.get(sessionId);
+    if (!session || this.isExpired(session)) return null;
+
+    if (session.connection) this.byConn.delete(session.connection.id);
+    session.connection = connection;
+    session.disconnectedAt = null;
+    session.lastSeenAt = this.now();
+    this.byConn.set(connection.id, session);
+    return session;
+  }
+
+  /** Removes and returns the ids of sessions past their TTL. */
+  sweep(now: number = this.now()): string[] {
+    const expired: string[] = [];
+    for (const session of [...this.byId.values()]) {
+      if (this.isExpired(session, now)) {
+        this.expire(session.id);
+        expired.push(session.id);
+      }
+    }
+    return expired;
   }
 
   expire(id: string): void {
     const session = this.byId.get(id);
     if (!session) return;
     this.byId.delete(id);
-    this.byConn.delete(session.connection.id);
-    session.connection.dedup.clear();
+    if (session.connection) this.byConn.delete(session.connection.id);
+    session.dedup.clear();
   }
 
   all(): Session[] {

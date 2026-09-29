@@ -132,7 +132,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     sessions: server.sessions,
     engine,
     capabilities: (sessionId: string) => server.sessions.capabilitiesOf(sessionId),
-    warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection.warnings ?? [],
+    warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection?.warnings ?? [],
     waitFor: async (predicate: () => boolean, timeoutMs = 5000) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
