@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { isTerminalStep, isTerminalWorkflow } from "./stateMachine";
+import { isActiveStep, isTerminalStep, isTerminalWorkflow } from "./stateMachine";
+import { decideCancel } from "./cancel";
+import type { ActiveStepState } from "./types";
 import {
   breachedGuardrail,
   DEFAULT_GUARDRAILS,
@@ -221,6 +223,67 @@ export class WorkflowEngine {
       this.event(workflowId, "step_status", { stepId, state: next.state }),
     );
 
+    // A queued cancel converges the moment its non-interruptible step ends —
+    // on ANY terminal outcome, including UNKNOWN (WORKFLOW_SPEC.md §2.1).
+    if (workflow.state === "CANCELLING" && isTerminalStep(next.state)) {
+      return this.terminate(workflow, "CANCELLED", workflow.terminalReason);
+    }
+
+    return (await this.store.getWorkflow(workflowId))!;
+  }
+
+  async cancel(workflowId: string, reason = "user_cancelled"): Promise<WorkflowSnapshot> {
+    const workflow = await this.requireWorkflow(workflowId);
+    if (isTerminalWorkflow(workflow.state)) return workflow;
+
+    const steps = await this.store.listSteps(workflowId);
+    const active = steps.find((step) => isActiveStep(step.state));
+    const decision = decideCancel({
+      activeStep: active
+        ? {
+            state: active.state as ActiveStepState,
+            interruptible: active.interruptible,
+            waitClass: active.waitClass,
+          }
+        : null,
+    });
+
+    await this.store.saveWorkflow(
+      workflow,
+      this.event(workflowId, "cancel_requested", { reason }),
+    );
+
+    if (decision === "IMMEDIATE") return this.terminate(workflow, "CANCELLED", reason);
+
+    const queued: WorkflowSnapshot = {
+      ...workflow,
+      state: "CANCELLING",
+      // Remembered so convergence keeps the engineer's original intent.
+      terminalReason: reason,
+    };
+    await this.store.saveWorkflow(
+      queued,
+      this.event(workflowId, "cancel_requested", { reason, queued: true }),
+    );
+    return queued;
+  }
+
+  async reconcileUnknown(
+    workflowId: string,
+    stepId: string,
+    outcome: "COMPLETED" | "FAILED",
+  ): Promise<WorkflowSnapshot> {
+    const workflow = await this.requireWorkflow(workflowId);
+    if (isTerminalWorkflow(workflow.state)) throw new Error("workflow is terminal");
+
+    const step = await this.store.getStep(stepId);
+    if (!step || step.workflowId !== workflowId) throw new Error(`unknown step ${stepId}`);
+    if (step.state !== "UNKNOWN") throw new Error("step is not UNKNOWN");
+
+    await this.store.saveStep(
+      { ...step, state: outcome },
+      this.event(workflowId, "step_status", { stepId, state: outcome, reconciled: true }),
+    );
     return (await this.store.getWorkflow(workflowId))!;
   }
 
