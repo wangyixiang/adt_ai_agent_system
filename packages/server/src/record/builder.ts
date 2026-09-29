@@ -103,7 +103,11 @@ function toEntry(
         return { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
       }
 
-      if ((payload.state === "COMPLETED" || payload.state === "FAILED") && payload.evidence !== undefined) {
+      if (
+        (payload.state === "COMPLETED" || payload.state === "FAILED") &&
+        payload.evidence !== undefined &&
+        payload.evidence !== null
+      ) {
         const ref = { step_id: stepId, evidence: payload.evidence };
         return { ...base, kind: "evidence_received", ref, narrative: renderNarrative("evidence_received", ref) };
       }
@@ -118,13 +122,19 @@ function toEntry(
       const ref = { reason: payload.reason ?? null };
       return { ...base, kind: "cancellation_requested", ref, narrative: renderNarrative("cancellation_requested", ref) };
     }
+    case "completion_candidate": {
+      const ref = {
+        summary: payload.summary ?? null,
+        evidence_refs: payload.evidenceRefs ?? [],
+      };
+      return { ...base, kind: "completion_candidate", ref, narrative: renderNarrative("completion_candidate", ref) };
+    }
     case "guardrail_triggered": {
       const ref = { guardrail: payload.reason, threshold: null };
       return { ...base, kind: "guardrail_triggered", ref, narrative: renderNarrative("guardrail_triggered", ref) };
     }
     default:
-      // workflow_created / criteria_revised / completion_candidate / workflow_terminated
-      // are not entries.
+      // workflow_created / criteria_revised / workflow_terminated are not entries.
       return null;
   }
 }

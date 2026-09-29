@@ -1,16 +1,22 @@
 import { newMessageId, nowUtcIso, PROTOCOL_VERSION, type Envelope } from "@adt/shared";
+import { randomUUID } from "node:crypto";
 import type { SessionManager, Session } from "../session/sessionManager";
 import type { Connection } from "../ws/connection";
 import { sendError } from "../ws/errors";
 import type { MessageRouter } from "../ws/messageRouter";
 import type { RecordService } from "../record/service";
-import type { RecordListFilters, RecordStore } from "../record/store";
-import { DEFAULT_PAGE_SIZE } from "../record/store";
+import {
+  DEFAULT_PAGE_SIZE,
+  InvalidCursorError,
+  type RecordListFilters,
+  type RecordStore,
+} from "../record/store";
 import { generateReport, resolveDetailLevel } from "../report/generate";
 import type { StepStatusUpdate, WorkflowEngine } from "../workflow/engine";
 import type { WorkflowOrchestrator } from "../workflow/orchestrator";
 import { isTerminalWorkflow } from "../workflow/stateMachine";
 import type { StepSnapshot, WorkflowSnapshot, WorkflowStore } from "../workflow/store";
+import type { WorkflowEventKind } from "../workflow/store";
 
 export interface WorkflowProtocolDeps {
   router: MessageRouter;
@@ -27,7 +33,8 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 /** Maps a protocol `step.status` payload onto an engine update, or null. */
 export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatusUpdate | null {
-  const evidence = payload.evidence;
+  // `null` is not evidence; only a real value counts.
+  const evidence = payload.evidence ?? undefined;
   switch (payload.status) {
     case "RUNNING":
       return { state: "RUNNING" };
@@ -87,8 +94,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     return workflow;
   };
 
-  const sendStepDispatch = (conn: Connection, session: Session, step: StepSnapshot): void => {
-    send(conn, session, "step.dispatch", step.workflowId, {
+  const sendStepDispatch = (conn: Connection, session: Session, step: StepSnapshot): void => {    send(conn, session, "step.dispatch", step.workflowId, {
       workflow_id: step.workflowId,
       step_id: step.id,
       objective: step.objective,
@@ -98,6 +104,19 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       requires_confirmation: step.sideEffect,
       idempotency_key: step.idempotencyKey,
     });
+  };
+
+  /** Records a protocol-layer event (no state change). */
+  const recordEvent = async (
+    workflowId: string,
+    kind: WorkflowEventKind,
+    payload: unknown,
+  ): Promise<void> => {
+    const workflow = await engine.get(workflowId);
+    if (!workflow) return;
+    await store.saveWorkflowWithEvents(workflow, [
+      { id: `ev_${randomUUID()}`, workflowId, kind, ts: Date.now(), payload },
+    ]);
   };
 
   /**
@@ -145,6 +164,10 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       if (result.dispatched) {
         sendStepDispatch(conn, session, result.dispatched);
       } else if (result.completionCandidate) {
+        await recordEvent(workflowId, "completion_candidate", {
+          summary: result.completionCandidate.summary,
+          evidenceRefs: result.completionCandidate.evidenceRefs,
+        });
         send(conn, session, "workflow.completion_candidate", workflowId, {
           summary: result.completionCandidate.summary,
           evidence_refs: result.completionCandidate.evidenceRefs,
@@ -202,7 +225,16 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    await engine.applyStepStatus(workflow.id, payload.step_id, update);
+    try {
+      await engine.applyStepStatus(workflow.id, payload.step_id, update);
+    } catch (error) {
+      // An unknown step id is a protocol error, not a silent hang.
+      if (error instanceof Error && /unknown step/i.test(error.message)) {
+        sendError(conn, session, "unknown_step", "unknown step", env.message_id);
+        return;
+      }
+      throw error;
+    }
     await advanceAndPush(conn, session, workflow.id);
   });
 
@@ -268,8 +300,14 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
 
     const filters: RecordListFilters = {};
     const range = asRecord(raw.time_range);
-    if (typeof range.from === "string" && typeof range.to === "string") {
-      filters.timeRange = { from: Date.parse(range.from), to: Date.parse(range.to) };
+    if (range.from !== undefined || range.to !== undefined) {
+      const from = Date.parse(String(range.from));
+      const to = Date.parse(String(range.to));
+      if (!Number.isFinite(from) || !Number.isFinite(to)) {
+        sendError(conn, session, "malformed_payload", "invalid time_range", env.message_id);
+        return;
+      }
+      filters.timeRange = { from, to };
     }
     if (typeof raw.keyword === "string") filters.keyword = raw.keyword;
     if (typeof raw.terminal_state === "string") filters.terminalState = raw.terminal_state;
@@ -278,7 +316,17 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     const pageSize =
       typeof payload.page_size === "number" ? payload.page_size : DEFAULT_PAGE_SIZE;
 
-    const page = await recordStore.listByOwner(session.userId, filters, cursor, pageSize);
+    let page;
+    try {
+      page = await recordStore.listByOwner(session.userId, filters, cursor, pageSize);
+    } catch (error) {
+      if (error instanceof InvalidCursorError) {
+        sendError(conn, session, "malformed_payload", "invalid cursor", env.message_id);
+        return;
+      }
+      throw error;
+    }
+
     send(
       conn,
       session,

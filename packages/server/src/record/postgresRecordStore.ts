@@ -1,6 +1,7 @@
 import type { Pool } from "../db/pool";
 import type { RecordDocument, RecordSummary } from "./types";
 import {
+  InvalidCursorError,
   MAX_PAGE_SIZE,
   type RecordListFilters,
   type RecordListItem,
@@ -108,10 +109,9 @@ export class PostgresRecordStore implements RecordStore {
 
     if (cursor) {
       const decoded = decodeCursor(cursor);
-      if (decoded) {
-        params.push(decoded.endedAt, decoded.recordId);
-        where.push(`(ended_at, record_id) < ($${params.length - 1}, $${params.length})`);
-      }
+      if (!decoded) throw new InvalidCursorError();
+      params.push(decoded.endedAt, decoded.recordId);
+      where.push(`(ended_at, record_id) < ($${params.length - 1}, $${params.length})`);
     }
 
     params.push(size + 1);

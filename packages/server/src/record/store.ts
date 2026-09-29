@@ -32,3 +32,11 @@ export interface RecordStore {
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
+
+/** A cursor that cannot be decoded is a malformed request, not an empty page. */
+export class InvalidCursorError extends Error {
+  constructor() {
+    super("invalid cursor");
+    this.name = "InvalidCursorError";
+  }
+}

@@ -1013,6 +1013,13 @@ git commit -m "feat(protocol): record query and report generation with owner sco
 
 **5. Proportion：** 计划只描述决策、接口与断言，不含实现体。
 
+## 移交后续计划的待办（P2b 收尾时确认延后）
+
+1. **`guardrail_triggered.ref.threshold` 恒为 `null`；`reconciliation_resolved.ref.evidence_refs` 恒为 `[]`**（M3）→ **P4**：对账编排在 P4 才有 `evidence_refs`；threshold 可在同一次改动里从护栏配置带入。
+2. **`finalize` 不校验"必须已终止"；`completion_response(solved)` 不要求前置 candidate**（M7）→ **接受现状**（协议只对终态 finalize；"工程师提前判定已解决"符合产品原则 1），若后续要收紧，在 P2c 一并加守卫。
+3. **Record 只存最新 `completion_criteria`，不含修订历史**（M8）→ **P3**：P3 接入 LLM 规划后才会有 `criteria_revised` 事件可收集。
+4. **`user_input` entry 未发出**（I5 剩余）→ **P4**：确认/输入流程在 P4；届时还需在 `step_status` 事件里携带 `waitClass` 才能区分 `user_input`。
+
 ## 后续
 
 P2b 验收通过后写 **P2c**：`ERROR_DISPOSITION` 真正驱动行为、`session.resume` + `workflow.state_sync`、去重窗口改**逻辑会话**生命周期、补 P1 遗留的测试覆盖。之后 P3（LLM 只读闭环）、P4（受控执行/对账/blob/KB 导出）。

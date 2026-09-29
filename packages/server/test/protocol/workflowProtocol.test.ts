@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { startTestServer, TestClient } from "@adt/test-support";
+import { toStepStatusUpdate } from "@adt/server";
 
 describe("workflow protocol", () => {
   it("creates a workflow, dispatches the first step and reaches COMPLETED with a record", async () => {
@@ -227,5 +228,44 @@ describe("workflow protocol", () => {
 
     await c.close();
     await srv.close();
+  });
+
+  it("answers unknown_step for a step id the workflow does not have", async () => {
+    const srv = await startTestServer({ planner: [] });
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+    const created = await c.sendRaw({
+      ...c.base("workflow.request"),
+      payload: {
+        client_request_id: "req_1",
+        user_request: { text: "x", attachments: [], context: {} },
+      },
+    });
+    const workflowId = (created.payload as { workflow_id: string }).workflow_id;
+    await c.next(); // drain the completion candidate
+
+    const err = await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: "step_nope", status: "RUNNING" },
+    });
+
+    expect((err.payload as { code: string }).code).toBe("unknown_step");
+
+    await c.close();
+    await srv.close();
+  });
+});
+
+describe("toStepStatusUpdate", () => {
+  it("treats a null evidence as absent", () => {
+    expect(toStepStatusUpdate({ status: "COMPLETED", evidence: null })).toEqual({
+      state: "COMPLETED",
+    });
+    expect(toStepStatusUpdate({ status: "FAILED", evidence: null })).toEqual({ state: "FAILED" });
+    expect(toStepStatusUpdate({ status: "COMPLETED", evidence: { a: 1 } })).toEqual({
+      state: "COMPLETED",
+      evidence: { a: 1 },
+    });
   });
 });

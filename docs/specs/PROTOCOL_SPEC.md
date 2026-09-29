@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.5（部署/信任模型落地：`session.hello` 认证、`user_id` 必填并由 Server 校验、新增 `auth_failed`；Record 查询按用户过滤；新增 `record.export_request/result`（导出半边）。依据 `ADR-003` 与 MVP 范围说明，取代 v0.4）
+**Version:** v0.6（字段澄清：`record.list_response` 的摘要用 `duration_ms`（毫秒整数），与 `RECORD_SPEC.md` v0.5 对齐；取代 v0.5）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -566,7 +566,7 @@ step.status   step.status
       {
         "record_id": "rec_001",
         "workflow_id": "wf_001",
-        "summary": { "problem_short": "...", "terminal_state": "COMPLETED", "result_short": "...", "duration": "PT12M" }
+        "summary": { "problem_short": "...", "terminal_state": "COMPLETED", "result_short": "...", "duration_ms": 720000 }
       }
     ],
     "next_cursor": null

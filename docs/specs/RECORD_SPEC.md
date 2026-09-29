@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.4（部署/信任模型落地：新增 `owner_user_id`；明确 Record 归属与按用户可见；说明导出不写入只读 Record；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.3）
+- **Version:** v0.5（字段澄清：`summary.duration` → `summary.duration_ms`（毫秒整数），与实现和 `PROTOCOL_SPEC.md` v0.6 对齐；取代 v0.4）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -164,7 +164,7 @@ summary
 ├── problem_short         问题的一句话摘要（来自 user_request，可裁剪）
 ├── terminal_state         COMPLETED | FAILED | CANCELLED
 ├── result_short           最终结论的一句话摘要（来自 final_result）
-└── duration                从 created_at 到 ended_at 的耗时
+└── duration_ms            从 created_at 到 ended_at 的耗时（毫秒，整数）
 ```
 
 列表视图只读取每条 Record 的 `summary`，详情视图才展开 `entries`。

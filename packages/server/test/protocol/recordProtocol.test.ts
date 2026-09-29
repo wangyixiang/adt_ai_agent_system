@@ -141,4 +141,43 @@ describe("record and report protocol", () => {
     await c.close();
     await srv.close();
   });
+
+  it("records the completion candidate that preceded the confirmation", async () => {
+    const { srv, c, recordId } = await completedWorkflow();
+
+    const got = await c.sendRaw({
+      ...c.base("record.get_request"),
+      payload: { record_id: recordId },
+    });
+    const record = (got.payload as { record: { entries: Array<{ kind: string }> } }).record;
+    expect(record.entries.map((e) => e.kind)).toContain("completion_candidate");
+
+    await c.close();
+    await srv.close();
+  });
+
+  it("rejects an invalid cursor and an unparseable time range", async () => {
+    const srv = await startTestServer({ planner: [] });
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+
+    const badCursor = await c.sendRaw({
+      ...c.base("record.list_request"),
+      payload: { filters: {}, cursor: "not-a-cursor", page_size: 20 },
+    });
+    expect((badCursor.payload as { code: string }).code).toBe("malformed_payload");
+
+    const badRange = await c.sendRaw({
+      ...c.base("record.list_request"),
+      payload: {
+        filters: { time_range: { from: "nope", to: "also-nope" } },
+        cursor: null,
+        page_size: 20,
+      },
+    });
+    expect((badRange.payload as { code: string }).code).toBe("malformed_payload");
+
+    await c.close();
+    await srv.close();
+  });
 });

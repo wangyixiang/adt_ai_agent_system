@@ -1,6 +1,6 @@
 # REPORT_SPEC.md
 
-- **Version:** v0.3（部署/信任模型落地：Report 仅提交人可生成 / 查看；Report 可作为 KB 导出对象；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.2）
+- **Version:** v0.4（字段澄清：模板占位 `{duration}` → `{duration_ms}`，与 `RECORD_SPEC.md` v0.5 对齐；取代 v0.3）
 - **层级:** Specification — Report 的触发、内容约束与输出形式
 - **拆分说明:** `REQUIREMENTS.md` FR-17~FR-20 定义了 Report 必须满足的产品要求（按需生成、事实可追溯、不修改 Record、至少一种人类可读形式），`PROTOCOL_SPEC.md` §11 已经在协议层留了 `report.generate_request/result` 的字段位置（`options.detail_level`、`report.format`），但两边都没有定义这些字段具体取什么值、Report 的内容该怎么组织。本文件补上这一环，承接 `RECORD_SPEC.md` 定义的 Record 结构。
 
@@ -81,7 +81,7 @@
 
 - Record ID: {record_id}
 - 状态：{terminal_state}
-- 耗时：{duration}
+- 耗时：{duration_ms}（毫秒）
 
 ## 结论
 

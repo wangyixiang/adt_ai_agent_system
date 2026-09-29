@@ -82,6 +82,7 @@ export {
 } from "./record/postgresRecordStore";
 export {
   DEFAULT_PAGE_SIZE,
+  InvalidCursorError,
   MAX_PAGE_SIZE,
   type RecordListFilters,
   type RecordListItem,

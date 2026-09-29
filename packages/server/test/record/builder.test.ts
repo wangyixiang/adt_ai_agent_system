@@ -194,4 +194,44 @@ describe("record builder", () => {
     expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "user_confirmation"]);
     expect(record.entries[1]!.ref).toEqual({ step_id: "step_7", decision: "declined" });
   });
+
+  it("ignores a null evidence payload", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "RUNNING" },
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics" }),
+        ev("step_status", { stepId: "step_1", state: "COMPLETED", evidence: null }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_6",
+    });
+
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched"]);
+  });
+
+  it("records the completion candidate the system proposed", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("completion_candidate", { summary: "看起来好了", evidenceRefs: ["step_1"] }),
+        ev("completion_response", { resolution: "solved" }),
+        ev("workflow_terminated", { state: "COMPLETED", reason: null }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_7",
+    });
+
+    expect(record.entries.map((e) => e.kind)).toEqual([
+      "completion_candidate",
+      "completion_response",
+    ]);
+    expect(record.entries[0]!.ref).toEqual({
+      summary: "看起来好了",
+      evidence_refs: ["step_1"],
+    });
+  });
 });

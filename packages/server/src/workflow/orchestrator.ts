@@ -39,8 +39,8 @@ export class WorkflowOrchestrator {
       return { dispatched };
     }
 
-    // A completion candidate is a proposal; the protocol layer sends it and
-    // records the event. State is untouched here.
+    // A completion candidate is a proposal; the protocol layer records the
+    // event and sends it. State is untouched here.
     return {
       completionCandidate: {
         summary: decision.summary,
