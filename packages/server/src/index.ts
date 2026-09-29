@@ -114,9 +114,16 @@ export {
 } from "./report/generate";
 export {
   registerWorkflowProtocol,
+  stepDispatchPayload,
   toStepStatusUpdate,
+  type StepDispatchPayload,
   type WorkflowProtocolDeps,
 } from "./protocol/workflowProtocol";
+export {
+  registerSessionResume,
+  type SessionResumeDeps,
+  type StateSyncWorkflow,
+} from "./session/resume";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";
@@ -129,8 +136,10 @@ import { NOOP_PLANNER, type Planner } from "./workflow/planner";
 import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
+import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
 import { SessionLifecycle } from "./session/lifecycle";
+import { UserRepository } from "./auth/userRepository";
 
 export interface StartOptions {
   port?: number;
@@ -199,6 +208,15 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     orchestrator,
     records,
     recordStore,
+  });
+
+  registerSessionResume({
+    router: server.router,
+    sessions: server.sessions,
+    users: new UserRepository(pool),
+    store: workflowStore,
+    records,
+    onResumed: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 
   const lifecycle = new SessionLifecycle(

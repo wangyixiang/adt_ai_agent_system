@@ -58,6 +58,31 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
   }
 }
 
+export interface StepDispatchPayload {
+  workflow_id: string;
+  step_id: string;
+  objective: string;
+  capability: string;
+  input: Record<string, never>;
+  expected_output: null;
+  requires_confirmation: boolean;
+  idempotency_key: string | null;
+}
+
+/** The `step.dispatch` wire payload for a step; also used by `session.resume`. */
+export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
+  return {
+    workflow_id: step.workflowId,
+    step_id: step.id,
+    objective: step.objective,
+    capability: step.capability,
+    input: {},
+    expected_output: null,
+    requires_confirmation: step.sideEffect,
+    idempotency_key: step.idempotencyKey,
+  };
+}
+
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
   const { router, engine, store, orchestrator, records, recordStore } = deps;
   const notified = new Set<string>();
@@ -94,16 +119,8 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     return workflow;
   };
 
-  const sendStepDispatch = (conn: Connection, session: Session, step: StepSnapshot): void => {    send(conn, session, "step.dispatch", step.workflowId, {
-      workflow_id: step.workflowId,
-      step_id: step.id,
-      objective: step.objective,
-      capability: step.capability,
-      input: {},
-      expected_output: null,
-      requires_confirmation: step.sideEffect,
-      idempotency_key: step.idempotencyKey,
-    });
+  const sendStepDispatch = (conn: Connection, session: Session, step: StepSnapshot): void => {
+    send(conn, session, "step.dispatch", step.workflowId, stepDispatchPayload(step));
   };
 
   /** Records a protocol-layer event (no state change). */

@@ -119,6 +119,34 @@ export class TestClient {
     return res;
   }
 
+  /**
+   * `session.resume` (PROTOCOL_SPEC.md §5.2): reconnect to a prior logical
+   * session. `sessionId` is passed explicitly because the caller may be a
+   * fresh client after a disconnect.
+   */
+  async resume(
+    sessionId: string,
+    opts: { username: string; secret: string; knownWorkflows?: string[] },
+  ): Promise<Envelope> {
+    const res = await this.sendRaw({
+      ...this.base("session.resume"),
+      payload: {
+        session_id: sessionId,
+        auth: { username: opts.username, secret: opts.secret },
+        known_workflows: (opts.knownWorkflows ?? []).map((workflow_id) => ({
+          workflow_id,
+          last_known_step_id: null,
+          last_known_status: null,
+        })),
+      },
+    });
+    if (res.type === "workflow.state_sync") {
+      this.sessionId = res.session_id ?? sessionId;
+      this.userId = res.user_id ?? this.userId;
+    }
+    return res;
+  }
+
   waitClose(timeoutMs = 5000): Promise<boolean> {
     if (this.closed) return Promise.resolve(true);
     return new Promise((resolve) => {

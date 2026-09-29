@@ -7,6 +7,7 @@ import {
   PostgresRecordStore,
   PostgresWorkflowStore,
   RecordService,
+  registerSessionResume,
   registerWorkflowProtocol,
   SessionLifecycle,
   UserRepository,
@@ -20,6 +21,7 @@ import {
   type RecordStore,
   type SessionManager,
   type WorkflowEngine as WorkflowEngineType,
+  type WorkflowSnapshot,
 } from "@adt/server";
 
 export const TEST_DATABASE_URL =
@@ -47,6 +49,7 @@ export interface TestServer {
   engine: WorkflowEngineType;
   capabilities(sessionId: string): Map<string, NormalizedCapability>;
   warnings(sessionId: string): string[];
+  workflows(sessionId: string): Promise<WorkflowSnapshot[]>;
   waitFor(predicate: () => boolean, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -140,6 +143,15 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     recordStore: realRecordStore,
   });
 
+  registerSessionResume({
+    router: server.router,
+    sessions: server.sessions,
+    users,
+    store: workflowStore,
+    records,
+    onResumed: (sessionId) => reclaimer.onSessionAlive(sessionId),
+  });
+
   const lifecycle = new SessionLifecycle(
     { sessions: server.sessions, reclaimer },
     { intervalMs: opts.reclaimIntervalMs ?? 60_000 },
@@ -156,6 +168,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     engine,
     capabilities: (sessionId: string) => server.sessions.capabilitiesOf(sessionId),
     warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection?.warnings ?? [],
+    workflows: (sessionId: string) => workflowStore.listWorkflowsBySession(sessionId),
     waitFor: async (predicate: () => boolean, timeoutMs = 5000) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
