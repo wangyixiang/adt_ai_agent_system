@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   type Envelope,
 } from "@adt/shared";
+import type { CapabilitySyncPayload } from "@adt/server";
 
 export interface HelloOptions {
   username: string;
@@ -77,6 +78,11 @@ export class TestClient {
   sendRaw(envelope: Envelope): Promise<Envelope> {
     this.ws.send(encodeEnvelope(envelope));
     return this.next();
+  }
+
+  /** `capability.sync` has no ack; the caller waits on server state instead. */
+  sync(payload: CapabilitySyncPayload): void {
+    this.ws.send(encodeEnvelope({ ...this.base("capability.sync"), payload }));
   }
 
   async hello(opts: HelloOptions): Promise<Envelope> {

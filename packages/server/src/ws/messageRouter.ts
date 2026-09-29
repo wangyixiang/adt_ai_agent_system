@@ -1,18 +1,14 @@
 import { decodeEnvelope, makeError, type Envelope, type ErrorCode } from "@adt/shared";
 import type { Connection } from "./connection";
-
-export interface RouterSession {
-  id: string;
-  userId: string;
-}
+import type { Session } from "../session/sessionManager";
 
 export interface SessionResolver {
-  byConnection(connectionId: string): RouterSession | null;
+  byConnection(connectionId: string): Session | null;
 }
 
 export interface MessageContext {
   conn: Connection;
-  session: RouterSession | null;
+  session: Session | null;
 }
 
 export type MessageHandler = (
@@ -75,7 +71,7 @@ export class MessageRouter {
 
   private sendError(
     conn: Connection,
-    session: RouterSession | null,
+    session: Session | null,
     code: ErrorCode,
     message: string,
     inReplyTo: string | null,

@@ -4,11 +4,18 @@ export {
   MessageRouter,
   type MessageContext,
   type MessageHandler,
-  type RouterSession,
   type SessionResolver,
 } from "./ws/messageRouter";
 export { SessionManager, type Session } from "./session/sessionManager";
 export { registerHandshake, type HandshakeDeps } from "./session/handshake";
+export {
+  CapabilityRegistry,
+  type CapabilityDescriptor,
+  type NormalizedCapability,
+  type CapabilitySyncPayload,
+} from "./capability/capabilityRegistry";
+export { KNOWN_CAPABILITIES } from "./capability/known";
+export { registerCapabilitySync, type CapabilitySyncDeps } from "./capability/handler";
 export { UserRepository, type User } from "./auth/userRepository";
 export { hashPassword, verifyPassword } from "./auth/password";
 export { createPool, type Pool } from "./db/pool";

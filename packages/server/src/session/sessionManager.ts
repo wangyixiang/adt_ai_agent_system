@@ -1,12 +1,18 @@
 import { newSessionId } from "@adt/shared";
 import type { Connection } from "../ws/connection";
-import type { RouterSession, SessionResolver } from "../ws/messageRouter";
+import type { SessionResolver } from "../ws/messageRouter";
+import {
+  CapabilityRegistry,
+  type NormalizedCapability,
+} from "../capability/capabilityRegistry";
+import { KNOWN_CAPABILITIES } from "../capability/known";
 
 export interface Session {
   id: string;
   userId: string;
   connection: Connection;
   lastSeenAt: number;
+  capabilities: CapabilityRegistry;
 }
 
 export class SessionManager implements SessionResolver {
@@ -19,6 +25,7 @@ export class SessionManager implements SessionResolver {
       userId,
       connection,
       lastSeenAt: Date.now(),
+      capabilities: new CapabilityRegistry(KNOWN_CAPABILITIES),
     };
     this.byId.set(session.id, session);
     this.byConn.set(connection.id, session);
@@ -29,7 +36,7 @@ export class SessionManager implements SessionResolver {
     return this.byId.get(id) ?? null;
   }
 
-  byConnection(connectionId: string): RouterSession | null {
+  byConnection(connectionId: string): Session | null {
     return this.byConn.get(connectionId) ?? null;
   }
 
@@ -48,5 +55,9 @@ export class SessionManager implements SessionResolver {
 
   all(): Session[] {
     return [...this.byId.values()];
+  }
+
+  capabilitiesOf(sessionId: string): Map<string, NormalizedCapability> {
+    return this.byId.get(sessionId)?.capabilities.asMap() ?? new Map();
   }
 }
