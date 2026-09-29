@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.6（§1.1、§9 引用状态同步：`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md` 均已建成；终止状态措辞仍对齐 `WORKFLOW_SPEC.md` v0.3，取代 v0.5）
+- **Version:** v0.7（缺口收敛：补完成条件、终止护栏、会话级副作用串行、幂等键生成与对账、孤儿回收、"先落盘 Record 后通知"；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4，取代 v0.6）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -41,6 +41,11 @@ Server 负责：
 * 将最终结果交给 Client，由 User 确认 Request 是否真正解决
 * **在 Workflow 结束（任一终止状态）时保存完整 Record**（v0.4 新增）
 * **在用户需要时，基于 Record 生成 Report**（v0.4 新增）
+* **定义并维护 Request 级完成条件（`completion_criteria`）**（v0.7 新增）
+* **由 Workflow Engine 确定性执行终止护栏**（v0.7 新增）
+* **保证同一 `session` 内副作用 Step 串行**（v0.7 新增）
+* **为有副作用的 Step 生成幂等键，并执行"结果未知 → 对账"**（v0.7 新增）
+* **回收失联的孤儿 Workflow；终止时先落盘 Record、再通知**（v0.7 新增）
 
 核心原则：
 
@@ -101,6 +106,11 @@ Server MUST：
 13. 在达到系统可判断的完成条件后进入最终确认流程
 14. **在 Workflow 结束（`COMPLETED` / `FAILED` / `CANCELLED` 三种终止状态之一）时，保存完整 Record**（v0.4 新增，v0.5 措辞对齐 `WORKFLOW_SPEC.md` v0.2 的终止状态设计，对应 REQUIREMENTS FR-12、FR-13）
 15. **在 User 明确请求时，基于指定 Record 生成 Report；不请求则不生成**（v0.4 新增，对应 REQUIREMENTS FR-17~FR-19）
+16. **在创建 / 推进 Workflow 时确定并维护 `completion_criteria`，每次修订写入 Record**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §8.1）
+17. **由 Workflow Engine 确定性执行终止护栏**（步数 / 重试 / `not_solved` 轮次 / 时长预算），触顶则 `FAILED` 并保存 Record（v0.7 新增，对应 `WORKFLOW_SPEC.md` §13）
+18. **保证同一 `session` 内任意时刻最多一个副作用 Step 处于活跃状态**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.4）
+19. **为 `side_effect: true` 的 Step 生成 Workflow 内稳定的 `idempotency_key`；对结果不确定的副作用 Step 判为 `UNKNOWN` 并对账（不自动重试，除非该 Capability 声明 `idempotent`）**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.3）
+20. **按可配置宽限期回收失联的孤儿 Workflow（未请求取消 → `FAILED(client_unreachable)`；已请求取消 → `CANCELLED`）；并在任何终止状态先持久化 Record、成功后再发 `workflow.terminated`**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §2.2、`PROTOCOL_SPEC.md` §7.4）
 
 Server MUST NOT：
 
@@ -118,7 +128,7 @@ Server 负责构建当前 Workflow Context：
 
 ```text
 User Request + Conversation + Previous Steps + Evidence
-+ Client Capability + Knowledge + Current Workflow State
++ Client Capability + Knowledge + Current Workflow State + Completion Criteria
 ```
 
 Server 在每次 Re-plan 前重新组合 Context。**Knowledge 来自第三方 Knowledge Base**（v0.4 澄清）：
@@ -164,6 +174,8 @@ LLM 不负责：
 Step/Workflow 的具体状态机、Step Schema、Evidence 结构、Completion 判定流程，均已抽取到 `../specs/WORKFLOW_SPEC.md`，作为 Client 与 Server 共享的唯一权威契约，本文件不再重复定义。
 
 > **v0.4 备注：** 是否需要为"Server 与第三方 Knowledge Base 的集成方式"、"Record 未来导出到 Knowledge Base"单独补一条 ADR，建议在下一次架构评审时决定——这两点目前只是在本文件和 `ARCHITECTURE.md` §1.1 里做了文字说明，还没有经过"排除替代方案"的决策过程，不应该被当作已经定案的架构决策。
+
+> **v0.7 补充：** 终止护栏（`WORKFLOW_SPEC.md` §13）、副作用结果未知与对账（§4.3）、会话级副作用串行（§4.4）都是 `ADR-001`（Workflow Engine 是唯一权威）的直接推论——它们必须由**确定性组件**执行，不能委托给 LLM；这一点也是它们写进 Spec 而不是留给实现自由发挥的原因。
 
 ---
 
