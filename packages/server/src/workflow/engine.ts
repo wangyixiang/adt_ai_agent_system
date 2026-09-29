@@ -287,6 +287,24 @@ export class WorkflowEngine {
     return (await this.store.getWorkflow(workflowId))!;
   }
 
+  /**
+   * Orphan reclamation (WORKFLOW_SPEC.md §2.2): the engineer's cancel intent
+   * wins; otherwise the workflow fails as client-unreachable.
+   */
+  async reclaimOrphan(workflowId: string): Promise<WorkflowSnapshot> {
+    const workflow = await this.requireWorkflow(workflowId);
+    if (isTerminalWorkflow(workflow.state)) return workflow;
+
+    if (workflow.state === "CANCELLING") {
+      return this.terminate(
+        workflow,
+        "CANCELLED",
+        workflow.terminalReason ?? "user_cancelled",
+      );
+    }
+    return this.terminate(workflow, "FAILED", "client_unreachable");
+  }
+
   async confirmCompletion(
     workflowId: string,
     resolution: "solved" | "not_solved",
