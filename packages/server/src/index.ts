@@ -22,6 +22,50 @@ export { hashPassword, verifyPassword } from "./auth/password";
 export { createPool, type Pool } from "./db/pool";
 export { migrate, MIGRATIONS_DIR } from "./db/migrate";
 export { createServer, type CreateServerOptions, type CreatedServer } from "./server";
+export {
+  WorkflowEngine,
+  GuardrailError,
+  type EngineDeps,
+  type NewStep,
+  type StepStatusUpdate,
+} from "./workflow/engine";
+export { PostgresWorkflowStore } from "./workflow/postgresStore";
+export type {
+  StepSnapshot,
+  WorkflowEvent,
+  WorkflowEventKind,
+  WorkflowSnapshot,
+  WorkflowStore,
+} from "./workflow/store";
+export {
+  breachedGuardrail,
+  DEFAULT_GUARDRAILS,
+  type GuardrailConfig,
+  type GuardrailInput,
+  type GuardrailReason,
+} from "./workflow/guardrails";
+export { reviseCriteria, type CompletionCriteria } from "./workflow/criteria";
+export { OrphanReclaimer, type ReclamationDeps } from "./workflow/reclamation";
+export {
+  canTransitionStep,
+  isActiveStep,
+  isTerminalStep,
+  isTerminalWorkflow,
+} from "./workflow/stateMachine";
+export {
+  convergesCancelling,
+  decideCancel,
+  type CancelContext,
+  type CancelDecision,
+  type WaitClass,
+} from "./workflow/cancel";
+export type {
+  ActiveStepState,
+  StepState,
+  TerminalStepState,
+  TerminalWorkflowState,
+  WorkflowState,
+} from "./workflow/types";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";
