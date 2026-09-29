@@ -1,6 +1,6 @@
 # CLIENT_SPEC.md
 
-- **Version:** v0.6（缺口收敛：补幂等台账、迟到状态处理、确认 UI 锁定、blob 通道职责；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4，取代 v0.5）
+- **Version:** v0.7（部署/信任模型落地：登录与会话、只确认自己的 Workflow、Record 仅自己可见、发起 KB 导出；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.6）
 - **Role:** AI Client / User Interaction + Local Execution Runtime
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
@@ -27,6 +27,8 @@ Client 不负责整个问题的规划，而负责：
 * **持久化副作用 Step 的幂等台账，结果不确定时不得静默重执行**（v0.6 新增）
 * **对已到达终态 Step 的迟到状态更新做忽略处理，不改写本地状态**（v0.6 新增）
 * **在用户提交某一个互斥意图后锁定对应 UI**（v0.6 新增）
+* **登录并把凭据交给 Server 完成认证，维护 `session` 与 `user_id`**（v0.7 新增）
+* **只展示当前用户自己的 Record，并可按需发起导出到第三方 Knowledge Base**（v0.7 新增）
 
 核心原则：
 
@@ -56,7 +58,7 @@ Client
 
 Capability Registry 与 Step Executor 遵循 `../specs/CAPABILITY_SPEC.md` 与 `../specs/WORKFLOW_SPEC.md` 中定义的契约，本文件不重复定义。Record 的查看与 Report 的请求（§1、§3 新增职责）不需要新增内部模块，属于 User Interaction 的一部分——是否需要独立拆出（例如 "Record Viewer"）留给实现阶段决定，本文件不预设。
 
-幂等台账（§3 第 13 条）是 Step Executor 的**本地持久状态**，必须跨进程重启保留；blob 通道（§3 第 15 条）是 Step Executor 与本地服务 / 设备之间的协作，具体拆分留给实现阶段。
+幂等台账（§3 第 13 条）是 Step Executor 的**本地持久状态**，必须跨进程重启保留；blob 通道（§3 第 15 条）是 Step Executor 与本地服务 / 设备之间的协作；登录与会话（§3 第 16 条）属于 Workflow Session 模块，凭据的本地保存方式由实现决定。具体拆分留给实现阶段。
 
 ---
 
@@ -79,6 +81,9 @@ Client MUST：
 13. **持久化 `idempotency_key` → 结果的台账；命中台账时直接返回缓存证据而不重新执行；无法确认台账时回报 `UNKNOWN` 而非重执行**（v0.6 新增，对应 `WORKFLOW_SPEC.md` §4.3）
 14. **在用户提交某一个互斥的人工意图（确认 / 拒绝 / 取消）后锁定相应 UI，避免同一确认窗口内提交第二个互斥意图**（v0.6 新增，对应 `WORKFLOW_SPEC.md` §2.1）
 15. **通过 blob 通道上传 / 下载大体积附件与 Evidence，并在消息中携带 `content_ref` 引用**（v0.6 新增，对应 `PROTOCOL_SPEC.md` §7.5）
+16. **建立连接时提交认证凭据，并在收到 `session.welcome` 后使用返回的 `user_id`**（v0.7 新增，对应 `ADR-003` §3、`PROTOCOL_SPEC.md` §5.1）
+17. **只允许当前用户查看 / 导出自己的 Record；只能确认自己提交的 Workflow 中的副作用动作**（v0.7 新增，对应 `ADR-003` §5、§6）
+18. **在用户明确请求时，向 Server 发起 Record/Report 的 KB 导出请求，并展示结果**（v0.7 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3）
 
 Client MUST NOT：
 
@@ -89,6 +94,7 @@ Client MUST NOT：
 * 将本地 Agent 的判断直接作为 Workflow 最终状态
 * **自行生成 Report 内容，或在未收到 Server 返回结果前展示"已生成"的报告**（v0.4 新增）：Report 的内容必须来自 Server 基于 Record 生成的结果（`REQUIREMENTS.md` FR-18），Client 只负责发起请求和展示，不能本地拼凑或缓存伪造内容
 * **在无法确认幂等台账时静默重新执行一个有副作用的 Step**（v0.6 新增）：此时必须回报 `UNKNOWN`，由 Server 安排对账（见 `WORKFLOW_SPEC.md` §4.3）
+* **代表他人确认副作用动作，或访问他人的 Record**（v0.7 新增，对应 `ADR-003` §5、§6）
 
 ---
 
@@ -170,7 +176,7 @@ v0.3 只定义最基本的边界：
 
 Client 可以根据本地权限、用户授权或运行环境拒绝某个 Step。信号为 `step.status(REJECTED)`，并在 `reject_reason.code` 中说明原因（`permission_denied` / `capability_unavailable` / `unsafe_operation` / `invalid_input` / `user_declined` / `other`，见 `../specs/PROTOCOL_SPEC.md` §8）——与"尝试执行但失败"（`FAILED`）严格区分。
 
-具体认证、授权、沙箱和安全策略属于后续 Protocol / Security Spec；Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）已由 `../specs/PROTOCOL_SPEC.md` §8 定义（`REJECTED` 与 `FAILED` 完全分开）。查看 Record、请求 Report 是否需要额外的权限校验（例如 Q-2：Record 谁能查看），留给该安全规格统一处理，本文件不重复定义。
+具体认证、授权、沙箱和安全策略：**最小基线已由 `ADR-003` 定义并在 v0.7 生效**（本地账号认证、`user_id` 必填、副作用确认仅限提交人、Record 仅提交人可见）；沙箱、多租户、角色体系仍留给后续安全规格。Client 拒绝执行时应产生的信号类型（与"执行失败"区分开）已由 `../specs/PROTOCOL_SPEC.md` §8 定义（`REJECTED` 与 `FAILED` 完全分开）。
 
 ---
 
@@ -193,3 +199,5 @@ User 最终决定：**这个 Request 是否真的解决了，以及是否需要�
 * Capability 命名规范与 Manifest 格式 → `../specs/CAPABILITY_SPEC.md`
 * Record 的结构与保存时机 → `../specs/RECORD_SPEC.md`
 * Report 的触发与内容约束 → `../specs/REPORT_SPEC.md`
+* 部署与信任模型 → `../adr/ADR-003-deployment-and-trust-model.md`
+* MVP 范围与完成标准 → `../superpowers/specs/2026-09-29-mvp-scope.md`
