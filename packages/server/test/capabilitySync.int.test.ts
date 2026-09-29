@@ -78,4 +78,60 @@ describe("capability.sync", () => {
     await c.close();
     await srv.close();
   });
+
+  it("keeps explicit side_effect/interruptible values", async () => {
+    const { srv, c } = await authed();
+    await c.sync({
+      mode: "full",
+      revision: 0,
+      added: [
+        {
+          name: "git.collect_diagnostics",
+          side_effect: false,
+          interruptible: true,
+          idempotent: true,
+        },
+      ],
+      removed: [],
+    });
+    await srv.waitFor(() => srv.capabilities(c.sessionId).has("git.collect_diagnostics"));
+    const cap = srv.capabilities(c.sessionId).get("git.collect_diagnostics")!;
+    expect(cap.side_effect).toBe(false);
+    expect(cap.interruptible).toBe(true);
+    expect(cap.idempotent).toBe(true);
+    await c.close();
+    await srv.close();
+  });
+
+  it("applies an incremental removal", async () => {
+    const { srv, c } = await authed();
+    await c.sync({
+      mode: "full",
+      revision: 0,
+      added: [{ name: "git.collect_diagnostics", side_effect: false, interruptible: true }],
+      removed: [],
+    });
+    await srv.waitFor(() => srv.capabilities(c.sessionId).has("git.collect_diagnostics"));
+
+    await c.sync({
+      mode: "incremental",
+      revision: 1,
+      added: [],
+      removed: ["git.collect_diagnostics"],
+    });
+    await srv.waitFor(() => !srv.capabilities(c.sessionId).has("git.collect_diagnostics"));
+    await c.close();
+    await srv.close();
+  });
+
+  it("rejects a malformed capability.sync shape", async () => {
+    const { srv, c } = await authed();
+    const err = await c.sendRaw({
+      ...c.base("capability.sync"),
+      payload: { mode: "full", revision: 1, added: "nope", removed: [] },
+    });
+    expect((err.payload as { code: string }).code).toBe("malformed_payload");
+    await c.close();
+    await srv.close();
+  });
 });

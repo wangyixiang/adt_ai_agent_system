@@ -20,6 +20,13 @@ export function registerCapabilitySync(router: MessageRouter): void {
       return;
     }
 
+    // `added` / `removed` are arrays in the schema; tolerating a non-array
+    // would let a malformed "full" sync silently wipe the registry.
+    if (!Array.isArray(payload.added) || !Array.isArray(payload.removed)) {
+      sendError(conn, session, "malformed_payload", "invalid capability.sync payload", env.message_id);
+      return;
+    }
+
     const result = session.capabilities.apply(payload as CapabilitySyncPayload);
     for (const warning of result.warnings) conn.warn(warning);
   });
