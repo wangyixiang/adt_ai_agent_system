@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: adt
+      POSTGRES_PASSWORD: adt
+      POSTGRES_DB: adt
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adt -d adt"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
