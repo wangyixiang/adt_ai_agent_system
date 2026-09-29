@@ -101,4 +101,47 @@ describe("WorkflowEngine basics", () => {
     expect(after!.state).toBe("FAILED");
     expect(after!.terminalReason).toBe("time_budget");
   });
+
+  it("ignores illegal and duplicate non-terminal transitions", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, readOnly);
+
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" }); // duplicate
+    await engine.applyStepStatus(wf.id, step.id, { state: "REJECTED" }); // RUNNING->REJECTED is illegal
+
+    const events = (await store.listEvents(wf.id)).filter((e) => e.kind === "step_status");
+    expect(events).toHaveLength(1);
+    expect((await engine.getStep(step.id))!.state).toBe("RUNNING");
+  });
+
+  it("emits no event for an update on a terminal step", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, readOnly);
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+    await engine.applyStepStatus(wf.id, step.id, { state: "COMPLETED" });
+    const before = (await store.listEvents(wf.id)).length;
+
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+
+    expect((await store.listEvents(wf.id)).length).toBe(before);
+  });
+});
+
+describe("engine cancel after a resumed confirmation", () => {
+  it("queues CANCELLING instead of cancelling a running non-interruptible step", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, {
+      objective: "reset",
+      capability: "sim_rig.trigger_reset",
+      sideEffect: true,
+      interruptible: false,
+    });
+    await engine.applyStepStatus(wf.id, step.id, { state: "WAITING", waitClass: "human" });
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+
+    const after = await engine.cancel(wf.id, "abandoned");
+
+    expect(after.state).toBe("CANCELLING");
+  });
 });

@@ -28,6 +28,12 @@ describe("cancel decision", () => {
     expect(decideCancel(active("RUNNING", false, "execution"))).toBe("CANCELLING");
     expect(decideCancel(active("WAITING", false, "execution"))).toBe("CANCELLING");
   });
+
+  it("does not treat a stale human waitClass as a human wait", () => {
+    // A side-effect step resumes WAITING(user_confirmation) -> RUNNING; the
+    // old waitClass must not bypass CANCELLING.
+    expect(decideCancel(active("RUNNING", false, "human"))).toBe("CANCELLING");
+  });
 });
 
 describe("CANCELLING convergence", () => {

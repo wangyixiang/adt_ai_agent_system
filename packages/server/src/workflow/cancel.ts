@@ -21,7 +21,9 @@ export function decideCancel(ctx: CancelContext): CancelDecision {
   const step = ctx.activeStep;
   if (!step) return "IMMEDIATE";
   if (step.state === "PENDING") return "IMMEDIATE";
-  if (step.waitClass === "human") return "IMMEDIATE";
+  // Only a step that is *currently* waiting on a human is a human wait; a
+  // stale waitClass from a resumed step must not bypass CANCELLING.
+  if (step.state === "WAITING" && step.waitClass === "human") return "IMMEDIATE";
   return step.interruptible ? "IMMEDIATE" : "CANCELLING";
 }
 

@@ -82,4 +82,21 @@ describe("PostgresWorkflowStore", () => {
     );
     expect(await store.findActiveWorkflows()).toEqual([]);
   });
+
+  it("rolls back a combined step+workflow write when an event fails", async () => {
+    // ev_1 already exists -> the event insert fails, so neither entity may change.
+    const step = (await store.getStep("step_1"))!;
+    expect(step.state).toBe("RUNNING");
+
+    await expect(
+      store.saveStepAndWorkflow(
+        { ...step, state: "WAITING", waitClass: "human" },
+        { ...wf, state: "RUNNING" },
+        [ev("ev_1", "step_status")],
+      ),
+    ).rejects.toThrow();
+
+    expect((await store.getStep("step_1"))!.state).toBe("RUNNING");
+    expect((await store.getWorkflow("wf_1"))!.state).toBe("CANCELLED");
+  });
 });

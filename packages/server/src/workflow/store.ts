@@ -55,6 +55,14 @@ export interface WorkflowStore {
   getWorkflow(id: string): Promise<WorkflowSnapshot | null>;
   listWorkflowsByUser(userId: string): Promise<WorkflowSnapshot[]>;
   saveWorkflow(workflow: WorkflowSnapshot, event: WorkflowEvent): Promise<void>;
+  /** Workflow change plus several events, atomically. */
+  saveWorkflowWithEvents(workflow: WorkflowSnapshot, events: WorkflowEvent[]): Promise<void>;
+  /** Step + workflow change plus events in ONE transaction (no crash window). */
+  saveStepAndWorkflow(
+    step: StepSnapshot,
+    workflow: WorkflowSnapshot,
+    events: WorkflowEvent[],
+  ): Promise<void>;
 
   createStep(step: StepSnapshot, event: WorkflowEvent): Promise<void>;
   getStep(id: string): Promise<StepSnapshot | null>;

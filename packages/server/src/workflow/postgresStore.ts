@@ -135,9 +135,28 @@ export class PostgresWorkflowStore implements WorkflowStore {
   }
 
   async saveWorkflow(workflow: WorkflowSnapshot, event: WorkflowEvent): Promise<void> {
+    await this.saveWorkflowWithEvents(workflow, [event]);
+  }
+
+  async saveWorkflowWithEvents(
+    workflow: WorkflowSnapshot,
+    events: WorkflowEvent[],
+  ): Promise<void> {
     await this.tx(async (client) => {
       await this.insertWorkflow(client, workflow);
-      await this.insertEvent(client, event);
+      for (const event of events) await this.insertEvent(client, event);
+    });
+  }
+
+  async saveStepAndWorkflow(
+    step: StepSnapshot,
+    workflow: WorkflowSnapshot,
+    events: WorkflowEvent[],
+  ): Promise<void> {
+    await this.tx(async (client) => {
+      await this.insertStep(client, step);
+      await this.insertWorkflow(client, workflow);
+      for (const event of events) await this.insertEvent(client, event);
     });
   }
 

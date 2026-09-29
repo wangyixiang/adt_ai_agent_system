@@ -37,7 +37,7 @@ describe("OrphanReclaimer", () => {
     const session = sessions.create("usr_1", conn());
     const wf = await engine.create("usr_1", session.id, { text: "x" }, open);
 
-    const reclaimer = new OrphanReclaimer({ engine, store, sessions, graceMs: 5000, now: () => clock.t });
+    const reclaimer = new OrphanReclaimer({ engine, store, graceMs: 5000, now: () => clock.t });
     reclaimer.onSessionDead(session.id);
     clock.t = 3000;
 
@@ -49,7 +49,7 @@ describe("OrphanReclaimer", () => {
     const session = sessions.create("usr_1", conn());
     const wf = await engine.create("usr_1", session.id, { text: "x" }, open);
 
-    const reclaimer = new OrphanReclaimer({ engine, store, sessions, graceMs: 5000, now: () => clock.t });
+    const reclaimer = new OrphanReclaimer({ engine, store, graceMs: 5000, now: () => clock.t });
     reclaimer.onSessionDead(session.id);
     clock.t = 9000;
 
@@ -72,7 +72,7 @@ describe("OrphanReclaimer", () => {
     await engine.cancel(wf.id, "abandoned");
     expect((await engine.get(wf.id))!.state).toBe("CANCELLING");
 
-    const reclaimer = new OrphanReclaimer({ engine, store, sessions, graceMs: 5000, now: () => clock.t });
+    const reclaimer = new OrphanReclaimer({ engine, store, graceMs: 5000, now: () => clock.t });
     reclaimer.onSessionDead(session.id);
     clock.t = 9000;
 
@@ -80,5 +80,18 @@ describe("OrphanReclaimer", () => {
     const after = await engine.get(wf.id);
     expect(after!.state).toBe("CANCELLED");
     expect(after!.terminalReason).toBe("abandoned");
+  });
+
+  it("does not reclaim a session that comes back within the grace period", async () => {
+    const session = sessions.create("usr_1", conn());
+    const wf = await engine.create("usr_1", session.id, { text: "x" }, open);
+
+    const reclaimer = new OrphanReclaimer({ engine, store, graceMs: 5000, now: () => clock.t });
+    reclaimer.onSessionDead(session.id);
+    reclaimer.onSessionAlive(session.id);
+    clock.t = 9000;
+
+    expect(await reclaimer.reclaim()).toEqual([]);
+    expect((await engine.get(wf.id))!.state).toBe("CREATED");
   });
 });

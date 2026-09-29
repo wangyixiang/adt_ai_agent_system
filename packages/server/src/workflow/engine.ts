@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { isActiveStep, isTerminalStep, isTerminalWorkflow } from "./stateMachine";
-import { decideCancel } from "./cancel";
+import { isActiveStep, canTransitionStep, isTerminalStep, isTerminalWorkflow } from "./stateMachine";
+import { convergesCancelling, decideCancel } from "./cancel";
 import type { ActiveStepState } from "./types";
 import {
   breachedGuardrail,
@@ -82,6 +82,8 @@ export class WorkflowEngine {
     workflow: WorkflowSnapshot,
     state: TerminalWorkflowState,
     reason: string | null,
+    extraEvents: WorkflowEvent[] = [],
+    step?: StepSnapshot,
   ): Promise<WorkflowSnapshot> {
     const ended: WorkflowSnapshot = {
       ...workflow,
@@ -89,10 +91,19 @@ export class WorkflowEngine {
       terminalReason: reason,
       endedAt: this.now(),
     };
-    await this.store.saveWorkflow(
-      ended,
+    const events = [
+      ...extraEvents,
       this.event(workflow.id, "workflow_terminated", { state, reason }),
-    );
+    ];
+
+    // Step + workflow + all events land in one transaction when a step is
+    // involved, so a crash can never strand the workflow in CANCELLING.
+    if (step) {
+      await this.store.saveStepAndWorkflow(step, ended, events);
+    } else {
+      await this.store.saveWorkflowWithEvents(ended, events);
+    }
+
     await this.onTerminated?.(ended);
     return ended;
   }
@@ -163,11 +174,9 @@ export class WorkflowEngine {
     );
 
     if (breach) {
-      await this.store.saveWorkflow(
-        workflow,
+      await this.terminate(workflow, "FAILED", breach, [
         this.event(workflowId, "guardrail_triggered", { reason: breach }),
-      );
-      await this.terminate(workflow, "FAILED", breach);
+      ]);
       throw new GuardrailError(breach);
     }
 
@@ -212,23 +221,30 @@ export class WorkflowEngine {
 
     // Terminal steps are immutable; UNKNOWN is reconciled separately (Task 6).
     if (isTerminalStep(step.state)) return workflow;
+    // Ignore illegal and duplicate transitions: no state change, no event.
+    if (!canTransitionStep(step.state, update.state)) return workflow;
 
     const next: StepSnapshot = {
       ...step,
       state: update.state,
-      waitClass: update.state === "WAITING" ? update.waitClass : step.waitClass,
+      // waitClass describes only the CURRENT wait; clear it on resume.
+      waitClass: update.state === "WAITING" ? update.waitClass : null,
     };
-    await this.store.saveStep(
-      next,
-      this.event(workflowId, "step_status", { stepId, state: next.state }),
-    );
+    const stepEvent = this.event(workflowId, "step_status", { stepId, state: next.state });
 
     // A queued cancel converges the moment its non-interruptible step ends —
     // on ANY terminal outcome, including UNKNOWN (WORKFLOW_SPEC.md §2.1).
-    if (workflow.state === "CANCELLING" && isTerminalStep(next.state)) {
-      return this.terminate(workflow, "CANCELLED", workflow.terminalReason);
+    if (workflow.state === "CANCELLING" && convergesCancelling(next.state)) {
+      return this.terminate(
+        workflow,
+        "CANCELLED",
+        workflow.terminalReason,
+        [stepEvent],
+        next,
+      );
     }
 
+    await this.store.saveStep(next, stepEvent);
     return (await this.store.getWorkflow(workflowId))!;
   }
 
@@ -248,12 +264,11 @@ export class WorkflowEngine {
         : null,
     });
 
-    await this.store.saveWorkflow(
-      workflow,
-      this.event(workflowId, "cancel_requested", { reason }),
-    );
+    const requested = this.event(workflowId, "cancel_requested", { reason });
 
-    if (decision === "IMMEDIATE") return this.terminate(workflow, "CANCELLED", reason);
+    if (decision === "IMMEDIATE") {
+      return this.terminate(workflow, "CANCELLED", reason, [requested]);
+    }
 
     const queued: WorkflowSnapshot = {
       ...workflow,
@@ -261,10 +276,7 @@ export class WorkflowEngine {
       // Remembered so convergence keeps the engineer's original intent.
       terminalReason: reason,
     };
-    await this.store.saveWorkflow(
-      queued,
-      this.event(workflowId, "cancel_requested", { reason, queued: true }),
-    );
+    await this.store.saveWorkflowWithEvents(queued, [requested]);
     return queued;
   }
 
@@ -313,12 +325,10 @@ export class WorkflowEngine {
     const workflow = await this.requireWorkflow(workflowId);
     if (isTerminalWorkflow(workflow.state)) return workflow;
 
+    const response = this.event(workflowId, "completion_response", { resolution, feedback });
+
     if (resolution === "solved") {
-      await this.store.saveWorkflow(
-        workflow,
-        this.event(workflowId, "completion_response", { resolution, feedback }),
-      );
-      return this.terminate(workflow, "COMPLETED", null);
+      return this.terminate(workflow, "COMPLETED", null, [response]);
     }
 
     const rounds = workflow.notSolvedRounds + 1;
@@ -328,16 +338,14 @@ export class WorkflowEngine {
       state: "RUNNING",
       notSolvedRounds: rounds,
     };
-    await this.store.saveWorkflow(
-      updated,
-      this.event(workflowId, "completion_response", { resolution, feedback }),
-    );
 
     const breach = breachedGuardrail(
       { stepCount: 0, consecutiveRetries: 0, notSolvedRounds: rounds, elapsedMs: 0 },
       this.guardrails,
     );
-    if (breach) return this.terminate(updated, "FAILED", breach);
+    if (breach) return this.terminate(updated, "FAILED", breach, [response]);
+
+    await this.store.saveWorkflowWithEvents(updated, [response]);
     return updated;
   }
 }
