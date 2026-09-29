@@ -141,7 +141,7 @@
 |---|---|---|
 | `CAPABILITY_SPEC.md`（已建成，v0.5） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1） | FR-21、FR-22 |
 | `WORKFLOW_SPEC.md`（已建成，v0.4） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`、会话级副作用串行（v0.4） | FR-7~FR-11 |
-| `PROTOCOL_SPEC.md`（已建成，v0.6） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6） | FR-4、FR-7、FR-11、FR-14、FR-17 |
+| `PROTOCOL_SPEC.md`（已建成，v0.7） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6）；`session.resume` 认证、会话 TTL、`workflow.state_sync` 扩展（v0.7） | FR-4、FR-7、FR-11、FR-14、FR-17 |
 | `SERVER_SPEC.md`（已建成，v0.7） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7） | FR-12、FR-17~FR-19、FR-23 |
 | `CLIENT_SPEC.md`（已建成，v0.6） | 展示历史 Record 与发起 Report 生成请求（v0.4）；幂等台账、迟到状态处理、确认 UI 锁定、blob 通道（v0.6） | FR-14、FR-17 |
 | `RECORD_SPEC.md`（已建成，v0.5） | Record 结构、保存时机、与 Evidence 的关系；不为系统内检索预留结构（FR-15 删除），字段设计不与未来导出冲突（v0.1 §8）；`owner_user_id`、可见性（v0.4）；`UNKNOWN` 未对账标注、`completion_criteria`、新 entry kind、`actor`、`narrative` 规则（v0.3）；`duration_ms` 澄清（v0.5） | FR-12~FR-14、FR-24 |

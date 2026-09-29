@@ -1,8 +1,18 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.6（字段澄清：`record.list_response` 的摘要用 `duration_ms`（毫秒整数），与 `RECORD_SPEC.md` v0.5 对齐；取代 v0.5）
+**Version:** v0.7（重连认证、会话 TTL 与 `workflow.state_sync` 字段；v0.6 的字段澄清——`record.list_response` 的摘要用 `duration_ms`（毫秒整数），与 `RECORD_SPEC.md` v0.5 对齐——继续有效）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
+
+---
+
+## 变更记录（v0.6 → v0.7）
+
+依据 `ADR-003`（部署与信任模型）与 `WORKFLOW_SPEC.md` §2.2：
+
+- **`session.resume` 携带认证凭据**（§5.2）：`{ session_id, auth: { username, secret }, known_workflows }`。认证失败 → `protocol.error(code=auth_failed)`（致命）；`session_id` 未知/过期 → `protocol.error(code=session_expired)`（致命）。依据 `ADR-003` §3"Server 只接受已认证的 Client"。
+- **会话 TTL**（§5.2）：断线后 `session_id` 在可配置 TTL 内仍可 `resume`；建议默认 24 小时。超过 TTL 视为 `session_expired`。
+- **`workflow.state_sync.workflows[]` 扩展**（§5.2）：新增 `record_id` / `record_persistence_failed`；明确范围为"该 session 下所有非终态 Workflow，加上 `known_workflows` 中已被 Server 判定为终态的 Workflow"，使断线期间发生的终止也能被对账。
 
 ---
 
@@ -225,16 +235,35 @@ Client                                Server
 ```text
 Client                                        Server
   │  session.resume                            │
-  │  {session_id, known_workflows:[             │
+  │  {session_id, auth:{username, secret},      │
+  │   known_workflows:[                         │
   │    {workflow_id, last_known_step_id,        │
   │     last_known_status}]}                    │
   │ ────────────────────────────────────────────▶│
   │        workflow.state_sync                   │
   │  {resumed:true, workflows:[                  │
   │    {workflow_id, workflow_status,            │
-  │     pending_step}]}                          │
+  │     pending_step, record_id,                 │
+  │     record_persistence_failed}]}             │
   │◀──────────────────────────────────────────── │
 ```
+
+**认证（v0.7 新增）：** 重连是一条新的物理连接，因此 `session.resume` 必须**同时**携带 `auth`（结构同 `session.hello.auth`）。依据 `ADR-003` §3"Server 只接受已认证的 Client"：认证失败 → `protocol.error(code=auth_failed)`（致命，断开）；认证用户与 `session_id` 归属的 `user_id` 不符（尝试接管他人会话）→ 同样 `auth_failed`（致命）。凭据校验发生在会话查找**之前**。
+
+**会话 TTL（v0.7 新增）：** 物理连接断开后，`session_id` 在 Server 可配置的 TTL 内仍然有效，可被 `resume` 恢复；建议默认 **24 小时**。超过 TTL（或 `session_id` 不存在）→ `protocol.error(code=session_expired)`（致命）。Resume 成功时**复用原 `session_id`**、保留会话级 `message_id` 去重窗口（§2）与 Capability 声明，并把新物理连接绑定到该逻辑会话。
+
+`workflow.state_sync.workflows[]`（v0.7 扩展）：
+
+```text
+{workflow_id, workflow_status,
+ pending_step: <step.dispatch payload> | null,
+ record_id: string | null,
+ record_persistence_failed: boolean}
+```
+
+* `workflows` 的范围：该 session 下**所有非终态** Workflow，**加上** `known_workflows` 中已被 Server 判定为终态的 Workflow（让断线期间发生的终止也能被对账）。`known_workflows` 仅用于挑选这些对账项，状态一律以 Server 为准。
+* `pending_step`：该 Workflow 当前活跃 Step 的 `step.dispatch` 载荷（无则为 `null`）；Client 据此继续执行，而不是重新开始。
+* `record_id` / `record_persistence_failed`：Workflow 已终态时指向其 Record；未终态时分别为 `null` / `false`。
 
 若 `session_id` 已过期或不存在，Server 返回 `protocol.error`（code=`session_expired`），Client 应发起全新的 `session.hello`，并把还没确认完成的工作，作为新的 `workflow.request` 重新提交——本版本不做跨 session 的自动状态迁移，避免"看起来恢复了，实际状态对不上"的隐患。（v0.4：重新提交使用新的 `client_request_id`；Server 侧的原 Workflow 不会静默遗留，按 `WORKFLOW_SPEC.md` §2.2 的孤儿回收处理。）
 
@@ -684,6 +713,8 @@ step.status   step.status
 | `blob_rejected`（v0.4 新增） | 请求级失败 | `blob.allocate_request` 被拒（超尺寸 / 类型不在白名单等），连接继续 |
 | `auth_failed`（v0.5 新增） | 致命 | 认证失败：断开，不下发 `session.welcome`（§5.1） |
 
+`session.resume` 的认证失败同样走 `auth_failed`（致命，断开）；`session_id` 未知或超过会话 TTL 走 `session_expired`（致命，断开）。两者都不下发 `workflow.state_sync`（§5.2）。
+
 最小 `code` 集合（v0.5）：`unsupported_version` / `session_expired` / `auth_failed` / `unknown_message_type` / `malformed_payload` / `unknown_workflow` / `unknown_step` / `unknown_record` / `blob_rejected`。
 
 `protocol.error` 描述的是**协议层面**的问题（消息格式错、版本不兼容、引用了不存在的 workflow_id/record_id），不同于 `step.status(FAILED)` 描述的**业务执行层面**的失败——不要把两者混用。
@@ -773,7 +804,7 @@ Server 内部：S7 → UNKNOWN（不是 FAILED）
 ```text
 [连接中断，S6 仍处于 RUNNING]
 Client 重新连接
-session.resume(session_id, known_workflows=[{wf_001, step_009, RUNNING}])
+session.resume(session_id, auth={username, secret}, known_workflows=[{wf_001, step_009, RUNNING}])
   → session_id 仍有效：
       workflow.state_sync(resumed=true, workflows=[{wf_001, RUNNING, pending_step: step.dispatch(S6)}])
       Client 据此确认自己应该继续执行 S6，而不是重新开始
