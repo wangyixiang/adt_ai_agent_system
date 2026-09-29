@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.5（缺口收敛：新增 I/O Schema（JSON Schema 受限子集）、`idempotent` / `timeout_hint` 声明、`revision` 声明版本、`manual_action_result` 结构；对齐 `PROTOCOL_SPEC.md` v0.4、`WORKFLOW_SPEC.md` v0.4，取代 v0.4）
+- **Version:** v0.6（MVP：登记模拟副作用能力 `sim_rig.trigger_reset` 与 `sim_rig` 的 I/O schema；依据 MVP 范围说明，取代 v0.5）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -32,6 +32,9 @@ Server 根据这些 Capability 决定是否以及如何利用 Client 的本地�
 | `test_rig.query_dut_info`（v0.2 新增） | 查询被测对象（DUT）当前版本与配置信息 | `false` | 无 |
 | `test_rig.read_fault_code`（v0.2 新增） | 读取测试台/DUT 当前故障码 | `false` | 无 |
 | `test_rig.trigger_reset`（v0.2 新增） | 触发测试台/DUT 重置（示例：一个真正有副作用的 HiL 动作） | `true` | 无 |
+| `sim_rig.trigger_reset`（v0.6 新增，**MVP 模拟项**） | 模拟的测试台复位动作：用于在**没有真实硬件**时验证确认 / `UNKNOWN` / 对账 / 幂等台账。`interruptible: false`、`idempotent: false`、`timeout_hint` 可配置 | `true` | 无 |
+
+> `sim_rig.*` 是本 MVP 的**临时登记项**，用于跑通安全机制；真实 `test_rig.*` 能力接入后应逐步取代它（见 MVP 范围说明 §3）。
 
 *（原因说明：v0.2 两份文档的示例是各自独立写的，`SERVER_SPEC.md` 用的是更简短的动词形式，`CLIENT_SPEC.md` 用的是更具体的动词+宾语形式。既然 Capability 名称是 Planner 生成 Step 时唯一能引用的标识符，两边必须使用同一套名称，这里统一采用更具体的 `<verb>_<object>` 形式，因为它在 Capability 数量增多后更不容易产生歧义，例如未来出现 `filesystem.write_file` 时不会和 `filesystem.read_file` 混淆成一个笼统的 `filesystem.access`。）*
 
@@ -106,12 +109,15 @@ Capability Manifest（示例）
 │   └── open_page             side_effect: false, interruptible: true, ...
 ├── local-agent
 │   └── diagnose_project      side_effect: false, interruptible: true, ...
-└── test_rig
-    ├── read_signal_log       side_effect: false, interruptible: true, ...
-    ├── query_dut_info        side_effect: false, interruptible: true, ...
-    ├── read_fault_code       side_effect: false, interruptible: true, ...
+├── test_rig
+│   ├── read_signal_log       side_effect: false, interruptible: true, ...
+│   ├── query_dut_info        side_effect: false, interruptible: true, ...
+│   ├── read_fault_code       side_effect: false, interruptible: true, ...
+│   └── trigger_reset         side_effect: true, interruptible: false, idempotent: false,
+│                             timeout_hint: 60000, ...
+└── sim_rig（MVP 模拟项）
     └── trigger_reset         side_effect: true, interruptible: false, idempotent: false,
-                              timeout_hint: 60000, ...
+                              timeout_hint: 30000, ...
 ```
 
 * 具体 schema 内容见 §5（文档权威），Manifest 在运行时携带同一份 schema（自包含）。
@@ -171,6 +177,11 @@ git.collect_diagnostics:
                           untracked_files: {type: integer} } }
 
 test_rig.trigger_reset:
+  input:  { type: object, properties: { reason: {type: string} } }
+  output: { type: object, required: [reset_ack],
+            properties: { reset_ack: {type: boolean} } }
+
+sim_rig.trigger_reset:            # MVP 模拟项
   input:  { type: object, properties: { reason: {type: string} } }
   output: { type: object, required: [reset_ack],
             properties: { reset_ack: {type: boolean} } }
