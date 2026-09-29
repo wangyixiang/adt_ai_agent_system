@@ -1,6 +1,6 @@
 # PRODUCT.md
 
-- **Version:** v0.7（引用状态同步：`RECORD_SPEC.md` 已建成并落实 D-5 的约束，无产品决策变化；取代 v0.6）
+- **Version:** v0.8（引用状态同步：`WORKFLOW_SPEC.md` v0.4 等缺口收敛修订完成，无产品决策变化；取代 v0.7）
 - **层级:** Product — 为什么做
 
 ---
