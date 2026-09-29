@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.3（缺口收敛：结构补 `completion_criteria`、`UNKNOWN` 的 `final_result` 标注、条目 `actor`；新增对账/未知/护栏 entry kind；`narrative` 生成规则落地；对齐 `WORKFLOW_SPEC.md` v0.4、`PROTOCOL_SPEC.md` v0.4、`REPORT_SPEC.md` v0.2，取代 v0.2）
+- **Version:** v0.4（部署/信任模型落地：新增 `owner_user_id`；明确 Record 归属与按用户可见；说明导出不写入只读 Record；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.3）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -27,6 +27,8 @@ Record **不是**"把这次会话收发过的协议消息存一份，读的时�
 3. **可追溯（对齐 NFR-1）**：Record 里每一条结构化事实都能标明来源（哪个 Capability、哪个 Evidence、还是工程师的直接输入）和发生时间。
 4. **结构化 + 叙事并存**：见 §0，这是本文件和"方向三"讨论的核心结论，不是可选项。
 5. **不依赖协议版本**：Record 的版本追踪跟 `WORKFLOW_SPEC.md`（+ `CAPABILITY_SPEC.md`）走，不跟 `PROTOCOL_SPEC.md` 走（见 §6）。
+6. **归属与可见性（v0.4 新增）**：Record 归属于提交该 Workflow 的工程师（`owner_user_id`）；**只有该用户可查看**（`ADR-003` §6）。Server 必须按 `user_id` 过滤查询，不得返回他人的 Record。
+7. **导出不改写 Record（v0.4 新增）**：导出到第三方 KB 发生在 Record 定型之后，是纯读取操作；Record 已只读（原则 2），因此**导出动作不写入 Record**。如需留痕，记在服务端日志，而不是 Record 内容里。
 
 ---
 
@@ -48,6 +50,7 @@ Record **不是**"把这次会话收发过的协议消息存一份，读的时�
 Record
 ├── record_id             唯一标识
 ├── workflow_id            对应的 Workflow
+├── owner_user_id          v0.4 新增：提交该 Workflow 的工程师（Record 归属与可见性依据）
 ├── spec_versions          生成时依据的领域模型版本（见 §6）
 ├── created_at             Workflow 创建时间
 ├── ended_at               Workflow 终止时间
@@ -188,6 +191,7 @@ spec_versions
 * Report 的事实性内容必须能追溯到该 Record 的 `entries` 或 `final_result`——不能引入 Record 之外的信息。
 * 生成 Report 不修改 Record；同一份 Record 可以生成多次 Report（例如不同详略程度）。
 * 因为 Record 本身已经是结构化 + 叙事并存的成品文档（§0、§3），Report 生成本质上是对 `summary` / `entries` / `final_result` 的**裁剪、重新排版**，不需要重新理解协议或重新推断事实——具体的裁剪规则与模板见 `REPORT_SPEC.md` §3、§5。
+* **导出对象（v0.4 新增）**：提交人可选择导出 **Record（默认）** 或基于该 Record 生成的 **Report** 到第三方 KB（`PROTOCOL_SPEC.md` §10.3）。两种导出都**不修改** Record。
 
 ---
 
