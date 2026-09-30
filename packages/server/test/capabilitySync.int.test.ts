@@ -103,6 +103,32 @@ describe("capability.sync", () => {
     await srv.close();
   });
 
+  it("keeps the declared output_type so evidence.type can be checked later", async () => {
+    const { srv, c } = await authed();
+    await c.sync({
+      mode: "full",
+      revision: 0,
+      added: [
+        {
+          name: "git.collect_diagnostics",
+          side_effect: false,
+          interruptible: true,
+          output_type: "git_status",
+        },
+      ],
+      removed: [],
+    });
+    await srv.waitFor(() => srv.capabilities(c.sessionId).has("git.collect_diagnostics"));
+
+    // Without it the Server can only validate the shape of `evidence.result`,
+    // never that the evidence is the kind of output the capability promised.
+    expect(srv.capabilities(c.sessionId).get("git.collect_diagnostics")!.output_type).toBe(
+      "git_status",
+    );
+    await c.close();
+    await srv.close();
+  });
+
   it("applies an incremental removal", async () => {
     const { srv, c } = await authed();
     await c.sync({

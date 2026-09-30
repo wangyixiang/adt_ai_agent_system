@@ -6,6 +6,12 @@ export interface CapabilityDescriptor {
   interruptible?: boolean;
   idempotent?: boolean;
   timeout_hint?: number;
+  /**
+   * The Evidence `type` this capability produces (CAPABILITY_SPEC.md §5.3). The
+   * Server needs it to check that a step's evidence is the kind of output the
+   * capability promised, not merely shaped like it (§5.2).
+   */
+  output_type?: string;
   input_schema?: object;
   output_schema?: object;
 }
@@ -16,6 +22,7 @@ export interface NormalizedCapability {
   interruptible: boolean;
   idempotent: boolean;
   timeout_hint?: number;
+  output_type?: string;
   input_schema?: object;
   output_schema?: object;
 }
@@ -40,6 +47,7 @@ export const HUMAN_MANUAL_ACTION_CAPABILITY: NormalizedCapability = {
   side_effect: false,
   interruptible: true,
   idempotent: false,
+  output_type: "manual_action_result",
   input_schema: {
     type: "object",
     required: ["instruction"],

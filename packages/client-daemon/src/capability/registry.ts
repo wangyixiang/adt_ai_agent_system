@@ -26,6 +26,7 @@ export class CapabilityRegistry {
       interruptible: spec.interruptible,
       idempotent: spec.idempotent,
       timeout_hint: spec.timeout_hint,
+      output_type: spec.output_type,
       input_schema: spec.input_schema,
       output_schema: spec.output_schema,
     }));

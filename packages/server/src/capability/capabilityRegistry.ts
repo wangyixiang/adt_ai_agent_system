@@ -14,6 +14,7 @@ function normalize(descriptor: CapabilityDescriptor): NormalizedCapability {
     interruptible: descriptor.interruptible ?? false,
     idempotent: descriptor.idempotent ?? false,
     timeout_hint: descriptor.timeout_hint,
+    output_type: descriptor.output_type,
     input_schema: descriptor.input_schema,
     output_schema: descriptor.output_schema,
   };
