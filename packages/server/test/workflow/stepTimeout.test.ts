@@ -5,9 +5,13 @@ describe("StepTimeoutMonitor", () => {
   it("times out an overdue executing step and skips non-executing ones", async () => {
     let t = 0;
     const timed: string[] = [];
+    const advanced: string[] = [];
     const monitor = new StepTimeoutMonitor(
       {
         now: () => t,
+        onStepEnded: (workflowId) => {
+          advanced.push(workflowId);
+        },
         store: {
           findActiveWorkflows: async () => [{ id: "wf_1" }] as never,
           listSteps: async () =>
@@ -32,6 +36,8 @@ describe("StepTimeoutMonitor", () => {
     t = 150;
     expect(await monitor.sweep()).toEqual(["step_running"]);
     expect(timed).toEqual(["step_running"]);
+    // The workflow is advanced exactly once, so a timed-out step does not stall.
+    expect(advanced).toEqual(["wf_1"]);
   });
 
   it("keeps sweeping when one step fails", async () => {

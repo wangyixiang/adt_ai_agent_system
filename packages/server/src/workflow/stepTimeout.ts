@@ -7,6 +7,12 @@ export interface StepTimeoutDeps {
   store: Pick<WorkflowStore, "findActiveWorkflows" | "listSteps">;
   /** Monotonic clock (PROTOCOL_SPEC.md §2/§9); defaults to `performance.now`. */
   now?: () => number;
+  /**
+   * Called once per workflow that lost a step to the timeout, so the workflow
+   * can move on (reconcile an UNKNOWN, re-plan after a FAILED) even though the
+   * trigger did not come from a client message.
+   */
+  onStepEnded?: (workflowId: string) => Promise<void> | void;
 }
 
 export interface StepTimeoutOptions {
@@ -40,15 +46,25 @@ export class StepTimeoutMonitor {
 
     for (const workflow of await this.deps.store.findActiveWorkflows()) {
       const steps = await this.deps.store.listSteps(workflow.id);
+      let ended = false;
       for (const step of steps) {
         if (!this.isOverdue(step, now)) continue;
         try {
           await this.deps.engine.timeoutStep(workflow.id, step.id);
           timedOut.push(step.id);
+          ended = true;
         } catch (error) {
           // One stuck step must not stop the sweep (or the timer keeps firing
           // on it forever); the next sweep retries.
           console.error(`[step-timeout] failed to time out ${step.id}:`, error);
+        }
+      }
+
+      if (ended) {
+        try {
+          await this.deps.onStepEnded?.(workflow.id);
+        } catch (error) {
+          console.error(`[step-timeout] advance after timeout failed for ${workflow.id}:`, error);
         }
       }
     }

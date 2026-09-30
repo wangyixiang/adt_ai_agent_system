@@ -30,6 +30,15 @@ export interface WorkflowProtocolDeps {
   recordStore: RecordStore;
 }
 
+export interface WorkflowProtocolHandle {
+  /**
+   * Advances a workflow whose trigger did not come from a client message (a
+   * step timed out, for instance) and pushes the outcome to the owning
+   * session's live connection when there is one.
+   */
+  advance(workflowId: string): Promise<void>;
+}
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   (value ?? {}) as Record<string, unknown>;
 
@@ -145,7 +154,7 @@ async function withOutputValidation(
   return validation.valid ? update : invalid(validation.errors.join("; "));
 }
 
-export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
+export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowProtocolHandle {
   const { router, sessions, engine, store, orchestrator, planner, records, recordStore } = deps;
   const notified = new Set<string>();
 
@@ -533,4 +542,31 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       env.message_id,
     );
   });
+
+  // ---- Out-of-band trigger ------------------------------------------------
+
+  return {
+    advance: async (workflowId: string): Promise<void> => {
+      const workflow = await engine.get(workflowId);
+      if (!workflow) return;
+
+      const session = sessions.get(workflow.sessionId);
+      const conn = session?.connection ?? null;
+
+      // No live client (disconnected, or the session is gone): still let the
+      // workflow converge — reconciliation and terminal transitions are
+      // server-owned, and reclamation deals with a workflow that can go no
+      // further.
+      if (!session || !conn) {
+        try {
+          await orchestrator.advance(workflowId);
+        } catch (error) {
+          console.error(`[workflow] out-of-band advance failed for ${workflowId}:`, error);
+        }
+        return;
+      }
+
+      await advanceAndPush(conn, session, workflowId);
+    },
+  };
 }

@@ -88,7 +88,7 @@ function toEntry(
         const ref = {
           step_id: stepId,
           resolved_to: payload.state,
-          evidence_refs: [],
+          evidence_refs: (payload.evidenceRefs as string[] | undefined) ?? [],
         };
         return { ...base, kind: "reconciliation_resolved", ref, narrative: renderNarrative("reconciliation_resolved", ref) };
       }

@@ -50,6 +50,11 @@ describe("step timeout end to end", () => {
     }
     expect(state).toBe("FAILED");
 
+    // The timeout also advances the workflow: the exhausted planner script
+    // yields a completion candidate, which proves the monitor's hook ran.
+    const candidate = await c.next();
+    expect(candidate.type).toBe("workflow.completion_candidate");
+
     await c.close();
     await srv.close();
   });

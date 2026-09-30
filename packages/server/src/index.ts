@@ -124,6 +124,7 @@ export {
   toStepStatusUpdate,
   type StepDispatchPayload,
   type WorkflowProtocolDeps,
+  type WorkflowProtocolHandle,
 } from "./protocol/workflowProtocol";
 export {
   registerSessionResume,
@@ -239,7 +240,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     defaultStepTimeoutMs: opts.stepTimeoutMs,
   });
 
-  registerWorkflowProtocol({
+  const workflowProtocol = registerWorkflowProtocol({
     router: server.router,
     sessions: server.sessions,
     engine,
@@ -266,7 +267,12 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   lifecycle.start();
 
   const stepTimeouts = new StepTimeoutMonitor(
-    { engine, store: workflowStore, now },
+    {
+      engine,
+      store: workflowStore,
+      now,
+      onStepEnded: (workflowId) => workflowProtocol.advance(workflowId),
+    },
     { intervalMs: opts.stepTimeoutSweepIntervalMs ?? 1000 },
   );
   stepTimeouts.start();

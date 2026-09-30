@@ -420,6 +420,7 @@ export class WorkflowEngine {
     workflowId: string,
     stepId: string,
     outcome: "COMPLETED" | "FAILED",
+    evidenceRefs: string[] = [],
   ): Promise<WorkflowSnapshot> {
     return this.withWorkflowLock(workflowId, async () => {
       const workflow = await this.requireWorkflow(workflowId);
@@ -433,7 +434,12 @@ export class WorkflowEngine {
 
       await this.store.saveStep(
         { ...step, state: outcome, updatedAt: this.now() },
-        this.event(workflowId, "step_status", { stepId, state: outcome, reconciled: true }),
+        this.event(workflowId, "step_status", {
+          stepId,
+          state: outcome,
+          reconciled: true,
+          evidenceRefs,
+        }),
       );
       return (await this.store.getWorkflow(workflowId))!;
     });

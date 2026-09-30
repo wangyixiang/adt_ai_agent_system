@@ -162,7 +162,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     defaultStepTimeoutMs: opts.stepTimeoutMs,
   });
 
-  registerWorkflowProtocol({
+  const protocol = registerWorkflowProtocol({
     router: server.router,
     sessions: server.sessions,
     engine,
@@ -189,7 +189,12 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   lifecycle.start();
 
   const stepTimeouts = new StepTimeoutMonitor(
-    { engine, store: workflowStore, now },
+    {
+      engine,
+      store: workflowStore,
+      now,
+      onStepEnded: (workflowId) => protocol.advance(workflowId),
+    },
     { intervalMs: opts.timeoutSweepIntervalMs ?? 1000 },
   );
   stepTimeouts.start();

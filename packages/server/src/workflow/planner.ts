@@ -18,6 +18,17 @@ export type PlannerDecision =
       summary: string;
       evidenceRefs: string[];
       criteria?: Omit<CompletionCriteria, "revision">;
+    }
+  /**
+   * Reconciliation (WORKFLOW_SPEC.md §4.3): the planner judged an UNKNOWN
+   * side-effect step from the evidence gathered afterwards. The planner owns
+   * the judgement (it may be model-driven); the engine applies it.
+   */
+  | {
+      kind: "reconcile";
+      stepId: string;
+      outcome: "COMPLETED" | "FAILED";
+      evidenceRefs?: string[];
     };
 
 /**
