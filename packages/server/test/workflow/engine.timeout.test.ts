@@ -3,6 +3,7 @@ import { createPool } from "../../src/db/pool";
 import { migrate } from "../../src/db/migrate";
 import { PostgresWorkflowStore } from "../../src/workflow/postgresStore";
 import { WorkflowBlockedError, WorkflowEngine } from "../../src/workflow/engine";
+import { toStepStatusUpdate } from "../../src/protocol/workflowProtocol";
 import { TEST_DATABASE_URL } from "@adt/test-support";
 
 let pool: ReturnType<typeof createPool>;
@@ -109,8 +110,29 @@ describe("engine.timeoutStep", () => {
     expect(event.payload).toMatchObject({ state: "RUNNING", progress: { ratio: 0.5 } });
   });
 
-  it("keeps an execution-class WAITING step alive too", async () => {
+  it("does not time out a step parked on a resource conflict", async () => {
     const wf = await create();
+    const step = await engine.dispatchStep(wf.id, {
+      objective: "reset",
+      capability: "sim_rig.trigger_reset",
+      sideEffect: true,
+      interruptible: false,
+      timeoutMs: 1000,
+    });
+    await engine.applyStepStatus(
+      wf.id,
+      step.id,
+      toStepStatusUpdate({ status: "WAITING", wait_reason: { code: "resource_conflict" } })!,
+    );
+
+    // Long past the deadline: a human wait has no deadline, and turning this
+    // into UNKNOWN would start reconciliation for an action that never ran.
+    t = 99_999;
+    await engine.timeoutStep(wf.id, step.id);
+    expect((await store.getStep(step.id))!.state).toBe("WAITING");
+  });
+
+  it("keeps an execution-class WAITING step alive too", async () => {    const wf = await create();
     const step = await engine.dispatchStep(wf.id, {
       objective: "wait",
       capability: "sim_rig.query_state",

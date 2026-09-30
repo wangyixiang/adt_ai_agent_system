@@ -51,7 +51,13 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
       return { state: "RUNNING" };
     case "WAITING": {
       const code = (asRecord(payload.wait_reason).code ?? payload.wait_reason) as unknown;
-      const human = code === "user_input" || code === "user_confirmation";
+      // `resource_conflict` is a human wait too: the provider found the resource
+      // busy and is asking the engineer whether to wait, and a person deciding
+      // has no deadline (PROTOCOL_SPEC.md §9). Treating it as an execution wait
+      // would kill the step mid-wait and turn a side effect that never ran into
+      // UNKNOWN.
+      const human =
+        code === "user_input" || code === "user_confirmation" || code === "resource_conflict";
       return { state: "WAITING", waitClass: human ? "human" : "execution" };
     }
     case "COMPLETED":

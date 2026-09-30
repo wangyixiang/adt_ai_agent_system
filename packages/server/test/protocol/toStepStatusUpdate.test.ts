@@ -27,3 +27,18 @@ describe("toStepStatusUpdate fail_reason", () => {
     expect(toStepStatusUpdate({ status: "REJECTED" })).toEqual({ state: "REJECTED" });
   });
 });
+
+describe("toStepStatusUpdate human waits", () => {
+  it("treats a resource conflict as a human wait, so the step timer stops", () => {
+    expect(
+      toStepStatusUpdate({ status: "WAITING", wait_reason: { code: "resource_conflict" } }),
+    ).toEqual({ state: "WAITING", waitClass: "human" });
+  });
+
+  it("does not widen the set: an unknown wait code stays an execution wait", () => {
+    expect(toStepStatusUpdate({ status: "WAITING", wait_reason: { code: "whatever" } })).toEqual({
+      state: "WAITING",
+      waitClass: "execution",
+    });
+  });
+});
