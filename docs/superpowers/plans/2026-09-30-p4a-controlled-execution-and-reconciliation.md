@@ -978,3 +978,5 @@ P4a 验收通过后写 **P4b（blob 通道）**，再写 **P4c（KB 导出）**�
 * **`WORKFLOW_SPEC.md` §4.4 会话级副作用串行**（同一 `session` 内最多一个活跃副作用 Step）仍只有"每 Workflow 单步"这一层；跨 Workflow 的排队属于 P4b 的编排工作。
 * **正向 `user_confirmation`（confirmed）Record 条目**：确认目前只体现为 `RUNNING` + 后续证据，`RECORD_SPEC.md` §4 的 `decision: "confirmed"` 尚未单独落条目（P2b 起既有）。
 * **真实确认 UI**：宿主回调即本阶段交付面，交互界面归 client-ui。
+
+**关于 §4.3 的一句话补充：** 规格写"优先由 Server 生成只读对账 Step…证据不足时退回工程师确认"。本实现的两块拼图正好落在既有原语上——"生成只读对账 Step"由规划器提议（只读能力在 `UNKNOWN` 期间仍然可见），"退回工程师确认"即规划器提议 `human.manual_action`（v0.8 起 Client/Server 两端都支持）。Engine 侧只保留"只有 UNKNOWN 能被裁定、且必须给出证据"这两条确定性约束。

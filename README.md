@@ -72,4 +72,4 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - 契约：`docs/specs/`（`WORKFLOW_SPEC.md`、`CAPABILITY_SPEC.md`、`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md`）
 - 架构决策：`docs/adr/ADR-001`~`ADR-005`
 - MVP 范围：`docs/superpowers/specs/2026-09-29-mvp-scope.md`
-- 实现计划：`docs/superpowers/plans/`（P1 → P3b）
+- 实现计划：`docs/superpowers/plans/`（P1 → P4a）

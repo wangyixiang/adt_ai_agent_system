@@ -58,7 +58,7 @@ packages/
 |---|---|
 | 形态 | **本地 Node daemon + 浏览器 UI**（localhost）；**预留打包为 Electron / Windows exe 的路径** |
 | daemon 职责 | 本地执行（`child_process` / fs / git / docker）、WS 连接、**SQLite 幂等台账**、blob 上传下载、对 UI 暴露本地 API |
-| 幂等台账 | **SQLite（`better-sqlite3`）**，跨进程重启保留 |
+| 幂等台账 | **SQLite**，跨进程重启保留。实现取 **Node 内置 `node:sqlite`**（见下方修订），而非 `better-sqlite3` |
 | **Capability 适配器层** | **可插拔**：CLI / HTTP / 原生桥 / MCP 都能挂接；核心保持 TS |
 | UI | **React + TypeScript**，由 daemon 托管静态资源；**与宿主无关**（浏览器能跑，Electron 也能跑） |
 
@@ -108,3 +108,19 @@ packages/
 **明确延后：**
 
 * TLS（`ADR-003` §4）、多实例/水平扩展与 Redis、MinIO/S3 实装、原生桥接实现。
+
+---
+
+## 修订（Amendments）
+
+### A1. 幂等台账改用 Node 内置 `node:sqlite`（2026-09-30，P4a 实现时）
+
+§3 原选型为 `better-sqlite3`。实现 P4a 的幂等台账时改为 **Node 内置 `node:sqlite`**（`DatabaseSync`），理由：
+
+* 免原生构建：`better-sqlite3` 是原生模块，需要在 pnpm 的 `onlyBuiltDependencies` 里放行构建，并随平台/Node ABI 变化；
+* 运行环境已满足：开发与部署基线为 Node LTS ≥ 22.13 / 24，`node:sqlite` 无需实验性开关；
+* 台账的访问面很小（`key → {type, result}` 的读写），不依赖 `better-sqlite3` 的额外能力。
+
+实现上有一个已知坑：Vite 5 从 `module.builtinModules` 中过滤掉任何含 `:` 的项，而 Node 只在 `node:sqlite` 前缀下暴露该模块，因此**静态 `import` 会让测试 runner 解析失败**（会去找名为 `sqlite` 的文件）；`packages/client-daemon/src/ledger.ts` 用 `createRequire` 运行时加载以绕开静态解析，生产产物（tsc 输出 ESM）同样成立。
+
+若未来需要 SQLite 的高级能力（WAL 调优、扩展、同步 API 的成熟度保障），可回到 `better-sqlite3`——本修订只改选型实现，不改"SQLite + 跨进程保留"这一决定。
