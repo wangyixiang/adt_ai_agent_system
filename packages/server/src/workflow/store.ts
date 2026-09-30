@@ -29,6 +29,8 @@ export interface StepSnapshot {
   waitClass: WaitClass;
   /** Planner-produced Capability arguments (WORKFLOW_SPEC.md §3). */
   input: Record<string, unknown>;
+  /** Output schema declared at dispatch time; null when the capability had none. */
+  outputSchema: Record<string, unknown> | null;
 }
 
 export type WorkflowEventKind =

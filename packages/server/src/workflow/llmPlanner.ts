@@ -64,6 +64,14 @@ function proposeStepTool(capabilities: NormalizedCapability[]): LlmTool {
             evidence_refs: { type: "array", items: { type: "string" } },
           },
         },
+        criteria: {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["formal", "open"] },
+            description: { type: "string" },
+            assertions: { type: "array", items: { type: "string" } },
+          },
+        },
       },
     },
   };
@@ -119,7 +127,7 @@ function renderPlanningContext(input: PlannerInput): string {
   ].join("\n");
 }
 
-function parseCriteria(args: Record<string, unknown>): CompletionCriteria {
+function parseCriteriaFields(args: Record<string, unknown>): Omit<CompletionCriteria, "revision"> {
   const assertions = Array.isArray(args.assertions)
     ? args.assertions.filter((item): item is string => typeof item === "string")
     : undefined;
@@ -127,14 +135,23 @@ function parseCriteria(args: Record<string, unknown>): CompletionCriteria {
     mode: args.mode === "formal" ? "formal" : "open",
     description: typeof args.description === "string" ? args.description : undefined,
     assertions,
-    revision: 0,
   };
+}
+
+function parseCriteria(args: Record<string, unknown>): CompletionCriteria {
+  return { ...parseCriteriaFields(args), revision: 0 };
 }
 
 function parseDecision(
   args: Record<string, unknown>,
   capabilities: NormalizedCapability[],
 ): PlannerDecision {
+  const criteria =
+    typeof args.criteria === "object" && args.criteria !== null
+      ? parseCriteriaFields(args.criteria as Record<string, unknown>)
+      : undefined;
+  const withCriteria = criteria ? { criteria } : {};
+
   if (args.action === "completion_candidate") {
     const completion = (args.completion ?? {}) as { summary?: unknown; evidence_refs?: unknown };
     return {
@@ -143,6 +160,7 @@ function parseDecision(
       evidenceRefs: Array.isArray(completion.evidence_refs)
         ? completion.evidence_refs.filter((item): item is string => typeof item === "string")
         : [],
+      ...withCriteria,
     };
   }
 
@@ -170,7 +188,7 @@ function parseDecision(
         ? (raw.input as Record<string, unknown>)
         : {},
   };
-  return { kind: "step", step };
+  return { kind: "step", step, ...withCriteria };
 }
 
 /**

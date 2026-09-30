@@ -87,13 +87,13 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
 
 /**
  * CAPABILITY_SPEC.md §5.2: a COMPLETED step's `evidence.result` must satisfy the
- * Capability's `output_schema`; an invalid result is recorded as
- * `FAILED(invalid_output)`. A missing schema or a missing `result` does not
- * block (CAPABILITY_SPEC.md §5.4) — it warns.
+ * output schema that was declared when the step was dispatched (frozen on the
+ * step, §4.1); an invalid or missing result is recorded as
+ * `FAILED(invalid_output)` and the rejected evidence is preserved for the
+ * Record. A step with no declared schema does not block (§5.4) — it warns.
  */
 async function withOutputValidation(
   conn: Connection,
-  session: Session,
   engine: WorkflowEngine,
   stepId: string,
   update: StepStatusUpdate,
@@ -101,25 +101,26 @@ async function withOutputValidation(
   if (update.state !== "COMPLETED") return update;
 
   const step = await engine.getStep(stepId);
-  const schema = step
-    ? (session.capabilities.get(step.capability)?.output_schema as JsonSchema | undefined)
-    : undefined;
+  const schema = step?.outputSchema as JsonSchema | null | undefined;
   if (!schema) {
     conn.warn(`no output_schema for step ${stepId}; skipping evidence validation`);
     return update;
   }
 
+  const invalid = (reason: string): StepStatusUpdate => {
+    conn.warn(`invalid evidence for step ${stepId}: ${reason}`);
+    return {
+      state: "FAILED",
+      evidence: update.evidence,
+      failReason: { code: "invalid_output" },
+    };
+  };
+
   const result = (update.evidence as { result?: unknown } | undefined)?.result;
-  if (result === undefined) {
-    conn.warn(`evidence for step ${stepId} has no result; skipping validation`);
-    return update;
-  }
+  if (result === undefined) return invalid("evidence has no result");
 
   const validation = validateJsonSchema(schema, result);
-  if (validation.valid) return update;
-
-  conn.warn(`invalid evidence result for step ${stepId}: ${validation.errors.join("; ")}`);
-  return { state: "FAILED", failReason: { code: "invalid_output" } };
+  return validation.valid ? update : invalid(validation.errors.join("; "));
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
@@ -301,7 +302,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    const effective = await withOutputValidation(conn, session, engine, payload.step_id, update);
+    const effective = await withOutputValidation(conn, engine, payload.step_id, update);
 
     try {
       await engine.applyStepStatus(workflow.id, payload.step_id, effective);

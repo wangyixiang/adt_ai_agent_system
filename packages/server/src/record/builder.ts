@@ -110,7 +110,11 @@ function toEntry(
         payload.evidence !== undefined &&
         payload.evidence !== null
       ) {
-        const ref = { step_id: stepId, evidence: payload.evidence };
+        const ref = {
+          step_id: stepId,
+          evidence: payload.evidence,
+          ...(payload.failReason === undefined ? {} : { fail_reason: payload.failReason }),
+        };
         return { ...base, kind: "evidence_received", ref, narrative: renderNarrative("evidence_received", ref) };
       }
 

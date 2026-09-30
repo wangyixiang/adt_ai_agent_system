@@ -4,6 +4,8 @@ export interface OpenAiCompatibleOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Request timeout in ms (default 30s); a hung provider must not wedge a session. */
+  timeoutMs?: number;
   /** Injectable for tests. */
   fetch?: typeof fetch;
 }
@@ -36,6 +38,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.opts.apiKey}`,
       },
+      signal: AbortSignal.timeout(this.opts.timeoutMs ?? 30_000),
       body: JSON.stringify({
         model: this.opts.model,
         messages: request.messages,

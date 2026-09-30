@@ -91,7 +91,13 @@ export class WorkflowOrchestrator {
         return {};
       }
 
-      const dispatched = await this.deps.engine.dispatchStep(workflowId, decision.step);
+      const capability = capabilities.find((candidate) => candidate.name === decision.step.capability);
+      const dispatched = await this.deps.engine.dispatchStep(workflowId, {
+        ...decision.step,
+        // Frozen at dispatch so a later capability.sync cannot move the goalposts
+        // for an in-flight step (CAPABILITY_SPEC.md §4.1).
+        outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
+      });
       return { dispatched };
     }
 

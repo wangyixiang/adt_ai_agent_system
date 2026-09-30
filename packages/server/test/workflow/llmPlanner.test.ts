@@ -86,4 +86,31 @@ describe("LlmPlanner", () => {
       planner.proposeNext({ workflow, steps: [], events: [], capabilities: caps }),
     ).rejects.toThrow();
   });
+
+  it("maps an optional criteria revision from the tool call", async () => {
+    const llm = new ScriptedLlmProvider([
+      {
+        toolCalls: [
+          {
+            name: "propose_step",
+            arguments: {
+              action: "completion_candidate",
+              completion: { summary: "好了", evidence_refs: [] },
+              criteria: { mode: "open", description: "新的完成条件" },
+            },
+          },
+        ],
+      },
+    ]);
+    const planner = new LlmPlanner({ provider: llm });
+    const decision = await planner.proposeNext({ workflow, steps: [], events: [], capabilities: caps });
+    expect(decision).toEqual({
+      kind: "completion_candidate",
+      summary: "好了",
+      evidenceRefs: [],
+      criteria: { mode: "open", description: "新的完成条件" },
+    });
+    const tool = llm.requests[0]!.tools[0]!;
+    expect((tool.parameters as any).properties.criteria).toBeDefined();
+  });
 });

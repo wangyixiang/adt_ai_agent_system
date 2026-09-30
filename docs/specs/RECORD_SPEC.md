@@ -117,7 +117,7 @@ Entry
 | kind | 说明 | ref 包含 |
 |---|---|---|
 | `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增） |
-| `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构） |
+| `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构）, `fail_reason`（v0.6，仅当该证据被校验拒绝时，见 `WORKFLOW_SPEC.md` §2 的 `invalid_output`） |
 | `user_confirmation` | 工程师对一个有副作用的动作做了确认/拒绝（对齐 `WORKFLOW_SPEC.md` §4.2） | `step_id`, `decision`（confirmed \| declined） |
 | `user_input` | 工程师补充信息或反馈"建议"的执行结果（包括 `human.manual_action` 的反馈，见 `WORKFLOW_SPEC.md` §6.1） | `step_id`（如适用）, `content` |
 | `completion_candidate` | Server 提出"可能已解决" | `summary`, `evidence_refs` |

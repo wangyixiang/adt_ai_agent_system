@@ -61,6 +61,8 @@ export interface NewStep {
   sideEffect: boolean;
   interruptible: boolean;
   input?: Record<string, unknown>;
+  /** Snapshot of the capability's output schema, for in-flight validation. */
+  outputSchema?: Record<string, unknown> | null;
   idempotencyKey?: string | null;
 }
 
@@ -255,6 +257,7 @@ export class WorkflowEngine {
         attempt: 1,
         waitClass: null,
         input: step.input ?? {},
+        outputSchema: step.outputSchema ?? null,
       };
       await this.store.createStep(
         snapshot,

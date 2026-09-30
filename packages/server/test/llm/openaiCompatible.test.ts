@@ -53,4 +53,20 @@ describe("OpenAiCompatibleProvider", () => {
     });
     await expect(provider.complete({ messages: [], tools: [], toolChoice: "t" })).rejects.toThrow();
   });
+
+  it("aborts a hanging request via the configured timeout", async () => {
+    const hangingFetch = ((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as unknown as typeof fetch;
+
+    const provider = new OpenAiCompatibleProvider({
+      baseUrl: "https://api.example/v1",
+      apiKey: "k",
+      model: "m",
+      fetch: hangingFetch,
+      timeoutMs: 20,
+    });
+    await expect(provider.complete({ messages: [], tools: [], toolChoice: "t" })).rejects.toThrow();
+  });
 });

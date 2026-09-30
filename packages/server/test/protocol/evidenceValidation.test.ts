@@ -95,4 +95,64 @@ describe("evidence output validation", () => {
     await c.close();
     await srv.close();
   });
+
+  it("records FAILED(invalid_output) when evidence carries no result", async () => {
+    const srv = await startTestServer({
+      planner: [readStep, { kind: "completion_candidate", summary: "done", evidenceRefs: [] }],
+    });
+    const { c, workflowId, stepId } = await running(srv);
+    await c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: {
+        workflow_id: workflowId,
+        step_id: stepId,
+        status: "COMPLETED",
+        evidence: { source: "capability", type: "git_status" },
+      },
+    });
+    expect((await srv.engine.getStep(stepId))!.state).toBe("FAILED");
+    await c.close();
+    await srv.close();
+  });
+
+  it("validates against the schema declared at dispatch even after a later capability.sync", async () => {
+    const srv = await startTestServer({
+      planner: [readStep, { kind: "completion_candidate", summary: "done", evidenceRefs: [] }],
+    });
+    const { c, workflowId, stepId } = await running(srv);
+
+    // The client re-declares the capability without its output schema before
+    // completing the step (CAPABILITY_SPEC.md §4.1: in-flight steps are unaffected).
+    c.sync({
+      mode: "full",
+      revision: 1,
+      added: [{ name: "git.collect_diagnostics", side_effect: false, interruptible: true }],
+      removed: [],
+    });
+
+    await c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: {
+        workflow_id: workflowId,
+        step_id: stepId,
+        status: "COMPLETED",
+        evidence: { source: "capability", type: "git_status", result: { branch: 7 } },
+      },
+    });
+    expect((await srv.engine.getStep(stepId))!.state).toBe("FAILED");
+    await c.close();
+    await srv.close();
+  });
 });

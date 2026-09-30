@@ -32,6 +32,7 @@ const step = (over: Partial<StepSnapshot> = {}): StepSnapshot => ({
   attempt: 1,
   waitClass: null,
   input: {},
+  outputSchema: null,
   ...over,
 });
 
@@ -249,5 +250,31 @@ describe("record builder", () => {
       recordId: "rec_input",
     });
     expect(record.entries[0]!.ref.input).toEqual({ project_path: "/a" });
+  });
+
+  it("keeps rejected evidence and its fail reason in the record", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "RUNNING" },
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics", input: {} }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "FAILED",
+          evidence: { source: "capability", type: "git_status", result: { branch: 7 } },
+          failReason: { code: "invalid_output" },
+        }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_fail",
+    });
+    const entry = record.entries.find((e) => e.kind === "evidence_received")!;
+    expect(entry.ref.fail_reason).toEqual({ code: "invalid_output" });
+    expect(entry.ref.evidence).toEqual({
+      source: "capability",
+      type: "git_status",
+      result: { branch: 7 },
+    });
   });
 });
