@@ -3,17 +3,20 @@ import { attachStepRunner, type StepRunnerDeps } from "../src/stepRunner";
 import { CapabilityRegistry } from "../src/capability/registry";
 import type { ExecutionResult } from "../src/capability/result";
 
-function harness(results: ExecutionResult[], hooks: Partial<StepRunnerDeps> = {}) {
+function harness(results: Array<ExecutionResult | "throw">, hooks: Partial<StepRunnerDeps> = {}) {
   const sent: Array<{ payload: Record<string, unknown> }> = [];
   const handlers = new Map<string, (env: { payload: unknown }) => void>();
   let runs = 0;
+  let confirmations = 0;
 
   const registry = new CapabilityRegistry();
   registry.register({
     spec: { name: "sim_rig.trigger_reset", side_effect: true, interruptible: false },
     execute: async () => {
       runs++;
-      return results[Math.min(runs - 1, results.length - 1)]!;
+      const step = results[Math.min(runs - 1, results.length - 1)]!;
+      if (step === "throw") throw new Error("adapter exploded");
+      return step;
     },
   });
 
@@ -28,7 +31,10 @@ function harness(results: ExecutionResult[], hooks: Partial<StepRunnerDeps> = {}
     },
     registry,
     workspaceRoot: "/ws",
-    onConfirmationRequired: async () => true,
+    onConfirmationRequired: async () => {
+      confirmations++;
+      return true;
+    },
     ...hooks,
   });
 
@@ -39,6 +45,9 @@ function harness(results: ExecutionResult[], hooks: Partial<StepRunnerDeps> = {}
     settle: (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20)),
     get runs() {
       return runs;
+    },
+    get confirmations() {
+      return confirmations;
     },
   };
 }
@@ -89,6 +98,8 @@ describe("resource conflict on the client", () => {
     await h.settle();
 
     expect(h.runs).toBe(2);
+    // Approving a busy-resource wait is not a second approval of the action.
+    expect(h.confirmations).toBe(1);
     expect(h.sent.map((s) => s.payload.status)).toEqual([
       "WAITING",
       "RUNNING",
@@ -97,6 +108,21 @@ describe("resource conflict on the client", () => {
       "COMPLETED",
     ]);
     expect(h.sent[4]!.payload.evidence).toMatchObject({ type: "reset_ack" });
+  });
+
+  it("reports a capability failure when the adapter throws on the retry", async () => {
+    const h = harness([conflict, "throw"], { onResourceConflict: async () => "wait" });
+    h.dispatch(dispatch);
+    await h.settle();
+
+    expect(h.sent.map((s) => s.payload.status)).toEqual([
+      "WAITING",
+      "RUNNING",
+      "WAITING",
+      "RUNNING",
+      "FAILED",
+    ]);
+    expect(h.sent[4]!.payload.fail_reason).toMatchObject({ code: "capability_error" });
   });
 
   it("stops when there is nobody to ask", async () => {

@@ -622,3 +622,32 @@ git commit -m "docs: resource conflicts are reported by providers, not arbitrate
 ## 后续
 
 P4b 验收通过后写 **P4c（blob 通道）**，再写 **P4d（KB 导出）**。
+
+---
+
+## 执行偏差与 Review 修复轮
+
+### 执行中发现的计划缺陷（已就地修正）
+
+* **计划 Task 2 的测试片段用了不合法的状态迁移**：它构造 `RUNNING → REJECTED`，而状态机只允许从 `PENDING` 或 `WAITING` 拒绝（`NON_TERMINAL_EDGES.RUNNING` 不含 `REJECTED`），引擎会**静默忽略**该迁移——于是"步骤仍是活跃的"，测试会因为错误的原因而失败。已改为真实序列 `RUNNING → WAITING(human) → REJECTED`（冲突正是执行中才发现的），并把"别的拒绝"用 `PENDING → REJECTED` 构造。计划文件已同步更正。
+* **Task 5 的端到端在 T1–T4 完成后一次通过**：它是装配检查（integration），不是先红后绿的单元测试。为了让它仍然有意义，已确认它确实能抓住两类回归：去掉人类等待语义 → `expect(state).toBe("WAITING")` 失败；去掉编排层终结 → 收到的不是 `workflow.terminated`。
+* **提供方契约最终落在 `CAPABILITY_SPEC.md` §2 而非 §7**：§7 是"已知待补项"清单，而这是**声明/行为规则**，放 §2 才对。计划文件已同步更正。
+
+### Review 结论
+
+整体评审：**代码可合并**；**分支整体不可直接合并**，因为两处规范性文档仍在自相矛盾（正是本阶段要消除的漂移）。两条都是文档一行修正，代码无需改动。
+
+**阻塞项（已修）**
+* **B1**：`PROTOCOL_SPEC.md` §8 的 `reject_reason.code` 取值表**漏了 `resource_conflict`**——同文档 §8.3 又要求上报它，自相矛盾；照表校验的实现会把这个信号丢掉。已补入取值表（并补 `message` 的说明）。
+* **B2**：`SERVER_SPEC.md` 的职责清单里仍写着"**保证同一 `session` 内副作用 Step 串行**"，与本分支确立的"Server 不仲裁"直接冲突。已改写为"把提供方上报的资源冲突转达工程师，并把'不能解决'变成确定性终止"。
+
+**非阻塞项（已修）**
+* **N1**：`SPEC_VERSIONS` 仍是 `workflow_spec 0.5 / capability_spec 0.8`，而两份 spec 已升到 0.6/0.9（且 builder 现在会输出新的终止原因文案）。已同步（含两处测试 fixture）。
+* **N2**：`SERVER_SPEC.md` 里我引用的"v0.11"在该文档中并不存在（头部是 v0.9）。已把头部升到 **v0.10** 并把标注统一为 v0.10。
+* **N3**：`ARCHITECTURE.md` 的那条 bullet 内容已改写却仍标"（v0.6 新增）"。已改为"（v0.6 新增；v0.7 更正后半句）"。
+* **N4**：`hasResourceConflict` 原本排在"有活跃 Step 就返回"之后。虽然当前接线构造不出可达触发，但已**前移到最前**（读 events 之后立刻判），闭合"并发 advance 已经越过 events 读取、先派发了一个 Step"这一类，正是设计禁止的"规划器绕过冲突"。
+* **N5（测试盲区）**：补了三处——① **能解决的那条分支此前只有单元测试**，现补端到端（`WAITING → RUNNING → COMPLETED`，Workflow 继续且 Record **不含** `step_rejected`）；② `CANCELLING` 收敛（取消意图优先，仍为 `CANCELLED`）；③ 重试路径不重复要确认（`confirmations === 1`）与适配器在重试时抛错 → `FAILED(capability_error)`。
+* **N6**：`final_result` 里"存在未对账副作用"的提示会**盖掉** FAILED 的原因句，工程师看不到"设备被占用"。已改为 FAILED 先说原因、未对账提示作为追加（并保留其独立字段）。另外把 `step_rejected` 里内联的提供方 message 截断（80 字符）——Record 条目是日志行，不是逐字转写。
+* **N7**：`engine.timeout.test.ts` 一处被编辑弄成两行合一的格式，已修。
+
+**评审确认无遗漏**：没有其它规范性文档仍在声称 Server 排队/串行副作用（`grep` 过 串行/排队/最多一个副作用/活跃状态）；"等待后成功不留痕"与"停驻的 Step 不会被转成 `UNKNOWN`"两条主张在真实代码路径上成立。

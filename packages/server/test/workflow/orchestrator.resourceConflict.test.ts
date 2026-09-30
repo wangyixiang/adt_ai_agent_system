@@ -104,4 +104,29 @@ describe("resource conflict ends the workflow", () => {
     expect(planned).toBe(1);
     expect((await engine.get(workflowId))!.state).toBe("RUNNING");
   });
+
+  it("still converges a cancelled workflow to CANCELLED, not FAILED", async () => {
+    const store = new PostgresWorkflowStore(pool);
+    const engine = new WorkflowEngine({ store, now: () => 1000 });
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, sideEffect);
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+    // A non-interruptible side effect defers the cancel (WORKFLOW_SPEC.md §2.1).
+    await engine.cancel(wf.id);
+    expect((await engine.get(wf.id))!.state).toBe("CANCELLING");
+
+    await engine.applyStepStatus(wf.id, step.id, { state: "WAITING", waitClass: "human" });
+    await engine.applyStepStatus(wf.id, step.id, {
+      state: "REJECTED",
+      rejectReason: { code: "resource_conflict", message: "测试台正被占用" },
+    });
+
+    // The cancel intent still wins when the conflict arrives.
+    const orch = orchestratorWith(engine, store, () => undefined);
+    await orch.advance(wf.id);
+
+    const after = (await engine.get(wf.id))!;
+    expect(after.state).toBe("CANCELLED");
+    expect(after.terminalReason).toBe("user_cancelled");
+  });
 });

@@ -132,7 +132,8 @@ describe("engine.timeoutStep", () => {
     expect((await store.getStep(step.id))!.state).toBe("WAITING");
   });
 
-  it("keeps an execution-class WAITING step alive too", async () => {    const wf = await create();
+  it("keeps an execution-class WAITING step alive too", async () => {
+    const wf = await create();
     const step = await engine.dispatchStep(wf.id, {
       objective: "wait",
       capability: "sim_rig.query_state",

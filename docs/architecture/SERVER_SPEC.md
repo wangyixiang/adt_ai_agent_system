@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.9（断线重连：保留断线会话（可配置 TTL）、接受认证的 `session.resume` 并回 `workflow.state_sync`；部署/信任模型落地：本地账号与会话管理、认证校验、Record 按用户过滤、KB 导出出站；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.7，取代 v0.8）
+- **Version:** v0.10（资源冲突：副作用 Step 的串行保证由"提供方判断 + 如实上报"取代，Server 只认人类等待与终结两个信号，不仲裁资源；对应 `WORKFLOW_SPEC.md` v0.6、`PROTOCOL_SPEC.md` v0.8，取代 v0.9）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -49,7 +49,7 @@ Server 负责：
 * **在用户需要时，基于 Record 生成 Report**（v0.4 新增）
 * **定义并维护 Request 级完成条件（`completion_criteria`）**（v0.7 新增）
 * **由 Workflow Engine 确定性执行终止护栏**（v0.7 新增）
-* **保证同一 `session` 内副作用 Step 串行**（v0.7 新增）
+* **把提供方上报的资源冲突转达给工程师，并把"不能解决"变成确定性的终止**（v0.7 新增；v0.10 按 `WORKFLOW_SPEC.md` §4.4 v0.6 重写——Server **不**串行副作用 Step、不排队、不仲裁资源）
 * **为有副作用的 Step 生成幂等键，并执行"结果未知 → 对账"**（v0.7 新增）
 * **回收失联的孤儿 Workflow；终止时先落盘 Record、再通知**（v0.7 新增）
 * **保留断线会话（可配置 TTL）以支持 `session.resume` 与 `workflow.state_sync`**（v0.9 新增）
@@ -117,7 +117,7 @@ Server MUST：
 15. **在 User 明确请求时，基于指定 Record 生成 Report；不请求则不生成**（v0.4 新增，对应 REQUIREMENTS FR-17~FR-19）
 16. **在创建 / 推进 Workflow 时确定并维护 `completion_criteria`，每次修订写入 Record**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §8.1）
 17. **由 Workflow Engine 确定性执行终止护栏**（步数 / 重试 / `not_solved` 轮次 / 时长预算），触顶则 `FAILED` 并保存 Record（v0.7 新增，对应 `WORKFLOW_SPEC.md` §13）
-18. **把能力提供方报告的 `resource_conflict` 认作人类等待（不受 `step_timeout` 约束）与终结信号（`FAILED` + `terminal_reason = resource_conflict`），不自行仲裁资源、不排队**（v0.7 新增；v0.11 按 `WORKFLOW_SPEC.md` §4.4 v0.6 重写）
+18. **把能力提供方报告的 `resource_conflict` 认作人类等待（不受 `step_timeout` 约束）与终结信号（`FAILED` + `terminal_reason = resource_conflict`），不自行仲裁资源、不排队**（v0.7 新增；v0.10 按 `WORKFLOW_SPEC.md` §4.4 v0.6 重写）
 19. **为 `side_effect: true` 的 Step 生成 Workflow 内稳定的 `idempotency_key`；对结果不确定的副作用 Step 判为 `UNKNOWN` 并对账（不自动重试，除非该 Capability 声明 `idempotent`）**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.3）
 20. **按可配置宽限期回收失联的孤儿 Workflow（未请求取消 → `FAILED(client_unreachable)`；已请求取消 → `CANCELLED`）；并在任何终止状态先持久化 Record、成功后再发 `workflow.terminated`**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §2.2、`PROTOCOL_SPEC.md` §7.4）
 21. **管理本地账号（创建 / 禁用 / 改密）与会话，校验 Client 认证；未认证连接不得进入业务消息**（v0.8 新增，对应 `ADR-003` §3、`PROTOCOL_SPEC.md` §5.1）
@@ -192,7 +192,7 @@ Step/Workflow 的具体状态机、Step Schema、Evidence 结构、Completion �
 
 > **v0.7 补充：** 终止护栏（`WORKFLOW_SPEC.md` §13）、副作用结果未知与对账（§4.3）都是 `ADR-001`（Workflow Engine 是唯一权威）的直接推论——它们必须由**确定性组件**执行，不能委托给 LLM；这一点也是它们写进 Spec 而不是留给实现自由发挥的原因。
 
-> **v0.11 更正：** 资源占用（`WORKFLOW_SPEC.md` §4.4）**不属于**这条推论——它不是确定性规则，而是"只有提供方知道的事实"。Server 只认两个信号（人类等待、终结），**不判断谁占用了什么**。
+> **v0.10 更正：** 资源占用（`WORKFLOW_SPEC.md` §4.4）**不属于**这条推论——它不是确定性规则，而是"只有提供方知道的事实"。Server 只认两个信号（人类等待、终结），**不判断谁占用了什么**。
 
 ---
 

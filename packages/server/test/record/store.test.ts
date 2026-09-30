@@ -29,7 +29,7 @@ const rec = (
   record_id: id,
   workflow_id: `wf_${id}`,
   owner_user_id: owner,
-  spec_versions: { workflow_spec: "0.5", capability_spec: "0.8" },
+  spec_versions: { workflow_spec: "0.6", capability_spec: "0.9" },
   created_at: 100,
   ended_at: endedAt,
   terminal_state: "COMPLETED",

@@ -72,7 +72,8 @@ export function hasResourceConflict(events: WorkflowEvent[]): boolean {
 }
 
 /**
- * Decides what happens next for a workflow. It respects One-Step Planning * (ADR-002): while a step is active, or once the workflow is terminal, it does
+ * Decides what happens next for a workflow. It respects One-Step Planning
+ * (ADR-002): while a step is active, or once the workflow is terminal, it does
  * nothing and never consults the planner. Planner failures and schema-invalid
  * planner output are turned into deterministic failures — never a stall.
  */
@@ -83,14 +84,13 @@ export class WorkflowOrchestrator {
     const workflow = await this.deps.engine.get(workflowId);
     if (!workflow || isTerminalWorkflow(workflow.state)) return {};
 
-    const steps = await this.deps.store.listSteps(workflowId);
-    if (steps.some((step) => isActiveStep(step.state))) return {};
-
     const events = await this.deps.store.listEvents(workflowId);
 
     // A provider that cannot get the resource reports it honestly, and the
     // planner must not quietly route around it by proposing something else
-    // (WORKFLOW_SPEC.md §4.4 — the Server does not arbitrate resources). Cancel
+    // (WORKFLOW_SPEC.md §4.4 — the Server does not arbitrate resources). Checked
+    // BEFORE the "is a step active" shortcut: the verdict is final, and it must
+    // not be skipped just because another step happens to be in flight. Cancel
     // intent still wins: engine.fail converges a CANCELLING workflow to
     // CANCELLED.
     if (hasResourceConflict(events)) {
@@ -98,6 +98,9 @@ export class WorkflowOrchestrator {
       await this.deps.engine.fail(workflowId, "resource_conflict");
       return {};
     }
+
+    const steps = await this.deps.store.listSteps(workflowId);
+    if (steps.some((step) => isActiveStep(step.state))) return {};
 
     const declared = this.deps.capabilitiesOf?.(workflow.sessionId) ?? [];
 

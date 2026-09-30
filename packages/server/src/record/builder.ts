@@ -8,7 +8,7 @@ import type {
 } from "./types";
 
 /** Spec versions the domain model was read from (RECORD_SPEC.md §6). */
-export const SPEC_VERSIONS = { workflow_spec: "0.5", capability_spec: "0.8" } as const;
+export const SPEC_VERSIONS = { workflow_spec: "0.6", capability_spec: "0.9" } as const;
 
 export interface BuildRecordInput {
   workflow: WorkflowSnapshot;
@@ -40,9 +40,10 @@ export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unkno
       const reason = ref.reject_reason as { code?: unknown; message?: unknown } | null | undefined;
       const code = String(reason?.code ?? "unknown");
       // The provider's own words are the clearest, and they are already inside
-      // `ref`, so using them introduces no new facts (RECORD_SPEC.md §4).
+      // `ref`, so using them introduces no new facts (RECORD_SPEC.md §4). Kept
+      // short: a Record entry is a log line, not a transcript.
       return typeof reason?.message === "string" && reason.message.length > 0
-        ? `未执行 ${String(ref.capability)}：${reason.message}`
+        ? `未执行 ${String(ref.capability)}：${truncate(reason.message, 80)}`
         : `未执行 ${String(ref.capability)}（原因 ${code}）。`;
     }
     case "user_input":
@@ -233,15 +234,20 @@ export function buildRecord(input: BuildRecordInput): RecordDocument {
   const controlled = steps.some((step) => step.sideEffect && step.state === "COMPLETED");
   const unresolvedNote = "存在未对账的副作用动作（可能已执行）";
 
+  // FAILED states its reason first and never lets the unresolved-side-effect
+  // note swallow it: the engineer needs to know *why* the workflow stopped
+  // (RECORD_SPEC.md §3). The note is additive there, and standalone otherwise.
   const resultShort =
-    unresolved.length > 0
-      ? unresolvedNote
-      : workflow.state === "COMPLETED"
-        ? controlled
-          ? "通过受控执行解决"
-          : "通过建议解决"
-        : workflow.state === "FAILED"
-          ? `无法继续：${terminalReasonText(workflow.terminalReason)}`
+    workflow.state === "FAILED"
+      ? `无法继续：${terminalReasonText(workflow.terminalReason)}${
+          unresolved.length > 0 ? `（${unresolvedNote}）` : ""
+        }`
+      : unresolved.length > 0
+        ? unresolvedNote
+        : workflow.state === "COMPLETED"
+          ? controlled
+            ? "通过受控执行解决"
+            : "通过建议解决"
           : `已取消${workflow.terminalReason ? `（${workflow.terminalReason}）` : ""}`;
 
   const finalResult: Record<string, unknown> =

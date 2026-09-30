@@ -68,7 +68,7 @@
 * `COMPLETED` 之后补充了 `Record` 一步，表示 Workflow 结束时保存完整记录。这不只发生在 `Solved` 分支——另外两种终止状态（`FAILED`、`CANCELLED`）同样会保存 Record（这些终止状态的完整定义见 `../specs/WORKFLOW_SPEC.md`，本图只画主循环，不是完整状态机）。
 * `Not Solved` 分支指向 `Re-plan`，代表"工程师认为还没解决，继续排查"这条**非终止**路径；工程师主动放弃/取消 Workflow 是另一条独立的终止路径，同样会导向 `Record`，具体状态区分见 `WORKFLOW_SPEC.md`，本图不重复展开。
 * **（v0.6 新增）** Workflow 的终止除上述路径外，还受两类**确定性规则**影响：终止护栏触顶（`step_limit` / `retry_limit` / `user_round_limit` / `time_budget`）与失联后的孤儿回收（`client_unreachable`），见 `WORKFLOW_SPEC.md` §2.2、§13。
-* **（v0.6 新增）** Step 层新增终态 `UNKNOWN`（副作用结果未知，需对账，见 `WORKFLOW_SPEC.md` §4.3）；资源占用由能力提供方判断并如实上报，Server 不仲裁（见 §4.4）。这两条不改变本图的主循环形状，故不展开。
+* **（v0.6 新增；v0.7 更正后半句）** Step 层新增终态 `UNKNOWN`（副作用结果未知，需对账，见 `WORKFLOW_SPEC.md` §4.3）；资源占用改为由能力提供方判断并如实上报，Server 不仲裁（见 §4.4）。这两条不改变本图的主循环形状，故不展开。
 
 ### 1.1 关于 Knowledge：第三方系统，不是本系统自建
 

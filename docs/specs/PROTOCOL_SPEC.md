@@ -420,7 +420,7 @@ Workflow 进入任一终止状态时，Server 推送统一的通知：
 ```
 
 * `terminal_state` 取值 `COMPLETED | FAILED | CANCELLED`。
-* `terminal_reason`（v0.4 扩展）：`CANCELLED` 时可能非空（`user_cancelled` / `abandoned` / `superseded`）；`FAILED` 时也可能非空（`client_unreachable` / `step_limit` / `retry_limit` / `user_round_limit` / `time_budget`）。统一取值见 `WORKFLOW_SPEC.md` §2。
+* `terminal_reason`（v0.4 扩展）：`CANCELLED` 时可能非空（`user_cancelled` / `abandoned` / `superseded`）；`FAILED` 时也可能非空（`client_unreachable` / `step_limit` / `retry_limit` / `user_round_limit` / `time_budget` / `planner_error` / `invalid_input` / `invalid_output` / `resource_conflict`（v0.8））。统一取值见 `WORKFLOW_SPEC.md` §2。
 * `record_id` 指向刚生成的 Record（见 `RECORD_SPEC.md` §2），Client 收到后即可用它发起 §10 的 Record 查询或 §11 的 Report 生成。
 * `record_persistence_failed`（v0.4 新增）：布尔值。**Server 先持久化 Record，成功后才发本消息**（顺序固定）；若重试耗尽仍落盘失败，仍必须发本消息（终态已定，不可回退），但此时 `record_id = null` 且 `record_persistence_failed = true`，并在服务端告警。Client 据此知道"已终止但记录不可用"，不会去查询一个不存在的 Record。
 
@@ -501,7 +501,7 @@ Client                                    Server
 | `WAITING` | `wait_reason` | 需要外部条件才能继续（用户输入/确认、本地服务、外部资源），Server 收到后**不触发 Re-plan**，只是等待同一个 Step 的下一次状态更新（对应 `WORKFLOW_SPEC.md` §4.1 路径 A） |
 | `COMPLETED` | `evidence` | 成功完成，`evidence` 遵循 `WORKFLOW_SPEC.md` §5 的 envelope 格式 |
 | `FAILED` | `fail_reason`，`evidence`（可选，部分证据） | 尝试执行但没成功。`fail_reason.code` 取值：`timeout` / `capability_error` / `invalid_input` / `invalid_output` / `dependency_unavailable` / `unknown` |
-| `REJECTED` | `reject_reason` | **从未真正尝试执行**，Client 主动拒绝。`reject_reason.code` 取值：`permission_denied` / `capability_unavailable` / `user_declined` / `invalid_input` / `unsafe_operation` / `other` |
+| `REJECTED` | `reject_reason` | **从未真正尝试执行**，Client 主动拒绝。`reject_reason.code` 取值：`permission_denied` / `capability_unavailable` / `user_declined` / `invalid_input` / `unsafe_operation` / `resource_conflict`（v0.8：资源被占用，见 §8.3）/ `other`。可带 `message`，Record 的 narrative 优先采用它 |
 | `UNKNOWN`（v0.4 新增） | 无必填补充字段（`evidence` 可选） | **通常不由 Client 主动上报**：这是 Server 在"副作用 Step 结果不确定"（超时 / 断连导致回包丢失）时判定的终态，可由对账收敛为 `COMPLETED` / `FAILED`（见 `WORKFLOW_SPEC.md` §4.3） |
 
 **`wait_reason` 的两类（v0.4 新增）：**
