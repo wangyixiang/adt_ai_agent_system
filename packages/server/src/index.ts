@@ -56,6 +56,11 @@ export {
 export { reviseCriteria, type CompletionCriteria } from "./workflow/criteria";
 export { OrphanReclaimer, type ReclamationDeps } from "./workflow/reclamation";
 export {
+  StepTimeoutMonitor,
+  type StepTimeoutDeps,
+  type StepTimeoutOptions,
+} from "./workflow/stepTimeout";
+export {
   canTransitionStep,
   isActiveStep,
   isTerminalStep,
@@ -155,6 +160,7 @@ import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
 import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
 import { SessionLifecycle } from "./session/lifecycle";
+import { StepTimeoutMonitor } from "./workflow/stepTimeout";
 import { UserRepository } from "./auth/userRepository";
 
 export interface StartOptions {
@@ -167,6 +173,10 @@ export interface StartOptions {
   sessionTtlMs?: number;
   /** How often the session lifecycle sweeps and reclaims (default 60s). */
   reclaimIntervalMs?: number;
+  /** Fallback step_timeout for capabilities that declare no timeout_hint. */
+  stepTimeoutMs?: number;
+  /** How often the step timeout monitor sweeps (default 1s). */
+  stepTimeoutSweepIntervalMs?: number;
   onSessionDead?: (sessionId: string) => void;
   /** Defaults to a no-op planner until P3 wires the LLM planner. */
   planner?: Planner;
@@ -191,7 +201,11 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   const reclaimIntervalMs = opts.reclaimIntervalMs ?? 60_000;
 
   const workflowStore = new PostgresWorkflowStore(pool);
-  const engine = new WorkflowEngine({ store: workflowStore });
+  // One clock for the engine and the timeout monitor: comparing a Date.now()
+  // deadline against performance.now() would make every step look overdue
+  // (or never overdue, depending on the sign).
+  const now = () => Math.floor(performance.now());
+  const engine = new WorkflowEngine({ store: workflowStore, now });
   const recordStore = new PostgresRecordStore(pool);
   const records = new RecordService({ store: recordStore, workflowStore });
   const reclaimer = new OrphanReclaimer({
@@ -222,6 +236,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     store: workflowStore,
     planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
+    defaultStepTimeoutMs: opts.stepTimeoutMs,
   });
 
   registerWorkflowProtocol({
@@ -250,6 +265,12 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   );
   lifecycle.start();
 
+  const stepTimeouts = new StepTimeoutMonitor(
+    { engine, store: workflowStore, now },
+    { intervalMs: opts.stepTimeoutSweepIntervalMs ?? 1000 },
+  );
+  stepTimeouts.start();
+
   const port = opts.port ?? Number(process.env.PORT ?? 8080);
   const host = opts.host ?? "0.0.0.0";
   await server.app.listen({ port, host });
@@ -261,6 +282,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     url: `ws://127.0.0.1:${actualPort}/ws`,
     sessions: server.sessions,
     close: async () => {
+      stepTimeouts.stop();
       lifecycle.stop();
       await server.close();
       await pool.end();

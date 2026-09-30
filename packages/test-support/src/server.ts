@@ -11,6 +11,7 @@ import {
   registerWorkflowProtocol,
   LlmPlanner,
   SessionLifecycle,
+  StepTimeoutMonitor,
   UserRepository,
   WorkflowEngine,
   WorkflowOrchestrator,
@@ -38,6 +39,10 @@ export interface TestServerOptions {
   sessionTtlMs?: number;
   /** How often the session lifecycle sweeps and reclaims (default 60s). */
   reclaimIntervalMs?: number;
+  /** Fallback step_timeout for capabilities that declare no timeout_hint. */
+  stepTimeoutMs?: number;
+  /** How often the step timeout monitor sweeps (default 1s). */
+  timeoutSweepIntervalMs?: number;
   /** Scripted planner decisions; an exhausted script yields a completion candidate. */
   planner?: PlannerDecision[];
   /** A full planner implementation (takes precedence over `planner`). */
@@ -89,9 +94,13 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   // Workflow dependencies are built before the server so the session
   // lifecycle can feed the orphan reclaimer from the first disconnect.
   const workflowStore = new PostgresWorkflowStore(pool);
+  // One clock for the engine and the timeout monitor: comparing a Date.now()
+  // deadline against performance.now() would make every step look overdue
+  // (or never overdue, depending on the sign).
+  const now = () => Date.now();
   const engine = new WorkflowEngine({
     store: workflowStore,
-    now: () => Date.now(),
+    now,
     guardrails: opts.guardrails,
   });
   const realRecordStore = new PostgresRecordStore(pool);
@@ -150,6 +159,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     store: workflowStore,
     planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
+    defaultStepTimeoutMs: opts.stepTimeoutMs,
   });
 
   registerWorkflowProtocol({
@@ -178,6 +188,12 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   );
   lifecycle.start();
 
+  const stepTimeouts = new StepTimeoutMonitor(
+    { engine, store: workflowStore, now },
+    { intervalMs: opts.timeoutSweepIntervalMs ?? 1000 },
+  );
+  stepTimeouts.start();
+
   await server.app.listen({ port: 0, host: "127.0.0.1" });
   const port = (server.app.server.address() as AddressInfo).port;
 
@@ -199,6 +215,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       throw new Error("waitFor timed out");
     },
     close: async () => {
+      stepTimeouts.stop();
       lifecycle.stop();
       await server.close();
       await pool.end();
