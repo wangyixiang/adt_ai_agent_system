@@ -2,6 +2,7 @@ import { validateJsonSchema, type JsonSchema } from "@adt/shared";
 import { nodeCommandRunner } from "./capability/exec";
 import type { CapabilityRegistry } from "./capability/registry";
 import type { CommandRunner, ExecutionResult } from "./capability/result";
+import type { Ledger } from "./ledger";
 
 /** The connection surface the runner needs (structural, so it is easy to fake). */
 export interface StepDispatcher {
@@ -56,6 +57,11 @@ export interface StepRunnerDeps {
    * step was declined.
    */
   onUserInput?: (request: UserInputRequest) => Promise<ManualActionFeedback | undefined>;
+  /**
+   * The persistent `idempotency_key → result` ledger (WORKFLOW_SPEC.md §4.3).
+   * Without it a re-dispatched side effect runs again.
+   */
+  ledger?: Ledger;
 }
 
 interface StepDispatchPayload {
@@ -65,6 +71,7 @@ interface StepDispatchPayload {
   objective?: string;
   input?: Record<string, unknown>;
   requires_confirmation?: boolean;
+  idempotency_key?: string | null;
 }
 
 /**
@@ -157,6 +164,20 @@ async function handleStep(
     return;
   }
 
+  // Idempotency (WORKFLOW_SPEC.md §4.3): this exact action was already carried
+  // out, so replay the recorded result. Checked before confirmation — there is
+  // nothing left to approve.
+  const key = dispatch.idempotency_key ?? null;
+  if (key !== null) {
+    const recorded = deps.ledger?.get(key);
+    if (recorded) {
+      send("COMPLETED", {
+        evidence: { source: "capability", type: recorded.type, result: recorded.result },
+      });
+      return;
+    }
+  }
+
   if (dispatch.requires_confirmation === true) {
     send("WAITING", { wait_reason: { code: "user_confirmation" } });
     const approved = await ask(() =>
@@ -187,6 +208,10 @@ async function handleStep(
   }
 
   if (result.status === "completed") {
+    // Remember only a real outcome: an action that failed may have taken
+    // (partial) effect, and suppressing a later reconciliation-driven retry
+    // would hide that.
+    if (key !== null) deps.ledger?.set(key, { type: result.type, result: result.result });
     send("COMPLETED", {
       evidence: { source: "capability", type: result.type, result: result.result },
     });
