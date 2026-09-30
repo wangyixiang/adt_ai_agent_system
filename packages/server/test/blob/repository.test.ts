@@ -40,8 +40,18 @@ describe("PostgresBlobRepository", () => {
     expect(stored).toEqual(record());
     expect(stored.committedAt).toBeNull();
 
-    await repo.commit("blob_a", 1500);
+    expect(await repo.commit("blob_a", 1500)).toBe(true);
     expect((await repo.get("blob_a"))!.committedAt).toBe(1500);
+  });
+
+  it("says so when there was nothing to commit", async () => {
+    await repo.create(record());
+    await repo.commit("blob_a", 1500);
+
+    // Already committed, or the row is gone: a caller that trusted a blind
+    // "done" here would hand out a reference nobody can resolve.
+    expect(await repo.commit("blob_a", 1600)).toBe(false);
+    expect(await repo.commit("blob_missing", 1600)).toBe(false);
   });
 
   it("returns null for an unknown ref", async () => {

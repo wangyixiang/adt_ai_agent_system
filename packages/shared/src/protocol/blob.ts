@@ -37,11 +37,16 @@ export interface BlobAllocatePayload {
 
 /**
  * `blob.allocate_response` — where to send/collect the bytes. The URL carries
- * a signed token (no server-side session state), and expires.
+ * a signed token (no server-side session state), and expires. The descriptive
+ * fields are echoed so a client can build the reference (and check what it
+ * received) without re-deriving them.
  */
 export interface BlobAllocateResponse {
   content_ref: string;
   url: string;
   /** ISO-8601 instant. */
   expires_at: string;
+  media_type: string;
+  size: number;
+  sha256: string;
 }

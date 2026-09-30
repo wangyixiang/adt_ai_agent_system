@@ -466,7 +466,7 @@ Client                                    Server
 | `direction` | 请求，必填 | `upload`（客户端 → Server）或 `download`（Server → 客户端） |
 | `name` / `media_type` / `size` / `sha256` | `upload` 必填 | 声明将要发送的内容；`media_type` 必须在白名单内，`size` 不得超过单 blob 上限，`sha256` 为小写 64 位十六进制 |
 | `content_ref` | `download` 必填 | 要取回的 blob；必须存在、已提交、且属于**发起申请的同一个 `user_id`** |
-| `content_ref` / `url` / `expires_at` | 响应 | `url = <baseUrl>/blob/<content_ref>?token=<签名令牌>`；`expires_at` 为 ISO-8601 |
+| `content_ref` / `url` / `expires_at` / `media_type` / `size` / `sha256` | 响应 | `url = <baseUrl>/blob/<content_ref>?token=<签名令牌>`；`expires_at` 为 ISO-8601。后三个字段是**回显**（申请时声明、或下载时取自 blob 元数据），便于客户端直接构造引用而不必自己重算 |
 
 * **令牌**：签名内容为 `content_ref | direction | user_id | expires_at`，服务端**不保存**会话状态，因此在密钥稳定的前提下，重启前签发的 URL 仍然可用。密钥取 `BLOB_SECRET`；**未配置时每次启动生成随机密钥并告警**（宁可不跨重启，也不要一个硬编码的生产密钥）。有效期默认 15 分钟。
 * **传输**：`PUT`（上传）与 `GET`（下载）都**流式**处理，`size`/`sha256` 边收边校验；不符则上传失败且**不提交**该引用。二进制不经 WS 连接。
@@ -474,6 +474,7 @@ Client                                    Server
 * **下载的鉴权与隐私**：令牌方向不符、`content_ref` 不符、已过期 → `401`；不存在、未提交、或属主不符 → 一律 `404`（不透露该 ref 是否存在）。
 * **`url` 的来源**：`baseUrl` 由 Server 配置（默认 `http://127.0.0.1:${PORT}`，反向代理部署时用 `BLOB_BASE_URL` 覆盖）。
 * **回收**：blob 有保留期，但**只回收没有被任何 Record 引用的 blob**——Record 不可变，它引用过的证据必须仍能取回。
+  * 这条保护**以"Record 已落盘"为准**：Workflow 还没终止（证据只在事件流里）时，保护它的是保留期本身，而不是引用检查。保留期因此必须长于"一次诊断从开始到 Record 落盘"的正常时长（30 天默认值远大于此，但若有人把它调到分钟级，正在跑的 Workflow 的证据就可能被回收）。
 
 **默认值（可配置）：**
 

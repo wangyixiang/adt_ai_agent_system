@@ -19,7 +19,8 @@ export interface BlobRecord {
 export interface BlobRepository {
   create(record: BlobRecord): Promise<void>;
   get(contentRef: string): Promise<BlobRecord | null>;
-  commit(contentRef: string, at: number): Promise<void>;
+  /** True when a row was actually committed (false: it vanished or was already done). */
+  commit(contentRef: string, at: number): Promise<boolean>;
   listExpired(now: number): Promise<BlobRecord[]>;
   remove(contentRef: string): Promise<void>;
   /** Does any Record still cite this ref? Records are immutable, so it must stay readable. */
@@ -83,11 +84,12 @@ export class PostgresBlobRepository implements BlobRepository {
     return result.rows[0] ? toRecord(result.rows[0]) : null;
   }
 
-  async commit(contentRef: string, at: number): Promise<void> {
-    await this.pool.query(
+  async commit(contentRef: string, at: number): Promise<boolean> {
+    const result = await this.pool.query(
       "UPDATE blobs SET committed_at = $2 WHERE content_ref = $1 AND committed_at IS NULL",
       [contentRef, at],
     );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async listExpired(now: number): Promise<BlobRecord[]> {

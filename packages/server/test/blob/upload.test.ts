@@ -51,13 +51,17 @@ afterAll(async () => {
   await pool.end();
 });
 
-const allocate = async (data: Buffer, contentRef = "blob_a"): Promise<void> => {
+const allocate = async (
+  data: Buffer,
+  contentRef = "blob_a",
+  mediaType = "text/plain",
+): Promise<void> => {
   await repo.create({
     contentRef,
     ownerUserId: "usr_1",
     direction: "upload",
     name: "can.log",
-    mediaType: "text/plain",
+    mediaType,
     size: data.length,
     sha256: sha(data),
     createdAt: NOW,
@@ -98,12 +102,23 @@ describe("PUT /blob/:contentRef", () => {
     for (const mediaType of ["text/plain", "application/json", "application/octet-stream"]) {
       const data = Buffer.from(`payload for ${mediaType}`);
       const contentRef = `blob_${mediaType.replace(/\W/g, "_")}`;
-      await allocate(data, contentRef);
+      await allocate(data, contentRef, mediaType);
 
       const response = await put(contentRef, data, tokenFor(contentRef, "upload"), mediaType);
       expect(response.statusCode).toBe(201);
       expect(await store.has(sha(data))).toBe(true);
     }
+  });
+
+  it("refuses bytes relabelled with a different media type", async () => {
+    const data = Buffer.from("can trace\n");
+    await allocate(data);
+
+    const response = await put("blob_a", data, tokenFor("blob_a", "upload"), "application/json");
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "media_type_mismatch" });
+    expect((await repo.get("blob_a"))!.committedAt).toBeNull();
   });
 
   it("refuses bytes that do not match the declaration, and does not commit", async () => {
@@ -128,6 +143,11 @@ describe("PUT /blob/:contentRef", () => {
 
     const expired = await put("blob_a", data, tokenFor("blob_a", "upload", NOW - 1));
     expect(expired.statusCode).toBe(401);
+
+    // A token is bound to its ref: another ref's token is not a skeleton key.
+    await allocate(data, "blob_b");
+    const otherRef = await put("blob_a", data, tokenFor("blob_b", "upload"));
+    expect(otherRef.statusCode).toBe(401);
 
     const unknown = await put("blob_missing", data);
     expect(unknown.statusCode).toBe(404);

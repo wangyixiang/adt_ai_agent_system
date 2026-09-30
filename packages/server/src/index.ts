@@ -177,6 +177,11 @@ import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
 import { SessionLifecycle } from "./session/lifecycle";
 import { StepTimeoutMonitor } from "./workflow/stepTimeout";
+import { blobConfigFromEnv, type BlobConfig } from "./blob/config";
+import type { BlobDeps } from "./blob/deps";
+import { createLocalBlobStore } from "./blob/store";
+import { PostgresBlobRepository } from "./blob/repository";
+import { createBlobTokenSigner } from "./blob/token";
 import { UserRepository } from "./auth/userRepository";
 
 export interface StartOptions {
@@ -196,6 +201,9 @@ export interface StartOptions {
   onSessionDead?: (sessionId: string) => void;
   /** Defaults to a no-op planner until P3 wires the LLM planner. */
   planner?: Planner;
+  /** Blob channel overrides; defaults come from the BLOB_* environment. */
+  blobConfig?: BlobConfig;
+  blobLifecycleIntervalMs?: number;
 }
 
 export interface RunningServer {
@@ -235,11 +243,32 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     },
   });
 
+  // The blob channel is on by default: it is the only way large evidence can be
+  // cited by a Record, so leaving it to a flag would make P4c unreachable in a
+  // real deployment. The base URL must name the port this server actually got,
+  // which is only known after `listen` — hence the mutable holder.
+  const port = opts.port ?? Number(process.env.PORT ?? 8080);
+  let blobBaseUrl = process.env.BLOB_BASE_URL ?? `http://127.0.0.1:${port}`;
+  const blobConfig: BlobConfig = {
+    ...(opts.blobConfig ?? blobConfigFromEnv(process.env)),
+    baseUrl: () => blobBaseUrl,
+  };
+  const blobs: BlobDeps = {
+    repository: new PostgresBlobRepository(pool),
+    store: createLocalBlobStore(blobConfig.dataDir),
+    signer: createBlobTokenSigner(blobConfig.secret),
+    config: blobConfig,
+    ...(opts.blobLifecycleIntervalMs === undefined
+      ? {}
+      : { lifecycleIntervalMs: opts.blobLifecycleIntervalMs }),
+  };
+
   const server = await createServer({
     pool,
     heartbeatIntervalMs: opts.heartbeatIntervalMs,
     maxMissed: opts.maxMissed,
     sessionTtlMs,
+    blobs,
     onSessionDead: (sessionId) => {
       opts.onSessionDead?.(sessionId);
       reclaimer.onSessionDead(sessionId);
@@ -293,12 +322,15 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   );
   stepTimeouts.start();
 
-  const port = opts.port ?? Number(process.env.PORT ?? 8080);
   const host = opts.host ?? "0.0.0.0";
   await server.app.listen({ port, host });
 
   const address = server.app.server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
+  // `port: 0` (tests) gets a real port only now; point blob URLs at it.
+  if (process.env.BLOB_BASE_URL === undefined) {
+    blobBaseUrl = `http://127.0.0.1:${actualPort}`;
+  }
 
   return {
     url: `ws://127.0.0.1:${actualPort}/ws`,

@@ -109,9 +109,15 @@ export function createLocalBlobStore(root: string): BlobStore {
 
       const target = pathFor(root, actual);
       await mkdir(join(root, actual.slice(0, 2)), { recursive: true });
-      // Same content written twice lands on the same path; rename is atomic and
-      // idempotent for identical bytes.
-      await rename(staging, target);
+      try {
+        // Same content written twice lands on the same path; rename is atomic,
+        // and overwriting with identical bytes is a no-op in effect.
+        await rename(staging, target);
+      } catch (error) {
+        // A failed rename must not leave the staged copy behind.
+        await rm(staging, { force: true });
+        throw error;
+      }
       return { sha256: actual, size };
     },
 

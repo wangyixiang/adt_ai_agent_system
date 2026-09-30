@@ -81,4 +81,19 @@ describe("LocalBlobStore", () => {
     await store.delete(digest);
     expect(await store.has(digest)).toBe(false);
   });
+
+  it("accepts the same bytes twice under one content address", async () => {
+    // Two refs may share one file; writing identical content again must not
+    // fail, and must leave exactly one copy behind.
+    const store = createLocalBlobStore(await root());
+    const data = Buffer.from("the same log");
+    const expectation = { sha256: sha(data), size: data.length, maxBytes: 1024 };
+
+    await store.write(streamOf(data), expectation);
+    await store.write(streamOf(data), expectation);
+
+    expect(await store.has(expectation.sha256)).toBe(true);
+    await store.delete(expectation.sha256);
+    expect(await store.has(expectation.sha256)).toBe(false);
+  });
 });

@@ -28,4 +28,9 @@ describe("blob token signer", () => {
       expect(signer.verify(token)).toBeNull();
     }
   });
+
+  it("refuses to sign with an empty secret", () => {
+    // A constant HMAC key would make every deployment's URLs forgeable.
+    expect(() => createBlobTokenSigner("")).toThrow(/non-empty secret/);
+  });
 });

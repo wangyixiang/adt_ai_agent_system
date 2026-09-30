@@ -31,7 +31,11 @@ const blobCount = async (): Promise<number> =>
 
 function harness() {
   const sent: string[] = [];
-  const conn = new Connection({ send: (data) => sent.push(data), close: () => undefined }, "c1");
+  let closed = false;
+  const conn = new Connection(
+    { send: (data) => sent.push(data), close: () => { closed = true; } },
+    "c1",
+  );
   // A real SessionManager: the router validates session_id/user_id and dedups
   // on `message_id`, so a hand-built session object would not behave.
   const sessions = new SessionManager({ now: () => 1000 });
@@ -65,7 +69,7 @@ function harness() {
     return JSON.parse(sent.at(-1)!) as { type: string; payload: Record<string, unknown> };
   };
 
-  return { ask };
+  return { ask, isClosed: () => closed };
 }
 
 const upload = {
@@ -150,5 +154,33 @@ describe("blob.allocate_request", () => {
 
     const reply = await ask({ direction: "download", content_ref: "blob_pending" });
     expect((reply.payload as { code: string }).code).toBe("blob_rejected");
+  });
+
+  it("hands out a download url for a committed ref of one's own", async () => {
+    const { ask } = harness();
+    await repo.create({
+      contentRef: "blob_mine",
+      ownerUserId: "usr_1",
+      direction: "upload",
+      name: "can.log",
+      mediaType: "text/plain",
+      size: 4,
+      sha256: "d".repeat(64),
+      createdAt: 0,
+      expiresAt: 9_999_999,
+      committedAt: 1,
+    });
+
+    const reply = await ask({ direction: "download", content_ref: "blob_mine" });
+
+    expect(reply.type).toBe("blob.allocate_response");
+    expect(reply.payload.content_ref).toBe("blob_mine");
+    expect(String(reply.payload.url)).toContain("/blob/blob_mine?token=");
+  });
+
+  it("keeps the connection open when it refuses (blob_rejected is a request-level error)", async () => {
+    const { ask, isClosed } = harness();
+    await ask({ ...upload, media_type: "application/x-evil" });
+    expect(isClosed()).toBe(false);
   });
 });

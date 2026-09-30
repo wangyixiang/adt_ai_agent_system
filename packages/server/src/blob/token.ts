@@ -26,6 +26,11 @@ const encode = (value: string): string => Buffer.from(value, "utf8").toString("b
  * answers "did we sign this, and what does it say".
  */
 export function createBlobTokenSigner(secret: string): BlobTokenSigner {
+  // An empty key would sign with a constant everyone knows.
+  if (secret.length === 0) {
+    throw new Error("blob token signer requires a non-empty secret");
+  }
+
   const mac = (payload: string): string =>
     createHmac("sha256", secret).update(payload).digest("base64url");
 

@@ -71,15 +71,33 @@ export function registerBlobRoutes(app: FastifyInstance, deps: BlobHttpDeps): vo
         return reply.code(409).send({ error: "already_committed" });
       }
 
+      // A reference is only trustworthy if the bytes and the label match what
+      // was allocated; a caller may not relabel its payload.
+      const declared = request.headers["content-type"];
+      const incoming = typeof declared === "string" ? declared.split(";")[0]!.trim().toLowerCase() : "";
+      if (incoming !== row.mediaType.toLowerCase()) {
+        return reply.code(400).send({
+          error: "media_type_mismatch",
+          expected: row.mediaType,
+        });
+      }
+
       try {
         const written = await store.write(request.raw, {
           sha256: row.sha256,
           size: row.size,
           maxBytes: config.maxBlobBytes,
         });
-        // Only now is the reference safe to write into evidence: the row is
-        // committed once the bytes are verified and in place.
-        await repository.commit(contentRef, now());
+        // Only now is the reference safe to write into evidence. If the row
+        // disappeared mid-transfer (it expired and was collected), say so
+        // instead of handing back a reference nobody can resolve.
+        const committed = await repository.commit(contentRef, now());
+        if (!committed) {
+          if (!(await repository.sharesBytes(row.sha256, contentRef))) {
+            await store.delete(row.sha256);
+          }
+          return reply.code(409).send({ error: "allocation_gone" });
+        }
         return reply.code(201).send({
           content_ref: contentRef,
           size: written.size,

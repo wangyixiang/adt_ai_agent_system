@@ -36,7 +36,9 @@ export class DaemonConnection {
   ) {
     ws.on("message", (data: WebSocket.RawData) => {
       const env = decodeEnvelope(data.toString());
-      for (const handler of this.listeners.get(env.type) ?? []) handler(env);
+      // Iterate a copy: a handler may remove itself (a completed `request()`),
+      // which would otherwise shift the array under this loop.
+      for (const handler of [...(this.listeners.get(env.type) ?? [])]) handler(env);
     });
   }
 

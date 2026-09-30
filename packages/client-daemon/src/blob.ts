@@ -63,5 +63,13 @@ export async function downloadBlob(deps: BlobClientDeps, contentRef: string): Pr
   if (!response.ok) {
     throw new Error(`blob download failed: ${response.status}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  // The server tells us what it sent; a mangled transfer must not look like a
+  // successful fetch (the whole point of the reference is that it is true).
+  const expected = response.headers.get("x-blob-sha256");
+  if (expected !== null && sha256Hex(bytes) !== expected) {
+    throw new Error("blob download failed: sha256 mismatch");
+  }
+  return bytes;
 }

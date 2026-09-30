@@ -103,7 +103,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   const pool: Pool = createPool(TEST_DATABASE_URL);
   await migrate(pool);
   await pool.query("TRUNCATE users");
-  await pool.query("TRUNCATE workflows, workflow_steps, workflow_events, records");
+  await pool.query("TRUNCATE workflows, workflow_steps, workflow_events, records, blobs");
 
   const users = new UserRepository(pool);
   await users.create("alice", "pw-alice");

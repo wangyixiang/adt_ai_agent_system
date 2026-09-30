@@ -723,3 +723,29 @@ git commit -m "docs: blob channel contract, defaults and retention rule"
 ## 后续
 
 P4c 验收通过后写 **P4d（KB 导出）**。
+
+---
+
+## Review 修复轮（Review fix pass）
+
+整体评审的结论：**字节层、令牌层、仓储的"绝不回收被引用者"、两条 HTTP 路由都正确且有测试**，但分支**不可直接合并**——通道没有接进生产入口。逐条修复如下。
+
+**阻塞项（已修）**
+* **B1 通道在生产入口根本不存在**：`start()` 从不构造 blob 依赖，`blobConfigFromEnv` 是死代码。后果：生产部署下 `blob.allocate_request` 得到 `unknown_message_type`、`PUT/GET /blob/...` 404、回收器不启动、`BLOB_SECRET` 等环境变量全部无效。**没有任何测试发现它，因为所有测试都走 `startTestServer`（那条路径接好了）**。修复：`start()` 从 `BLOB_*` 环境构造 blob 依赖并传给 `createServer`，`baseUrl` 用**实际监听端口**；新增测试直接对 `start()` 断言通道可用（坏令牌 → 401 而非 404；WS 申请 → `blob.allocate_response`）。计划本身也缺"接生产入口"这一步，已记入待办。
+
+**非阻塞项（已修）**
+* **N1 `commit` 的返回值被当成必然成功**：行若在上传途中被回收，`commit` 静默 no-op，客户端却收到 201——一个取不回的引用（正是本阶段要消灭的东西）。现在 `commit` 返回布尔；未提交成功则回 `409 allocation_gone`，并在没有其它行共用同一份字节时回收刚落盘的字节。
+* **N3 只有已落盘的 Record 才保护 blob**：正在跑的 Workflow 的证据只靠保留期兜着。已在 `PROTOCOL_SPEC.md` §7.5 写明（保留期必须长于"一次诊断到 Record 落盘"的正常时长），避免以后有人把保留期调到分钟级还以为引用检查能救。
+* **N4 同一份字节写两次没有测试、`rename` 失败会漏临时文件**：补了"相同内容两次写入"的存储测试，并让 `rename` 失败时清理暂存文件。
+* **N5 上传端不校验请求的 `Content-Type`**：白名单只在申请时校验，于是可以拿 `text/html` 的字节挂在 `text/plain` 的分配下，下载时又按分配的 type 发出去。现在上传端比对声明的媒体类型，不符回 400。
+* **N6 空密钥可签**：`createBlobTokenSigner("")` 现在直接抛错（空 HMAC 密钥等于人人都能伪造 URL）。
+* **N7 默认 base URL 硬编码 8080**：`start()` 改用实际端口（`port: 0` 也能得到正确 URL）。
+* **N10 `downloadBlob` 忽略服务端给的 `x-blob-sha256`**：现在校验，不符即报错（一次被篡改的传输不该看起来像成功）。
+* **N11 遍历监听器数组时自我摘除**：改遍历副本（今天靠 `in_reply_to` 过滤是良性的，但同类多处理器的场景会漏调用）。
+* **N12 测试盲区**：补上——**Record 真的保住被引用 blob 的端到端**（上传 → 证据里写 `content_ref` → Record 原样保留 → 主动过期后 sweep 只回收对照组、被引用者仍可下载）、正向的 download 申请、上传令牌换 ref 被拒、`blob_rejected` 不关连接、客户端 helper 的"拒绝上报"与"下载校验"。顺带发现测试卫生问题：`startTestServer` **没有 TRUNCATE `blobs`**，行会跨测试文件残留（我第一版 e2e 断言全局 sweep 结果时就被咬了），已补上清理。
+
+**规格漂移（已修）**：`blob.allocate_response` 实际回显 `media_type`/`size`/`sha256`，而 §7.5 与 `shared` 类型只写了三个字段——两者都已补齐（并注明"回显"的用途）。
+
+**明确留作后续（评审提出、本轮不做）**：令牌放在查询串里（会进代理/访问日志；15 分钟 TTL 限定影响面）；`sharesBytes` 也会被"未提交/被放弃"的行挡住，导致共享文件多留一会儿（安全，只是延迟）；客户端 helper 的下载仍整体缓冲（调用方要拿字节来校验/查看，服务端与通道都是流式的）。
+
+**验证状态**：代码修复与文档已完成；最终全量测试在一次 Docker Desktop 挂掉时被中断（Postgres 端口仍在但引擎无响应），恢复后需重跑 `pnpm -r --if-present test` 与 `typecheck` 才能宣称"绿"。

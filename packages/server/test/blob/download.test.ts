@@ -77,7 +77,7 @@ const allocateAndUpload = async (options: { commit?: boolean } = {}): Promise<vo
     method: "PUT",
     url: `/blob/${REF}?token=${token("upload")}`,
     payload: DATA,
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": "text/plain" },
   });
   expect(response.statusCode).toBe(201);
 };
