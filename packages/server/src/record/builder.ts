@@ -71,6 +71,7 @@ function toEntry(
         step_id: stepId,
         capability: payload.capability,
         objective: step?.objective ?? null,
+        input: payload.input ?? {},
       };
       return { ...base, kind: "step_dispatched", ref, narrative: renderNarrative("step_dispatched", ref) };
     }

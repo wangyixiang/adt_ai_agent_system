@@ -63,7 +63,7 @@ export interface StepDispatchPayload {
   step_id: string;
   objective: string;
   capability: string;
-  input: Record<string, never>;
+  input: Record<string, unknown>;
   expected_output: null;
   requires_confirmation: boolean;
   idempotency_key: string | null;
@@ -76,7 +76,7 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
     step_id: step.id,
     objective: step.objective,
     capability: step.capability,
-    input: {},
+    input: step.input,
     expected_output: null,
     requires_confirmation: step.sideEffect,
     idempotency_key: step.idempotencyKey,

@@ -31,6 +31,7 @@ interface StepRow {
   idempotency_key: string | null;
   attempt: number;
   wait_class: string | null;
+  input: unknown;
 }
 
 interface EventRow {
@@ -65,6 +66,7 @@ const toStep = (row: StepRow): StepSnapshot => ({
   idempotencyKey: row.idempotency_key,
   attempt: row.attempt,
   waitClass: row.wait_class as StepSnapshot["waitClass"],
+  input: (row.input ?? {}) as Record<string, unknown>,
 });
 
 const toEvent = (row: EventRow): WorkflowEvent => ({
@@ -117,12 +119,13 @@ export class PostgresWorkflowStore implements WorkflowStore {
 
   private insertStep(client: pg.PoolClient, s: StepSnapshot): Promise<unknown> {
     return client.query(
-      `INSERT INTO workflow_steps (id, workflow_id, state, objective, capability, side_effect, interruptible, idempotency_key, attempt, wait_class)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `INSERT INTO workflow_steps (id, workflow_id, state, objective, capability, side_effect, interruptible, idempotency_key, attempt, wait_class, input)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, wait_class = EXCLUDED.wait_class, attempt = EXCLUDED.attempt`,
       [
         s.id, s.workflowId, s.state, s.objective, s.capability,
         s.sideEffect, s.interruptible, s.idempotencyKey, s.attempt, s.waitClass,
+        JSON.stringify(s.input ?? {}),
       ],
     );
   }

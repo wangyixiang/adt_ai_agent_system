@@ -31,6 +31,7 @@ const step = (over: Partial<StepSnapshot> = {}): StepSnapshot => ({
   idempotencyKey: null,
   attempt: 1,
   waitClass: null,
+  input: {},
   ...over,
 });
 
@@ -233,5 +234,20 @@ describe("record builder", () => {
       summary: "看起来好了",
       evidence_refs: ["step_1"],
     });
+  });
+
+  it("records the step input on the dispatched entry", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "svc down" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics", input: { project_path: "/a" } }),
+        ev("workflow_terminated", { state: "COMPLETED", reason: null }),
+      ],
+      userRequest: { text: "svc down" },
+      recordId: "rec_input",
+    });
+    expect(record.entries[0]!.ref.input).toEqual({ project_path: "/a" });
   });
 });

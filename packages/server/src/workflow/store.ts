@@ -27,6 +27,8 @@ export interface StepSnapshot {
   idempotencyKey: string | null;
   attempt: number;
   waitClass: WaitClass;
+  /** Planner-produced Capability arguments (WORKFLOW_SPEC.md §3). */
+  input: Record<string, unknown>;
 }
 
 export type WorkflowEventKind =

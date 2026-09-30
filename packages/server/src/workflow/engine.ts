@@ -60,6 +60,7 @@ export interface NewStep {
   capability: string;
   sideEffect: boolean;
   interruptible: boolean;
+  input?: Record<string, unknown>;
   idempotencyKey?: string | null;
 }
 
@@ -253,12 +254,14 @@ export class WorkflowEngine {
         idempotencyKey: step.idempotencyKey ?? null,
         attempt: 1,
         waitClass: null,
+        input: step.input ?? {},
       };
       await this.store.createStep(
         snapshot,
         this.event(workflowId, "step_dispatched", {
           stepId: snapshot.id,
           capability: snapshot.capability,
+          input: snapshot.input,
         }),
       );
       return snapshot;
