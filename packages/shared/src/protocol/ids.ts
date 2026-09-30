@@ -12,6 +12,11 @@ export function newUserId(): string {
   return `usr_${randomUUID()}`;
 }
 
+/** A blob's identity in the main protocol (`PROTOCOL_SPEC.md` §7.5). */
+export function newContentRefId(): string {
+  return `blob_${randomUUID()}`;
+}
+
 export function nowUtcIso(): string {
   return new Date().toISOString();
 }

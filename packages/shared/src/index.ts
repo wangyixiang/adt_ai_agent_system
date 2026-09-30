@@ -3,4 +3,5 @@ export * from "./protocol/ids";
 export * from "./protocol/errors";
 export * from "./protocol/dedup";
 export * from "./protocol/capability";
+export * from "./protocol/blob";
 export * from "./schema/validate";
