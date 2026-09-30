@@ -124,6 +124,19 @@ export {
   type SessionResumeDeps,
   type StateSyncWorkflow,
 } from "./session/resume";
+export type {
+  LlmMessage,
+  LlmProvider,
+  LlmRequest,
+  LlmResponse,
+  LlmTool,
+  LlmToolCall,
+} from "./llm/provider";
+export {
+  OpenAiCompatibleProvider,
+  llmProviderFromEnv,
+  type OpenAiCompatibleOptions,
+} from "./llm/openaiCompatible";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";

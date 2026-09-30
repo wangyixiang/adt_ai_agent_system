@@ -5,3 +5,4 @@ export {
   type TestServerOptions,
 } from "./server";
 export { TestClient, type HelloOptions } from "./client";
+export { ScriptedLlmProvider } from "./llm";
