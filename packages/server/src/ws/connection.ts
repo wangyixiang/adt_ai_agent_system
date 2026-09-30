@@ -8,7 +8,11 @@ export interface SocketLike {
 
 export class Connection {
   readonly id: string;
-  /** Session-lifetime dedup window; lives here so pre-handshake duplicates are caught too. */
+  /**
+   * Pre-handshake dedup window. Once a session exists its lifetime window
+   * (`Session.dedup`) takes over, so this one only guards messages that arrive
+   * before the handshake binds a session (PROTOCOL_SPEC.md §2).
+   */
   readonly dedup = new DedupWindow();
   readonly warnings: string[] = [];
   private closed = false;

@@ -19,7 +19,8 @@ export interface ReclamationDeps {
  * A workflow whose cancel was already requested ends CANCELLED — the
  * engineer's intent wins over `client_unreachable`.
  *
- * Reconnect/activity must call `onSessionAlive` to cancel a pending reclaim.
+ * Liveness must call `onSessionAlive` to cancel a pending reclaim: resume does
+ * so explicitly, and any heartbeat activity does so via the server wiring.
  */
 export class OrphanReclaimer {
   private readonly pending = new Map<string, number>();

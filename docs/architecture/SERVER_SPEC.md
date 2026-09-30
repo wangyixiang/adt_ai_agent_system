@@ -1,9 +1,15 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.8（部署/信任模型落地：本地账号与会话管理、认证校验、Record 按用户过滤、KB 导出出站；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.5，取代 v0.7）
+- **Version:** v0.9（断线重连：保留断线会话（可配置 TTL）、接受认证的 `session.resume` 并回 `workflow.state_sync`；部署/信任模型落地：本地账号与会话管理、认证校验、Record 按用户过滤、KB 导出出站；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.7，取代 v0.8）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
+
+---
+
+## 变更记录（v0.8 → v0.9）
+
+- **补断线重连职责**：新增 §3 第 25 条——保留断线会话（可配置 TTL），接受已认证的 `session.resume` 并回 `workflow.state_sync`（Server 权威状态 + 待执行 Step）；TTL 逾期未恢复则回收其孤儿 Workflow（对应 `PROTOCOL_SPEC.md` v0.7 §5.2、`WORKFLOW_SPEC.md` §2.2、`REQUIREMENTS.md` NFR-3）。
 
 ---
 
@@ -46,6 +52,7 @@ Server 负责：
 * **保证同一 `session` 内副作用 Step 串行**（v0.7 新增）
 * **为有副作用的 Step 生成幂等键，并执行"结果未知 → 对账"**（v0.7 新增）
 * **回收失联的孤儿 Workflow；终止时先落盘 Record、再通知**（v0.7 新增）
+* **保留断线会话（可配置 TTL）以支持 `session.resume` 与 `workflow.state_sync`**（v0.9 新增）
 * **管理本地账号与会话，校验 Client 认证**（v0.8 新增）
 * **保证 Record 只对提交人可见，并执行 KB 导出出站**（v0.8 新增）
 
@@ -117,6 +124,7 @@ Server MUST：
 22. **在所有 Record 查询上按 `user_id` 过滤，保证只返回提交人自己的 Record**（v0.8 新增，对应 `ADR-003` §6、`PROTOCOL_SPEC.md` §10）
 23. **只接受提交人本人对副作用动作的确认**（v0.8 新增，对应 `ADR-003` §5）
 24. **在提交人请求时，把指定 Record/Report 导出到第三方 Knowledge Base（出站）；不追踪 KB 侧审核状态**（v0.8 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3）
+25. **保留断线会话（可配置 TTL），接受已认证的 `session.resume` 并回 `workflow.state_sync`（同步 Server 权威状态与待执行 Step）；TTL 逾期未恢复则回收其孤儿 Workflow**（v0.9 新增，对应 `PROTOCOL_SPEC.md` §5.2、`WORKFLOW_SPEC.md` §2.2、NFR-3）
 
 Server MUST NOT：
 

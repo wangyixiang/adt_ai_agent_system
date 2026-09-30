@@ -139,14 +139,14 @@
 
 | 文档 | 需要的变化 | 来源需求 |
 |---|---|---|
-| `CAPABILITY_SPEC.md`（已建成，v0.5） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1） | FR-21、FR-22 |
+| `CAPABILITY_SPEC.md`（已建成，v0.6） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1）；登记 MVP 模拟能力 `sim_rig.trigger_reset` 与 I/O schema（v0.6） | FR-21、FR-22 |
 | `WORKFLOW_SPEC.md`（已建成，v0.4） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`、会话级副作用串行（v0.4） | FR-7~FR-11 |
 | `PROTOCOL_SPEC.md`（已建成，v0.7） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6）；`session.resume` 认证、会话 TTL、`workflow.state_sync` 扩展（v0.7） | FR-4、FR-7、FR-11、FR-14、FR-17 |
-| `SERVER_SPEC.md`（已建成，v0.7） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7） | FR-12、FR-17~FR-19、FR-23 |
-| `CLIENT_SPEC.md`（已建成，v0.6） | 展示历史 Record 与发起 Report 生成请求（v0.4）；幂等台账、迟到状态处理、确认 UI 锁定、blob 通道（v0.6） | FR-14、FR-17 |
+| `SERVER_SPEC.md`（已建成，v0.9） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7）；断线会话保留与 `session.resume`/`workflow.state_sync`（v0.9） | FR-12、FR-17~FR-19、FR-23、NFR-3 |
+| `CLIENT_SPEC.md`（已建成，v0.8） | 展示历史 Record 与发起 Report 生成请求（v0.4）；幂等台账、迟到状态处理、确认 UI 锁定、blob 通道（v0.6）；登录与会话、可见性、KB 导出（v0.7）；断线重连恢复（v0.8） | FR-14、FR-17、NFR-3 |
 | `RECORD_SPEC.md`（已建成，v0.5） | Record 结构、保存时机、与 Evidence 的关系；不为系统内检索预留结构（FR-15 删除），字段设计不与未来导出冲突（v0.1 §8）；`owner_user_id`、可见性（v0.4）；`UNKNOWN` 未对账标注、`completion_criteria`、新 entry kind、`actor`、`narrative` 规则（v0.3）；`duration_ms` 澄清（v0.5） | FR-12~FR-14、FR-24 |
 | `REPORT_SPEC.md`（已建成，v0.4） | 报告触发、内容约束（只来自 Record）、输出形式；`UNKNOWN`/未对账渲染、失败返回、生成人预留（v0.2）；`duration_ms` 澄清（v0.4） | FR-17~FR-20 |
-| `ADR-003`（已建成，v0.10） | 部署与信任模型：多用户共享 Server、本地账号、授权与可见性、TLS 延后、不引入资源模型 | NFR-6、NFR-7、Q-1、Q-2、A-2 |
+| `ADR-003`（已建成） | 部署与信任模型：多用户共享 Server、本地账号、授权与可见性、TLS 延后、不引入资源模型 | NFR-6、NFR-7、Q-1、Q-2、A-2 |
 | MVP 范围说明（已产出，`docs/superpowers/specs/`） | v0.1 切片、首批 Capability、KB 导出半边、完成标准 | FR-1~FR-24 |
 | 安全规格（待建，范围已收窄） | 沙箱、多租户、审计、完整角色体系、组织 SSO 联邦、TLS 启用 | NFR-6 |
 | 第三方 Knowledge Base 集成规格（待建，v0.6 新增） | 定义与第三方系统的接入协议、检索接口、鉴权 | FR-23、Q-6 |

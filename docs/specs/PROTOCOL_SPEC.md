@@ -806,7 +806,9 @@ Server 内部：S7 → UNKNOWN（不是 FAILED）
 Client 重新连接
 session.resume(session_id, auth={username, secret}, known_workflows=[{wf_001, step_009, RUNNING}])
   → session_id 仍有效：
-      workflow.state_sync(resumed=true, workflows=[{wf_001, RUNNING, pending_step: step.dispatch(S6)}])
+      workflow.state_sync(resumed=true, workflows=[
+        {wf_001, RUNNING, pending_step: step.dispatch(S6),
+         record_id: null, record_persistence_failed: false}])
       Client 据此确认自己应该继续执行 S6，而不是重新开始
   → session_id 已过期：
       protocol.error(session_expired)

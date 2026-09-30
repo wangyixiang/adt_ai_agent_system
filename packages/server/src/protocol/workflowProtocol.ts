@@ -108,7 +108,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     });
   };
 
-  /** Session-scoped ownership (ADR-003 §3/§5); resume arrives in P2c. */
+  /** Session-scoped ownership (ADR-003 §3/§5). */
   const ownedWorkflow = async (
     workflowId: unknown,
     session: Session,

@@ -11,8 +11,9 @@ export interface HeartbeatOptions {
 
 /**
  * Application-level liveness (PROTOCOL_SPEC.md §9 / ADR-003 §3).
- * P1 only reports dead sessions; orphan reclamation arrives with the
- * workflow engine (P2).
+ * `onDead` flags a session disconnected; a later heartbeat invokes `onAlive`
+ * so a session that recovered on the same socket cancels any pending orphan
+ * reclamation (WORKFLOW_SPEC.md §2.2).
  */
 export class HeartbeatMonitor {
   private timer: NodeJS.Timeout | null = null;
