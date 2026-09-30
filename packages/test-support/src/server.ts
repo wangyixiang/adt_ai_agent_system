@@ -35,6 +35,7 @@ import {
   type RecordListPage,
   type RecordStore,
   type SessionManager,
+  type KnowledgeDepositor,
   type WorkflowEngine as WorkflowEngineType,
   type RecordDocument,
   type WorkflowSnapshot,
@@ -73,6 +74,12 @@ export interface TestServerOptions {
   blobLifecycleIntervalMs?: number;
   /** Ordering clock for engine/protocol event timestamps (default `Date.now`). */
   now?: () => number;
+  /**
+   * ADR-005 outbound. Tests inject a fake — or a real HTTP depositor pointed at
+   * a local endpoint. Absent means "the knowledge base is not configured";
+   * deliberately not read from `process.env`, so the suite stays hermetic.
+   */
+  knowledgeDepositor?: KnowledgeDepositor | null;
 }
 
 export interface TestServer {
@@ -218,6 +225,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     records,
     recordStore: realRecordStore,
     now,
+    knowledgeDepositor: opts.knowledgeDepositor ?? null,
   });
 
   registerSessionResume({

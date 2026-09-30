@@ -12,6 +12,8 @@ import {
   type RecordStore,
 } from "../record/store";
 import { generateReport, resolveDetailLevel } from "../report/generate";
+import { buildDeposit } from "../kb/deposit";
+import type { KnowledgeDepositor } from "../kb/depositor";
 import type { StepStatusUpdate, WorkflowEngine } from "../workflow/engine";
 import type { WorkflowOrchestrator } from "../workflow/orchestrator";
 import { isTerminalWorkflow } from "../workflow/stateMachine";
@@ -35,6 +37,12 @@ export interface WorkflowProtocolDeps {
    * entry order).
    */
   now?: () => number;
+  /**
+   * ADR-005 outbound. `null`/absent means the knowledge base is not configured,
+   * and an export answers `export_unavailable` rather than pretending to have
+   * succeeded.
+   */
+  knowledgeDepositor?: KnowledgeDepositor | null;
 }
 
 export interface WorkflowProtocolHandle {
@@ -180,7 +188,8 @@ async function withOutputValidation(
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowProtocolHandle {
-  const { router, sessions, engine, store, orchestrator, planner, records, recordStore } = deps;
+  const { router, sessions, engine, store, orchestrator, planner, records, recordStore, knowledgeDepositor } =
+    deps;
   const now = deps.now ?? (() => Math.floor(performance.now()));
   const notified = new Set<string>();
 
@@ -564,6 +573,115 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowPr
             report: null,
             error_code: result.error_code,
             message: result.message,
+          },
+      env.message_id,
+    );
+  });
+
+  // ---- Knowledge-base export (PROTOCOL_SPEC.md §10.3, ADR-005) -------------
+
+  router.register("record.export_request", async ({ conn, session }, env) => {
+    if (!session) return;
+    const payload = asRecord(env.payload);
+    const recordId = payload.record_id;
+    if (typeof recordId !== "string") {
+      sendError(conn, session, "malformed_payload", "invalid record.export_request", env.message_id);
+      return;
+    }
+
+    // `record` is the documented default (PROTOCOL_SPEC.md §10.3); anything else
+    // that is not `report` is a client error, not something to guess at.
+    const requested = payload.object === undefined || payload.object === null ? "record" : payload.object;
+    if (requested !== "record" && requested !== "report") {
+      send(
+        conn,
+        session,
+        "record.export_result",
+        null,
+        {
+          record_id: recordId,
+          object: typeof requested === "string" ? requested : null,
+          status: "failed",
+          error_code: "invalid_object",
+          message: "object must be record or report",
+        },
+        env.message_id,
+      );
+      return;
+    }
+
+    // Owner-scoped: "missing" and "not yours" are indistinguishable (§10).
+    const record = await recordStore.get(recordId, session.userId);
+    if (!record) {
+      sendError(conn, session, "unknown_record", "unknown record", env.message_id);
+      return;
+    }
+
+    // Availability is checked before building a report: an export that cannot
+    // happen should not cost the work of preparing one.
+    const depositor = knowledgeDepositor ?? null;
+    if (!depositor) {
+      send(
+        conn,
+        session,
+        "record.export_result",
+        null,
+        {
+          record_id: recordId,
+          object: requested,
+          status: "failed",
+          error_code: "export_unavailable",
+          message: "no knowledge base endpoint is configured",
+        },
+        env.message_id,
+      );
+      return;
+    }
+
+    let report: { format: "markdown"; content: string } | undefined;
+    if (requested === "report") {
+      const generated = generateReport(record, "full");
+      if (generated.status !== "ok") {
+        send(
+          conn,
+          session,
+          "record.export_result",
+          null,
+          {
+            record_id: recordId,
+            object: requested,
+            status: "failed",
+            error_code: "export_failed",
+            message: generated.message,
+          },
+          env.message_id,
+        );
+        return;
+      }
+      report = { format: generated.format, content: generated.content };
+    }
+
+    // Synchronous per ADR-005 §4: the request waits for the outbound call, and
+    // `ok` means "the endpoint accepted it", not "the KB filed it".
+    const outcome = await depositor.deposit(
+      // `submitted_at` is a wall-clock reading; the engine's `now` is a monotonic
+      // ordering clock and would be the wrong time base here (RECORD_SPEC §6.1).
+      buildDeposit({ record, object: requested, report, now: () => Date.now() }),
+    );
+
+    send(
+      conn,
+      session,
+      "record.export_result",
+      null,
+      outcome.status === "ok"
+        ? { record_id: recordId, object: requested, status: "ok", error_code: null, message: null }
+        : {
+            record_id: recordId,
+            object: requested,
+            status: "failed",
+            error_code: outcome.error_code,
+            message: outcome.message,
           },
       env.message_id,
     );

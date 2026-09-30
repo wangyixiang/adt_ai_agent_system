@@ -160,6 +160,14 @@ export {
   type OpenAiCompatibleOptions,
 } from "./llm/openaiCompatible";
 export { selectPlanner } from "./llm/selectPlanner";
+export { buildDeposit, type DepositObject, type DepositPayload } from "./kb/deposit";
+export {
+  createHttpDepositor,
+  type DepositOutcome,
+  type HttpDepositorDeps,
+  type KnowledgeDepositor,
+} from "./kb/depositor";
+export { kbConfigFromEnv, type KbConfig } from "./kb/config";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";
@@ -173,6 +181,8 @@ import { selectPlanner } from "./llm/selectPlanner";
 import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
+import { kbConfigFromEnv } from "./kb/config";
+import { createHttpDepositor } from "./kb/depositor";
 import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
 import { SessionLifecycle } from "./session/lifecycle";
@@ -288,6 +298,11 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     stepTimeoutGraceMs: opts.stepTimeoutGraceMs,
   });
 
+  // ADR-005 outbound: no endpoint or no credentials means export is simply
+  // unavailable, and the protocol says so instead of failing at call time.
+  const kbConfig = kbConfigFromEnv(process.env);
+  const knowledgeDepositor = kbConfig ? createHttpDepositor(kbConfig) : null;
+
   const workflowProtocol = registerWorkflowProtocol({
     router: server.router,
     sessions: server.sessions,
@@ -298,6 +313,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     records,
     recordStore,
     now,
+    knowledgeDepositor,
   });
 
   registerSessionResume({
