@@ -8,19 +8,8 @@ import { SessionManager } from "./session/sessionManager";
 import { UserRepository } from "./auth/userRepository";
 import { HeartbeatMonitor, registerHeartbeat } from "./ws/heartbeat";
 import { MessageRouter } from "./ws/messageRouter";
-import type { BlobConfig } from "./blob/config";
+import type { BlobDeps } from "./blob/deps";
 import { registerBlobProtocol } from "./blob/protocol";
-import type { BlobRepository } from "./blob/repository";
-import type { BlobStore } from "./blob/store";
-import type { BlobTokenSigner } from "./blob/token";
-
-/** Everything the blob channel needs; one object so handlers cannot drift apart. */
-export interface BlobDeps {
-  repository: BlobRepository;
-  store: BlobStore;
-  signer: BlobTokenSigner;
-  config: BlobConfig;
-}
 
 export interface CreateServerOptions {
   pool: Pool;
@@ -90,6 +79,7 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
 
   const app = await buildServer({
     router,
+    blobs: opts.blobs,
     onConnectionClosed: (conn) => {
       const session = sessions.detach(conn.id);
       if (session) notifyDead(session.id);
