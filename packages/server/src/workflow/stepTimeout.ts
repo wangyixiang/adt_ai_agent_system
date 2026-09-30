@@ -5,8 +5,13 @@ import type { StepSnapshot, WorkflowStore } from "./store";
 export interface StepTimeoutDeps {
   engine: Pick<WorkflowEngine, "timeoutStep">;
   store: Pick<WorkflowStore, "findActiveWorkflows" | "listSteps">;
-  /** Monotonic clock (PROTOCOL_SPEC.md §2/§9); defaults to `performance.now`. */
-  now?: () => number;
+  /**
+   * The SAME wall clock the engine stamps `updatedAt` with. Comparing a
+   * `performance.now()` reading against a `Date.now()` deadline silently makes
+   * every step look overdue (or never overdue), which is why the wiring passes
+   * the engine's own clock here.
+   */
+  clock?: () => number;
   /**
    * Called once per workflow that lost a step to the timeout, so the workflow
    * can move on (reconcile an UNKNOWN, re-plan after a FAILED) even though the
@@ -29,19 +34,31 @@ export interface StepTimeoutOptions {
  * deadline.
  */
 export class StepTimeoutMonitor {
-  private readonly now: () => number;
+  private readonly clock: () => number;
   private timer: NodeJS.Timeout | null = null;
+  /** Guards against a slow sweep being overtaken by the next timer tick. */
+  private sweeping = false;
 
   constructor(
     private readonly deps: StepTimeoutDeps,
     private readonly options: StepTimeoutOptions,
   ) {
-    this.now = deps.now ?? (() => Math.floor(performance.now()));
+    this.clock = deps.clock ?? (() => Date.now());
   }
 
   /** Times out every overdue step; returns the ids it ended. */
   async sweep(): Promise<string[]> {
-    const now = this.now();
+    if (this.sweeping) return [];
+    this.sweeping = true;
+    try {
+      return await this.runSweep();
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  private async runSweep(): Promise<string[]> {
+    const now = this.clock();
     const timedOut: string[] = [];
 
     for (const workflow of await this.deps.store.findActiveWorkflows()) {

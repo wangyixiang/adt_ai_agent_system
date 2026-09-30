@@ -70,7 +70,7 @@ function proposeStepTool(capabilities: NormalizedCapability[]): LlmTool {
         },
         reconcile: {
           type: "object",
-          required: ["step_id", "outcome"],
+          required: ["step_id", "outcome", "evidence_refs"],
           properties: {
             step_id: { type: "string" },
             outcome: { type: "string", enum: ["COMPLETED", "FAILED"] },

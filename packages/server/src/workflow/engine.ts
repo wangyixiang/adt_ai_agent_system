@@ -56,6 +56,22 @@ export class WorkflowBusyError extends Error {
   }
 }
 
+/**
+ * A side effect was proposed while an earlier one is unresolved
+ * (WORKFLOW_SPEC.md §4.3: while a workflow has an unreconciled UNKNOWN, no
+ * further side-effect step may be dispatched — read-only and reconciliation
+ * steps are still allowed).
+ */
+export class WorkflowBlockedError extends Error {
+  readonly unknownStepId: string;
+
+  constructor(unknownStepId: string) {
+    super(`workflow has an unreconciled UNKNOWN side-effect step: ${unknownStepId}`);
+    this.name = "WorkflowBlockedError";
+    this.unknownStepId = unknownStepId;
+  }
+}
+
 export interface NewStep {
   objective: string;
   capability: string;
@@ -70,7 +86,7 @@ export interface NewStep {
 }
 
 export type StepStatusUpdate =
-  | { state: "RUNNING" }
+  | { state: "RUNNING"; progress?: unknown }
   | { state: "WAITING"; waitClass: "human" | "execution" }
   | { state: "COMPLETED"; evidence?: unknown }
   | { state: "FAILED"; evidence?: unknown; failReason?: { code: string; message?: string } }
@@ -80,7 +96,17 @@ export type StepStatusUpdate =
 export interface EngineDeps {
   store: WorkflowStore;
   guardrails?: GuardrailConfig;
+  /**
+   * Ordering clock for events and workflow timestamps. Monotonic and
+   * process-local (PROTOCOL_SPEC.md §2) — it is NOT compared across restarts.
+   */
   now?: () => number;
+  /**
+   * Wall clock for step deadlines. `updatedAt` is persisted and read back by a
+   * possibly-newer process, so it must be comparable across a restart
+   * (a persisted `performance.now()` is meaningless to the next process).
+   */
+  wallClock?: () => number;
   onTerminated?: (workflow: WorkflowSnapshot) => Promise<void> | void;
 }
 
@@ -92,6 +118,7 @@ export class WorkflowEngine {
   private readonly store: WorkflowStore;
   private readonly guardrails: GuardrailConfig;
   private readonly now: () => number;
+  private readonly wallClock: () => number;
   private readonly onTerminated?: EngineDeps["onTerminated"];
   /** Per-workflow serialization: all mutations of one workflow run in order. */
   private readonly locks = new Map<string, Promise<unknown>>();
@@ -101,6 +128,7 @@ export class WorkflowEngine {
     this.guardrails = deps.guardrails ?? DEFAULT_GUARDRAILS;
     // Monotonic and integer-valued (the DB stores bigint milliseconds).
     this.now = deps.now ?? (() => Math.floor(performance.now()));
+    this.wallClock = deps.wallClock ?? (() => Date.now());
     this.onTerminated = deps.onTerminated;
   }
 
@@ -147,7 +175,7 @@ export class WorkflowEngine {
       state: update.state,
       // waitClass describes only the CURRENT wait; clear it on resume.
       waitClass: update.state === "WAITING" ? update.waitClass : null,
-      updatedAt: this.now(),
+      updatedAt: this.wallClock(),
     };
     const evidence =
       update.state === "COMPLETED" || update.state === "FAILED"
@@ -163,6 +191,9 @@ export class WorkflowEngine {
       ...(evidence === undefined ? {} : { evidence }),
       ...(failReason === undefined ? {} : { failReason }),
       ...(rejectReason === undefined ? {} : { rejectReason }),
+      ...(update.state === "RUNNING" && update.progress !== undefined
+        ? { progress: update.progress }
+        : {}),
     });
 
     // A queued cancel converges the moment its non-interruptible step ends —
@@ -278,6 +309,15 @@ export class WorkflowEngine {
       const active = existing.find((candidate) => isActiveStep(candidate.state));
       if (active) throw new WorkflowBusyError(active.id);
 
+      // WORKFLOW_SPEC.md §4.3: while a side effect's outcome is unresolved, no
+      // further side effect may be dispatched (read-only and reconciliation
+      // steps are still allowed). The device must not receive a second action
+      // whose interaction with the first is unknown.
+      if (step.sideEffect) {
+        const unresolved = existing.find((candidate) => candidate.state === "UNKNOWN");
+        if (unresolved) throw new WorkflowBlockedError(unresolved.id);
+      }
+
       const breach = breachedGuardrail(
         {
           stepCount: existing.length + 1,
@@ -321,7 +361,7 @@ export class WorkflowEngine {
         waitClass: null,
         input: step.input ?? {},
         outputSchema: step.outputSchema ?? null,
-        updatedAt: this.now(),
+        updatedAt: this.wallClock(),
         timeoutMs: step.timeoutMs ?? 0,
       };
       await this.store.createStep(
@@ -350,6 +390,22 @@ export class WorkflowEngine {
 
       // Terminal steps are immutable; UNKNOWN is reconciled separately.
       if (isTerminalStep(step.state)) return workflow;
+
+      // A repeated RUNNING (with or without `progress`) is a keep-alive:
+      // PROTOCOL_SPEC.md §9 resets the deadline on ANY step.status, and the
+      // state does not change, so there is no transition to apply.
+      if (update.state === "RUNNING" && step.state === "RUNNING") {
+        await this.store.saveStep(
+          { ...step, updatedAt: this.wallClock() },
+          this.event(workflowId, "step_status", {
+            stepId,
+            state: "RUNNING",
+            ...(update.progress === undefined ? {} : { progress: update.progress }),
+          }),
+        );
+        return workflow;
+      }
+
       // Ignore illegal and duplicate transitions: no state change, no event.
       if (!canTransitionStep(step.state, update.state)) return workflow;
 
@@ -437,9 +493,14 @@ export class WorkflowEngine {
         throw new Error(`unknown step ${stepId}`);
       }
       if (step.state !== "UNKNOWN") throw new Error("step is not UNKNOWN");
+      // A verdict without evidence is a guess (WORKFLOW_SPEC.md §4.3: "证据不足
+      // 时退回工程师确认"), and the Record would claim a fact it cannot cite.
+      if (evidenceRefs.length === 0) {
+        throw new Error("reconciliation requires at least one evidence reference");
+      }
 
       await this.store.saveStep(
-        { ...step, state: outcome, updatedAt: this.now() },
+        { ...step, state: outcome, updatedAt: this.wallClock() },
         this.event(workflowId, "step_status", {
           stepId,
           state: outcome,

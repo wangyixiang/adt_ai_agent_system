@@ -1,9 +1,11 @@
 import {
+  HUMAN_MANUAL_ACTION,
+  HUMAN_MANUAL_ACTION_CAPABILITY,
   validateJsonSchema,
   type JsonSchema,
   type NormalizedCapability,
 } from "@adt/shared";
-import type { WorkflowEngine } from "./engine";
+import { WorkflowBlockedError, type WorkflowEngine } from "./engine";
 import type { Planner, PlannerDecision } from "./planner";
 import { isActiveStep, isTerminalWorkflow } from "./stateMachine";
 import type { StepSnapshot, WorkflowStore } from "./store";
@@ -70,7 +72,24 @@ export class WorkflowOrchestrator {
     if (steps.some((step) => isActiveStep(step.state))) return {};
 
     const events = await this.deps.store.listEvents(workflowId);
-    const capabilities = this.deps.capabilitiesOf?.(workflow.sessionId) ?? [];
+    const declared = this.deps.capabilitiesOf?.(workflow.sessionId) ?? [];
+
+    // The reserved advisory capability is implicitly supported by every Client
+    // and is never declared in a Manifest (CAPABILITY_SPEC.md §6), so the
+    // Server is the one that makes it choosable — otherwise nothing would ever
+    // propose the "please do this by hand" path.
+    const offered = declared.some((capability) => capability.name === HUMAN_MANUAL_ACTION)
+      ? declared
+      : [...declared, HUMAN_MANUAL_ACTION_CAPABILITY];
+
+    // WORKFLOW_SPEC.md §4.3 side-effect blocking: while a side effect is
+    // unreconciled, the planner is not even offered a side-effecting
+    // capability. The engine enforces the same rule, so a planner that somehow
+    // still asks for one is caught rather than obeyed.
+    const unresolved = steps.some((step) => step.state === "UNKNOWN");
+    const capabilities = unresolved
+      ? offered.filter((capability) => !capability.side_effect)
+      : offered;
 
     let decision: PlannerDecision;
     try {
@@ -97,19 +116,32 @@ export class WorkflowOrchestrator {
       }
 
       const capability = capabilities.find((candidate) => candidate.name === decision.step.capability);
-      const dispatched = await this.deps.engine.dispatchStep(workflowId, {
-        ...decision.step,
-        // Frozen at dispatch so a later capability.sync cannot move the goalposts
-        // for an in-flight step (CAPABILITY_SPEC.md §4.1).
-        outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
-        // Same reasoning for the deadline: the monitor must not consult the
-        // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
-        timeoutMs:
-          decision.step.timeoutMs ??
-          capability?.timeout_hint ??
-          this.deps.defaultStepTimeoutMs ??
-          DEFAULT_STEP_TIMEOUT_MS,
-      });
+      let dispatched: StepSnapshot;
+      try {
+        dispatched = await this.deps.engine.dispatchStep(workflowId, {
+          ...decision.step,
+          // Frozen at dispatch so a later capability.sync cannot move the goalposts
+          // for an in-flight step (CAPABILITY_SPEC.md §4.1).
+          outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
+          // Same reasoning for the deadline: the monitor must not consult the
+          // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
+          timeoutMs:
+            decision.step.timeoutMs ??
+            capability?.timeout_hint ??
+            this.deps.defaultStepTimeoutMs ??
+            DEFAULT_STEP_TIMEOUT_MS,
+        });
+      } catch (error) {
+        // A planner that proposes a side effect while one is unresolved is a
+        // planner error, not a reason to hang: fail deterministically (the
+        // existing contract for unusable planner output) rather than stall.
+        if (error instanceof WorkflowBlockedError) {
+          console.warn(`[orchestrator] ${error.message} (workflow ${workflowId})`);
+          await this.deps.engine.fail(workflowId, "planner_error");
+          return {};
+        }
+        throw error;
+      }
       return { dispatched };
     }
 
@@ -121,12 +153,20 @@ export class WorkflowOrchestrator {
     // message). Recursion is bounded: each reconcile consumes one UNKNOWN step,
     // and reconciling a step that is not UNKNOWN throws.
     if (decision.kind === "reconcile") {
-      await this.deps.engine.reconcileUnknown(
-        workflowId,
-        decision.stepId,
-        decision.outcome,
-        decision.evidenceRefs ?? [],
-      );
+      try {
+        await this.deps.engine.reconcileUnknown(
+          workflowId,
+          decision.stepId,
+          decision.outcome,
+          decision.evidenceRefs,
+        );
+      } catch (error) {
+        // An unsupported verdict (not UNKNOWN, or no evidence cited) is a
+        // planner error; failing beats hanging on a workflow nobody advances.
+        console.warn(`[orchestrator] ${(error as Error).message} (workflow ${workflowId})`);
+        await this.deps.engine.fail(workflowId, "planner_error");
+        return {};
+      }
       return this.advance(workflowId);
     }
 

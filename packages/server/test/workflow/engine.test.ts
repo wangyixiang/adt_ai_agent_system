@@ -104,17 +104,22 @@ describe("WorkflowEngine basics", () => {
     expect(after!.terminalReason).toBe("time_budget");
   });
 
-  it("ignores illegal and duplicate non-terminal transitions", async () => {
+  it("ignores illegal transitions and keep-alives a duplicate RUNNING", async () => {
     const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
     const step = await engine.dispatchStep(wf.id, readOnly);
 
     await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
-    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" }); // duplicate
+    const afterRun = (await store.getStep(step.id))!.updatedAt;
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" }); // keep-alive
     await engine.applyStepStatus(wf.id, step.id, { state: "REJECTED" }); // RUNNING->REJECTED is illegal
 
     const events = (await store.listEvents(wf.id)).filter((e) => e.kind === "step_status");
-    expect(events).toHaveLength(1);
-    expect((await engine.getStep(step.id))!.state).toBe("RUNNING");
+    // The duplicate RUNNING only moves the deadline (PROTOCOL_SPEC.md §9: any
+    // step.status resets the timer); the illegal transition adds nothing.
+    expect(events).toHaveLength(2);
+    expect(events.every((event) => (event.payload as { state: string }).state === "RUNNING")).toBe(true);
+    expect((await store.getStep(step.id))!.state).toBe("RUNNING");
+    expect((await store.getStep(step.id))!.updatedAt).toBeGreaterThanOrEqual(afterRun);
   });
 
   it("emits no event for an update on a terminal step", async () => {

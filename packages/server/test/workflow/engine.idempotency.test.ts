@@ -18,7 +18,7 @@ beforeEach(async () => {
   await pool.query("TRUNCATE workflows, workflow_steps, workflow_events");
   store = new PostgresWorkflowStore(pool);
   t = 1000;
-  engine = new WorkflowEngine({ store, now: () => t });
+  engine = new WorkflowEngine({ store, now: () => t, wallClock: () => t });
 });
 afterAll(async () => {
   await pool.end();

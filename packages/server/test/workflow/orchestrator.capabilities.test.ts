@@ -67,7 +67,30 @@ describe("planner capabilities + input validation", () => {
       capabilitiesOf: () => [readCap()],
     });
     await orch.advance(wf.id);
-    expect(seen).toEqual([readCap()]);
+    // The reserved advisory capability is always offered (CAPABILITY_SPEC.md §6).
+    expect(seen).toEqual([
+      readCap(),
+      {
+        name: "human.manual_action",
+        side_effect: false,
+        interruptible: true,
+        idempotent: false,
+        input_schema: {
+          type: "object",
+          required: ["instruction"],
+          properties: { instruction: { type: "string" } },
+        },
+        output_schema: {
+          type: "object",
+          required: ["outcome", "observation"],
+          properties: {
+            outcome: { type: "string", enum: ["succeeded", "failed", "partially", "unknown"] },
+            observation: { type: "string" },
+            details: { type: "object" },
+          },
+        },
+      },
+    ]);
   });
 
   it("dispatches a step whose input matches the capability schema", async () => {
@@ -135,5 +158,85 @@ describe("planner capabilities + input validation", () => {
     const after = (await engine.get(wf.id))!;
     expect(after.state).toBe("FAILED");
     expect(after.terminalReason).toBe("planner_error");
+  });
+});
+
+describe("side-effect blocking (WORKFLOW_SPEC.md §4.3)", () => {
+  const resetCap = (over: Partial<NormalizedCapability> = {}): NormalizedCapability => ({
+    name: "sim_rig.trigger_reset",
+    side_effect: true,
+    interruptible: false,
+    idempotent: false,
+    ...over,
+  });
+
+  async function unknownWorkflow(engine: WorkflowEngine): Promise<string> {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, { mode: "open", revision: 0 });
+    const reset = await engine.dispatchStep(wf.id, {
+      objective: "reset",
+      capability: "sim_rig.trigger_reset",
+      sideEffect: true,
+      interruptible: false,
+    });
+    await engine.applyStepStatus(wf.id, reset.id, { state: "RUNNING" });
+    await engine.applyStepStatus(wf.id, reset.id, { state: "UNKNOWN" });
+    return wf.id;
+  }
+
+  it("withholds side-effect capabilities from the planner while an UNKNOWN awaits reconciliation", async () => {
+    const store = new PostgresWorkflowStore(pool);
+    const engine = new WorkflowEngine({ store, now: () => 1000 });
+    const workflowId = await unknownWorkflow(engine);
+
+    let seen: NormalizedCapability[] = [];
+    const orch = new WorkflowOrchestrator({
+      engine,
+      store,
+      planner: {
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
+        proposeNext: async (input) => {
+          seen = input.capabilities;
+          return { kind: "completion_candidate", summary: "", evidenceRefs: [] };
+        },
+      },
+      capabilitiesOf: () => [readCap(), resetCap()],
+    });
+    await orch.advance(workflowId);
+
+    expect(seen.map((capability) => capability.name)).toEqual([
+      "git.collect_diagnostics",
+      "human.manual_action",
+    ]);
+  });
+
+  it("fails deterministically if a planner proposes a side effect anyway", async () => {
+    const store = new PostgresWorkflowStore(pool);
+    const engine = new WorkflowEngine({ store, now: () => 1000 });
+    const workflowId = await unknownWorkflow(engine);
+
+    const orch = new WorkflowOrchestrator({
+      engine,
+      store,
+      planner: {
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
+        proposeNext: async () => ({
+          kind: "step",
+          step: {
+            objective: "reset again",
+            capability: "sim_rig.trigger_reset",
+            sideEffect: true,
+            interruptible: false,
+          },
+        }),
+      },
+      capabilitiesOf: () => [readCap(), resetCap()],
+    });
+
+    expect(await orch.advance(workflowId)).toEqual({});
+    const after = (await engine.get(workflowId))!;
+    expect(after.state).toBe("FAILED");
+    expect(after.terminalReason).toBe("planner_error");
+    // Only the original side effect exists; nothing new reached the device.
+    expect(await store.listSteps(workflowId)).toHaveLength(1);
   });
 });

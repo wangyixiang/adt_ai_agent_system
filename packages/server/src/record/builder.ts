@@ -8,7 +8,7 @@ import type {
 } from "./types";
 
 /** Spec versions the domain model was read from (RECORD_SPEC.md §6). */
-export const SPEC_VERSIONS = { workflow_spec: "0.5", capability_spec: "0.7" } as const;
+export const SPEC_VERSIONS = { workflow_spec: "0.5", capability_spec: "0.8" } as const;
 
 export interface BuildRecordInput {
   workflow: WorkflowSnapshot;

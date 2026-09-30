@@ -7,7 +7,11 @@ export interface PlannerInput {
   workflow: WorkflowSnapshot;
   steps: StepSnapshot[];
   events: WorkflowEvent[];
-  /** The owning session's declared Capabilities (CAPABILITY_SPEC.md §3). */
+  /**
+   * The capabilities the planner may choose from. Side-effect capabilities are
+   * withheld while the workflow has an unreconciled `UNKNOWN` step
+   * (WORKFLOW_SPEC.md §4.3).
+   */
   capabilities: NormalizedCapability[];
 }
 
@@ -28,7 +32,12 @@ export type PlannerDecision =
       kind: "reconcile";
       stepId: string;
       outcome: "COMPLETED" | "FAILED";
-      evidenceRefs?: string[];
+      /**
+       * The evidence the verdict rests on (step ids / evidence ids). Required:
+       * "证据不足时退回工程师确认" (WORKFLOW_SPEC.md §4.3) — a verdict nobody can
+       * cite is a guess.
+       */
+      evidenceRefs: string[];
     };
 
 /**

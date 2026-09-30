@@ -59,9 +59,21 @@ describe("engine UNKNOWN reconciliation", () => {
     await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
     await engine.applyStepStatus(wf.id, step.id, { state: "UNKNOWN" });
 
-    await engine.reconcileUnknown(wf.id, step.id, "COMPLETED");
+    await engine.reconcileUnknown(wf.id, step.id, "COMPLETED", [step.id]);
 
     expect((await store.getStep(step.id))!.state).toBe("COMPLETED");
     expect((await engine.get(wf.id))!.state).toBe("RUNNING");
+  });
+
+  it("refuses a verdict that cites no evidence", async () => {
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+    const step = await engine.dispatchStep(wf.id, sideEffectStep);
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+    await engine.applyStepStatus(wf.id, step.id, { state: "UNKNOWN" });
+
+    await expect(engine.reconcileUnknown(wf.id, step.id, "COMPLETED", [])).rejects.toThrow(
+      /evidence reference/,
+    );
+    expect((await store.getStep(step.id))!.state).toBe("UNKNOWN");
   });
 });

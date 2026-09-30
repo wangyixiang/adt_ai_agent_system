@@ -94,13 +94,15 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   // Workflow dependencies are built before the server so the session
   // lifecycle can feed the orphan reclaimer from the first disconnect.
   const workflowStore = new PostgresWorkflowStore(pool);
-  // One clock for the engine and the timeout monitor: comparing a Date.now()
-  // deadline against performance.now() would make every step look overdue
-  // (or never overdue, depending on the sign).
+  // Ordering clock (events, workflow timestamps) vs wall clock (persisted step
+  // deadlines, which must survive a restart). The timeout monitor MUST use the
+  // wall clock, or it compares against a `performance.now()` base.
   const now = () => Date.now();
+  const wallClock = now;
   const engine = new WorkflowEngine({
     store: workflowStore,
     now,
+    wallClock,
     guardrails: opts.guardrails,
   });
   const realRecordStore = new PostgresRecordStore(pool);
@@ -192,7 +194,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     {
       engine,
       store: workflowStore,
-      now,
+      clock: wallClock,
       onStepEnded: (workflowId) => protocol.advance(workflowId),
     },
     { intervalMs: opts.timeoutSweepIntervalMs ?? 1000 },

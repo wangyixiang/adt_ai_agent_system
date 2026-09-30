@@ -8,7 +8,7 @@ describe("StepTimeoutMonitor", () => {
     const advanced: string[] = [];
     const monitor = new StepTimeoutMonitor(
       {
-        now: () => t,
+        clock: () => t,
         onStepEnded: (workflowId) => {
           advanced.push(workflowId);
         },
@@ -43,7 +43,7 @@ describe("StepTimeoutMonitor", () => {
   it("keeps sweeping when one step fails", async () => {
     const monitor = new StepTimeoutMonitor(
       {
-        now: () => 1000,
+        clock: () => 1000,
         store: {
           findActiveWorkflows: async () => [{ id: "wf_1" }] as never,
           listSteps: async () =>

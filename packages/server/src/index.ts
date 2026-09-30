@@ -202,11 +202,12 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   const reclaimIntervalMs = opts.reclaimIntervalMs ?? 60_000;
 
   const workflowStore = new PostgresWorkflowStore(pool);
-  // One clock for the engine and the timeout monitor: comparing a Date.now()
-  // deadline against performance.now() would make every step look overdue
-  // (or never overdue, depending on the sign).
+  // Ordering clock (events, workflow timestamps) vs wall clock (persisted step
+  // deadlines, which must survive a restart). The timeout monitor MUST use the
+  // wall clock, or it compares against a `performance.now()` base.
   const now = () => Math.floor(performance.now());
-  const engine = new WorkflowEngine({ store: workflowStore, now });
+  const wallClock = () => Date.now();
+  const engine = new WorkflowEngine({ store: workflowStore, now, wallClock });
   const recordStore = new PostgresRecordStore(pool);
   const records = new RecordService({ store: recordStore, workflowStore });
   const reclaimer = new OrphanReclaimer({
@@ -270,7 +271,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     {
       engine,
       store: workflowStore,
-      now,
+      clock: wallClock,
       onStepEnded: (workflowId) => workflowProtocol.advance(workflowId),
     },
     { intervalMs: opts.stepTimeoutSweepIntervalMs ?? 1000 },
