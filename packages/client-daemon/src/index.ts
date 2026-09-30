@@ -5,7 +5,15 @@ export { defaultRegistry } from "./capability/defaultRegistry";
 export { mvpDescriptors, mvpSpec } from "./capability/descriptors";
 export { nodeCommandRunner } from "./capability/exec";
 export { resolveWithinWorkspace } from "./capability/workspace";
-export { attachStepRunner, type StepDispatcher, type StepRunnerDeps } from "./stepRunner";
+export {
+  attachStepRunner,
+  HUMAN_MANUAL_ACTION,
+  type ConfirmationRequest,
+  type ManualActionFeedback,
+  type StepDispatcher,
+  type StepRunnerDeps,
+  type UserInputRequest,
+} from "./stepRunner";
 export {
   gitCollectDiagnostics,
 } from "./capability/adapters/git";

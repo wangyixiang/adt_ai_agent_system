@@ -2,7 +2,12 @@ import { defaultRegistry } from "./capability/defaultRegistry";
 import type { CapabilityRegistry } from "./capability/registry";
 import type { CommandRunner } from "./capability/result";
 import { DaemonConnection } from "./connection";
-import { attachStepRunner } from "./stepRunner";
+import {
+  attachStepRunner,
+  type ConfirmationRequest,
+  type ManualActionFeedback,
+  type UserInputRequest,
+} from "./stepRunner";
 
 export interface ClientDaemonOptions {
   url: string;
@@ -12,6 +17,10 @@ export interface ClientDaemonOptions {
   workspaceRoot: string;
   registry?: CapabilityRegistry;
   run?: CommandRunner;
+  /** Asks the engineer to approve a side-effect step (default: decline). */
+  onConfirmationRequired?: (request: ConfirmationRequest) => Promise<boolean>;
+  /** Collects the engineer's report for a suggested manual action. */
+  onUserInput?: (request: UserInputRequest) => Promise<ManualActionFeedback | undefined>;
 }
 
 /**
@@ -39,6 +48,8 @@ export class ClientDaemon {
           registry,
           workspaceRoot: opts.workspaceRoot,
           run: opts.run,
+          onConfirmationRequired: opts.onConfirmationRequired,
+          onUserInput: opts.onUserInput,
         });
       },
     );

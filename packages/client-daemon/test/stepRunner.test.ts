@@ -69,7 +69,7 @@ describe("attachStepRunner", () => {
     });
   });
 
-  it("never executes a step that asks for confirmation", async () => {
+  it("never executes a step that asks for confirmation when nobody answers", async () => {
     let executed = false;
     const { sent, dispatch } = harness({
       spec: { name: "filesystem.read_file", side_effect: false, interruptible: true },
@@ -82,6 +82,9 @@ describe("attachStepRunner", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(executed).toBe(false);
     expect(sent[0]).toMatchObject({
+      payload: { status: "WAITING", wait_reason: { code: "user_confirmation" } },
+    });
+    expect(sent[1]).toMatchObject({
       payload: { status: "REJECTED", reject_reason: { code: "user_declined" } },
     });
   });
