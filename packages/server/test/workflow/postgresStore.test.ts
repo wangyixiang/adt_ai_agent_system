@@ -76,6 +76,8 @@ describe("PostgresWorkflowStore", () => {
         waitClass: null,
         input: {},
         outputSchema: null,
+        updatedAt: 100,
+        timeoutMs: 0,
       },
       ev("ev_3", "step_dispatched"),
     );

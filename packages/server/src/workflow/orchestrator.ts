@@ -24,7 +24,12 @@ export interface OrchestratorDeps {
    * validate the produced step input (CAPABILITY_SPEC.md §5.2).
    */
   capabilitiesOf?: (sessionId: string) => NormalizedCapability[];
+  /** Fallback step_timeout for capabilities that declare no timeout_hint. */
+  defaultStepTimeoutMs?: number;
 }
+
+/** WORKFLOW_SPEC.md §13: a step that never reports back is bounded anyway. */
+const DEFAULT_STEP_TIMEOUT_MS = 60_000;
 
 /**
  * Validates a planner-produced step input against the Capability's input
@@ -97,6 +102,13 @@ export class WorkflowOrchestrator {
         // Frozen at dispatch so a later capability.sync cannot move the goalposts
         // for an in-flight step (CAPABILITY_SPEC.md §4.1).
         outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
+        // Same reasoning for the deadline: the monitor must not consult the
+        // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
+        timeoutMs:
+          decision.step.timeoutMs ??
+          capability?.timeout_hint ??
+          this.deps.defaultStepTimeoutMs ??
+          DEFAULT_STEP_TIMEOUT_MS,
       });
       return { dispatched };
     }

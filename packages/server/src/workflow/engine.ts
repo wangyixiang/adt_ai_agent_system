@@ -64,6 +64,8 @@ export interface NewStep {
   /** Snapshot of the capability's output schema, for in-flight validation. */
   outputSchema?: Record<string, unknown> | null;
   idempotencyKey?: string | null;
+  /** step_timeout budget from the capability's timeout_hint; 0 = no timeout. */
+  timeoutMs?: number;
 }
 
 export type StepStatusUpdate =
@@ -253,11 +255,19 @@ export class WorkflowEngine {
         capability: step.capability,
         sideEffect: step.sideEffect,
         interruptible: step.interruptible,
-        idempotencyKey: step.idempotencyKey ?? null,
+        // Side effects get a key that is stable for the life of the step, so a
+        // resume re-dispatch of the same step is not executed twice on the
+        // client (WORKFLOW_SPEC.md §4.3).
+        idempotencyKey:
+          step.sideEffect || step.idempotencyKey
+            ? (step.idempotencyKey ?? `idem_${randomUUID()}`)
+            : null,
         attempt: 1,
         waitClass: null,
         input: step.input ?? {},
         outputSchema: step.outputSchema ?? null,
+        updatedAt: this.now(),
+        timeoutMs: step.timeoutMs ?? 0,
       };
       await this.store.createStep(
         snapshot,
@@ -293,6 +303,7 @@ export class WorkflowEngine {
         state: update.state,
         // waitClass describes only the CURRENT wait; clear it on resume.
         waitClass: update.state === "WAITING" ? update.waitClass : null,
+        updatedAt: this.now(),
       };
       const evidence =
         update.state === "COMPLETED" || update.state === "FAILED"
@@ -377,7 +388,7 @@ export class WorkflowEngine {
       if (step.state !== "UNKNOWN") throw new Error("step is not UNKNOWN");
 
       await this.store.saveStep(
-        { ...step, state: outcome },
+        { ...step, state: outcome, updatedAt: this.now() },
         this.event(workflowId, "step_status", { stepId, state: outcome, reconciled: true }),
       );
       return (await this.store.getWorkflow(workflowId))!;

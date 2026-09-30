@@ -33,6 +33,8 @@ interface StepRow {
   wait_class: string | null;
   input: unknown;
   output_schema: unknown;
+  updated_at: string | number;
+  timeout_ms: string | number;
 }
 
 interface EventRow {
@@ -69,6 +71,8 @@ const toStep = (row: StepRow): StepSnapshot => ({
   waitClass: row.wait_class as StepSnapshot["waitClass"],
   input: (row.input ?? {}) as Record<string, unknown>,
   outputSchema: (row.output_schema ?? null) as Record<string, unknown> | null,
+  updatedAt: Number(row.updated_at),
+  timeoutMs: Number(row.timeout_ms),
 });
 
 const toEvent = (row: EventRow): WorkflowEvent => ({
@@ -121,14 +125,15 @@ export class PostgresWorkflowStore implements WorkflowStore {
 
   private insertStep(client: pg.PoolClient, s: StepSnapshot): Promise<unknown> {
     return client.query(
-      `INSERT INTO workflow_steps (id, workflow_id, state, objective, capability, side_effect, interruptible, idempotency_key, attempt, wait_class, input, output_schema)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, wait_class = EXCLUDED.wait_class, attempt = EXCLUDED.attempt`,
+      `INSERT INTO workflow_steps (id, workflow_id, state, objective, capability, side_effect, interruptible, idempotency_key, attempt, wait_class, input, output_schema, updated_at, timeout_ms)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, wait_class = EXCLUDED.wait_class, attempt = EXCLUDED.attempt, updated_at = EXCLUDED.updated_at`,
       [
         s.id, s.workflowId, s.state, s.objective, s.capability,
         s.sideEffect, s.interruptible, s.idempotencyKey, s.attempt, s.waitClass,
         JSON.stringify(s.input ?? {}),
         s.outputSchema === null ? null : JSON.stringify(s.outputSchema),
+        s.updatedAt, s.timeoutMs,
       ],
     );
   }

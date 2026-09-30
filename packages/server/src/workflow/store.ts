@@ -31,6 +31,10 @@ export interface StepSnapshot {
   input: Record<string, unknown>;
   /** Output schema declared at dispatch time; null when the capability had none. */
   outputSchema: Record<string, unknown> | null;
+  /** Clock reading of the last state change; base for step_timeout. */
+  updatedAt: number;
+  /** step_timeout budget snapshotted at dispatch; 0 means "no timeout". */
+  timeoutMs: number;
 }
 
 export type WorkflowEventKind =
