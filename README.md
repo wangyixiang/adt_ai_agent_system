@@ -27,9 +27,9 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 
 ```text
 packages/
-├── shared          # 协议类型、信封编解码、错误处置矩阵、去重窗口、受限子集 JSON Schema 校验器
-├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器
-├── client-daemon   # 连接/握手/能力声明/心跳 + 可插拔 Capability 适配器（只读执行）
+├── shared          # 协议类型、信封编解码、错误处置矩阵、去重窗口、受限子集 JSON Schema 校验器、blob 协议类型
+├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器、blob 通道
+├── client-daemon   # 连接/握手/能力声明/心跳 + 可插拔 Capability 适配器（只读 + 受控副作用）、幂等台账、blob 收发
 └── test-support    # 测试用 Server 启动器、WS 测试客户端、脚本化 LLM provider
 ```
 
@@ -74,4 +74,5 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - 契约：`docs/specs/`（`WORKFLOW_SPEC.md`、`CAPABILITY_SPEC.md`、`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md`）
 - 架构决策：`docs/adr/ADR-001`~`ADR-005`
 - MVP 范围：`docs/superpowers/specs/2026-09-29-mvp-scope.md`
-- 实现计划：`docs/superpowers/plans/`（P1 → P4a）
+- **阶段推进约定：`docs/superpowers/WORKFLOW.md`（先读它：流程、评审裁决表、验证口径、不 push）**
+- 实现计划：`docs/superpowers/plans/`（P1 → P4c）
