@@ -142,15 +142,32 @@ afterAll(async () => { await pool.end(); });
 const open = { mode: "open" as const, revision: 0 };
 const sideEffect = { objective: "复位测试台", capability: "sim_rig.trigger_reset", sideEffect: true, interruptible: false };
 
-/** Rejects a side-effect step with the given reason, as the protocol layer would. */
-async function rejectedWorkflow(
-  engine: WorkflowEngine,
-  rejectReason: { code: string; message?: string },
-): Promise<string> {
+/**
+ * The real sequence for a provider that finds the resource busy while
+ * executing: RUNNING → WAITING(human) → REJECTED. A rejection is never legal
+ * straight out of RUNNING, and the engine silently ignores illegal transitions
+ * — so a test that skipped the wait would prove nothing.
+ */
+async function conflictRejectedWorkflow(engine: WorkflowEngine): Promise<string> {
   const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
   const step = await engine.dispatchStep(wf.id, sideEffect);
   await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
-  await engine.applyStepStatus(wf.id, step.id, { state: "REJECTED", rejectReason });
+  await engine.applyStepStatus(wf.id, step.id, { state: "WAITING", waitClass: "human" });
+  await engine.applyStepStatus(wf.id, step.id, {
+    state: "REJECTED",
+    rejectReason: { code: "resource_conflict", message: "测试台正被占用" },
+  });
+  return wf.id;
+}
+
+/** Any other rejection (e.g. an undeclared capability) happens before RUNNING. */
+async function otherRejectedWorkflow(engine: WorkflowEngine): Promise<string> {
+  const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
+  const step = await engine.dispatchStep(wf.id, sideEffect);
+  await engine.applyStepStatus(wf.id, step.id, {
+    state: "REJECTED",
+    rejectReason: { code: "capability_unavailable" },
+  });
   return wf.id;
 }
 
@@ -169,10 +186,7 @@ describe("resource conflict ends the workflow", () => {
   it("fails the workflow with terminal_reason=resource_conflict and never re-plans", async () => {
     const store = new PostgresWorkflowStore(pool);
     const engine = new WorkflowEngine({ store, now: () => 1000 });
-    const workflowId = await rejectedWorkflow(engine, {
-      code: "resource_conflict",
-      message: "测试台正被占用",
-    });
+    const workflowId = await conflictRejectedWorkflow(engine);
 
     let planned = 0;
     const orch = orchestratorWith(engine, store, () => { planned++; });
@@ -187,7 +201,7 @@ describe("resource conflict ends the workflow", () => {
   it("keeps re-planning for any other reject reason", async () => {
     const store = new PostgresWorkflowStore(pool);
     const engine = new WorkflowEngine({ store, now: () => 1000 });
-    const workflowId = await rejectedWorkflow(engine, { code: "capability_unavailable" });
+    const workflowId = await otherRejectedWorkflow(engine);
 
     let planned = 0;
     const orch = orchestratorWith(engine, store, () => { planned++; });

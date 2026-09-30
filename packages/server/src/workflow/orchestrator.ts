@@ -8,7 +8,7 @@ import {
 import { WorkflowBlockedError, type WorkflowEngine } from "./engine";
 import type { Planner, PlannerDecision } from "./planner";
 import { isActiveStep, isTerminalWorkflow } from "./stateMachine";
-import type { StepSnapshot, WorkflowStore } from "./store";
+import type { StepSnapshot, WorkflowEvent, WorkflowStore } from "./store";
 
 export type { Planner, PlannerDecision, PlannerInput } from "./planner";
 
@@ -56,8 +56,23 @@ export function validateStepInput(
 }
 
 /**
- * Decides what happens next for a workflow. It respects One-Step Planning
- * (ADR-002): while a step is active, or once the workflow is terminal, it does
+ * A provider that cannot get the resource reports `REJECTED(reject_reason.code =
+ * "resource_conflict")` after asking the engineer, and the verdict is final:
+ * the workflow ends instead of re-planning around it (WORKFLOW_SPEC.md §4.4 —
+ * the Server does not arbitrate resources). The reason only exists in the event
+ * log, because steps do not persist their reject reason.
+ */
+export function hasResourceConflict(events: WorkflowEvent[]): boolean {
+  return events.some((event) => {
+    if (event.kind !== "step_status") return false;
+    const payload = (event.payload ?? {}) as { state?: unknown; rejectReason?: unknown };
+    const code = (payload.rejectReason as { code?: unknown } | undefined)?.code;
+    return payload.state === "REJECTED" && code === "resource_conflict";
+  });
+}
+
+/**
+ * Decides what happens next for a workflow. It respects One-Step Planning * (ADR-002): while a step is active, or once the workflow is terminal, it does
  * nothing and never consults the planner. Planner failures and schema-invalid
  * planner output are turned into deterministic failures — never a stall.
  */
@@ -72,6 +87,18 @@ export class WorkflowOrchestrator {
     if (steps.some((step) => isActiveStep(step.state))) return {};
 
     const events = await this.deps.store.listEvents(workflowId);
+
+    // A provider that cannot get the resource reports it honestly, and the
+    // planner must not quietly route around it by proposing something else
+    // (WORKFLOW_SPEC.md §4.4 — the Server does not arbitrate resources). Cancel
+    // intent still wins: engine.fail converges a CANCELLING workflow to
+    // CANCELLED.
+    if (hasResourceConflict(events)) {
+      console.warn(`[orchestrator] a provider reported a resource conflict; ending ${workflowId}`);
+      await this.deps.engine.fail(workflowId, "resource_conflict");
+      return {};
+    }
+
     const declared = this.deps.capabilitiesOf?.(workflow.sessionId) ?? [];
 
     // The reserved advisory capability is implicitly supported by every Client
