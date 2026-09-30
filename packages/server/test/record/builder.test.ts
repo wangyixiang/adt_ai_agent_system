@@ -48,6 +48,19 @@ const ev = (kind: WorkflowEventKind, payload: unknown, id = `ev_${kind}`): Workf
 });
 
 describe("record builder", () => {
+  it("reports the wall-clock duration of the workflow", () => {
+    // `created_at`/`ended_at` are wall-clock readings, so their difference is a
+    // real elapsed time (RECORD_SPEC.md §5/§6.1).
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [ev("workflow_created", { request: { text: "x" } })],
+      userRequest: { text: "x" },
+      recordId: "rec_duration",
+    });
+    expect(record.summary.duration_ms).toBe(workflow.endedAt! - workflow.createdAt);
+  });
+
   it("includes only what actually happened, in insertion order", () => {
     const record = buildRecord({
       workflow,
@@ -348,8 +361,7 @@ describe("record builder", () => {
     expect(record.entries.map((e) => e.kind)).toEqual(["evidence_received"]);
   });
 
-  it("explains a resource conflict in the engineer's terms", () => {
-    const record = buildRecord({
+  it("explains a resource conflict in the engineer's terms", () => {    const record = buildRecord({
       workflow: { ...workflow, state: "FAILED", terminalReason: "resource_conflict" },
       steps: [step({ state: "REJECTED" })],
       events: [

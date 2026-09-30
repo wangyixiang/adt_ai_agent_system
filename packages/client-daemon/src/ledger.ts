@@ -18,6 +18,12 @@ export interface LedgerEntry {
 }
 
 export interface Ledger {
+  /**
+   * Whether entries survive a process restart. Resuming a logical session is
+   * only safe when they do: the Server re-dispatches mid-flight steps, and an
+   * empty ledger would look like "never seen" (see `stepRunner`).
+   */
+  readonly persistent: boolean;
   get(key: string): LedgerState | undefined;
   /** Written before a side effect starts, so a later re-dispatch knows. */
   markInFlight(key: string): void;
@@ -99,6 +105,8 @@ export function openLedger(location: string): Ledger {
   const del = db.prepare("DELETE FROM ledger WHERE key = ?");
 
   return {
+    persistent: location !== ":memory:",
+
     get(key: string): LedgerState | undefined {
       const row = read.get(key) as
         | { state: string; type: string | null; result: string | null }
@@ -113,11 +121,11 @@ export function openLedger(location: string): Ledger {
           result: JSON.parse(row.result ?? "null") as unknown,
         };
       } catch {
-        // A corrupted row must not throw out of the step runner (that would
-        // leave the step without a status). Treat it as "no record" — the
-        // action is re-confirmed rather than silently replayed.
-        console.warn(`[ledger] unreadable entry for ${key}; ignoring it`);
-        return undefined;
+        // A `done` row we cannot read is *not* "never seen": the action
+        // happened. Reporting it as in-flight makes the runner answer UNKNOWN
+        // (WORKFLOW_SPEC.md §4.3) instead of running it a second time.
+        console.warn(`[ledger] unreadable entry for ${key}; treating it as unconfirmed`);
+        return { state: "in_flight" };
       }
     },
 

@@ -294,6 +294,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     planner,
     records,
     recordStore,
+    now,
   });
 
   registerSessionResume({

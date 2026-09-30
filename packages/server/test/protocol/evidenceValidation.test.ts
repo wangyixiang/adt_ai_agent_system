@@ -129,7 +129,7 @@ describe("evidence output validation", () => {
     const { c, workflowId, stepId } = await running(srv);
 
     // The client re-declares the capability without its output schema before
-    // completing the step (CAPABILITY_SPEC.md §4.1: in-flight steps are unaffected).
+    // completing the step (CAPABILITY_SPEC.md §4: in-flight steps are unaffected).
     c.sync({
       mode: "full",
       revision: 1,

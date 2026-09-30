@@ -34,7 +34,7 @@ describe("expected_output", () => {
     });
 
     // Persisted, so a later capability.sync cannot move the goalposts for an
-    // in-flight step (CAPABILITY_SPEC.md §4.1).
+    // in-flight step (CAPABILITY_SPEC.md §4).
     expect(step.expectedOutput).toBe("git_status");
     expect((await store.getStep(step.id))!.expectedOutput).toBe("git_status");
   });

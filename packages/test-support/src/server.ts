@@ -69,6 +69,8 @@ export interface TestServerOptions {
   /** Blob retention for tests that want expiry to happen now. */
   blobRetentionMs?: number;
   blobLifecycleIntervalMs?: number;
+  /** Ordering clock for engine/protocol event timestamps (default `Date.now`). */
+  now?: () => number;
 }
 
 export interface TestServer {
@@ -115,7 +117,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   // Ordering clock (events, workflow timestamps) vs wall clock (persisted step
   // deadlines, which must survive a restart). The timeout monitor MUST use the
   // wall clock, or it compares against a `performance.now()` base.
-  const now = () => Date.now();
+  const now = opts.now ?? (() => Date.now());
   const wallClock = now;
   const engine = new WorkflowEngine({
     store: workflowStore,
@@ -212,6 +214,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     planner,
     records,
     recordStore: realRecordStore,
+    now,
   });
 
   registerSessionResume({

@@ -73,4 +73,35 @@ describe("workflow timestamps", () => {
     expect(ended.state).toBe("FAILED");
     expect(ended.terminalReason).toBe("time_budget");
   });
+
+  it("does not trip the budget on a workflow created before the wall clock", async () => {
+    // A live workflow carried over from the previous deploy: its `created_at`
+    // was written on that process's monotonic clock, so measuring it against a
+    // wall clock would read as decades of runtime.
+    const wf = {
+      id: "wf_legacy",
+      userId: "usr_1",
+      sessionId: "sess_1",
+      userRequest: { text: "x" },
+      state: "RUNNING" as const,
+      terminalReason: null,
+      criteria: { mode: "open" as const, revision: 0 },
+      createdAt: 1000,
+      endedAt: null,
+      notSolvedRounds: 0,
+    };
+    await store.createWorkflow(wf, {
+      id: "ev_legacy",
+      workflowId: wf.id,
+      kind: "workflow_created",
+      ts: 1000,
+      payload: {},
+    });
+
+    const engine = engineWith({ ...DEFAULT_GUARDRAILS, timeBudgetMs: 60_000 });
+    const step = await engine.dispatchStep(wf.id, readOnly);
+
+    expect(step.state).toBe("PENDING");
+    expect((await store.getWorkflow(wf.id))!.state).toBe("RUNNING");
+  });
 });

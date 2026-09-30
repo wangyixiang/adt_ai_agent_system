@@ -28,6 +28,13 @@ export interface WorkflowProtocolDeps {
   planner: Planner;
   records: RecordService;
   recordStore: RecordStore;
+  /**
+   * The engine's ordering clock, so protocol-recorded events (e.g.
+   * `completion_candidate`) carry the same time base as engine events
+   * (RECORD_SPEC.md §6.1: entry `ts` is a monotonic reading, ordering is by
+   * entry order).
+   */
+  now?: () => number;
 }
 
 export interface WorkflowProtocolHandle {
@@ -174,6 +181,7 @@ async function withOutputValidation(
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowProtocolHandle {
   const { router, sessions, engine, store, orchestrator, planner, records, recordStore } = deps;
+  const now = deps.now ?? (() => Math.floor(performance.now()));
   const notified = new Set<string>();
 
   const send = (
@@ -221,7 +229,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowPr
     const workflow = await engine.get(workflowId);
     if (!workflow) return;
     await store.saveWorkflowWithEvents(workflow, [
-      { id: `ev_${randomUUID()}`, workflowId, kind, ts: Date.now(), payload },
+      { id: `ev_${randomUUID()}`, workflowId, kind, ts: now(), payload },
     ]);
   };
 

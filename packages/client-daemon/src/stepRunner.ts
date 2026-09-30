@@ -116,7 +116,45 @@ export function attachStepRunner(
   return runner;
 }
 
+/**
+ * Keys this process is executing right now. The ledger only knows what past
+ * attempts did; this covers the window between "check the ledger" and "mark it
+ * in flight", where a racing re-dispatch of the same step would otherwise slip
+ * through and run a second time.
+ */
+const inProcess = new Set<string>();
+
+/**
+ * Runs one dispatched step. A key already being processed here is answered
+ * `UNKNOWN` rather than executed: like an unreadable ledger entry, the outcome
+ * cannot be confirmed (WORKFLOW_SPEC.md §4.3).
+ */
 async function runStep(
+  deps: StepRunnerDeps,
+  run: CommandRunner,
+  dispatch: StepDispatchPayload,
+): Promise<void> {
+  const key = dispatch.idempotency_key ?? null;
+  if (key !== null) {
+    if (inProcess.has(key)) {
+      deps.connection.send("step.status", {
+        workflow_id: dispatch.workflow_id,
+        step_id: dispatch.step_id,
+        status: "UNKNOWN",
+      });
+      return;
+    }
+    inProcess.add(key);
+  }
+
+  try {
+    await executeStep(deps, run, dispatch);
+  } finally {
+    if (key !== null) inProcess.delete(key);
+  }
+}
+
+async function executeStep(
   deps: StepRunnerDeps,
   run: CommandRunner,
   dispatch: StepDispatchPayload,
@@ -210,6 +248,18 @@ async function runStep(
       send("UNKNOWN");
       return;
     }
+    // The same key already being processed right here (a re-dispatch racing the
+    // original) must not become a second execution either — see `runStep`.
+  } else if (adapter.spec.side_effect) {
+    // A side effect with no key cannot be made safe to retry, and silently
+    // running it once more after a reconnect is exactly what §4.3 forbids.
+    send("REJECTED", {
+      reject_reason: {
+        code: "unsafe_operation",
+        message: "a side-effecting step must carry an idempotency_key",
+      },
+    });
+    return;
   }
 
   /** The action did not happen, so it is not "unknown" — forget the marker. */

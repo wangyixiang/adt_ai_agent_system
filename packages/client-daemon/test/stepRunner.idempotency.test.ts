@@ -181,4 +181,18 @@ describe("idempotency ledger", () => {
     // allowed to run.
     expect(ledger.get("idem_1")).toBeUndefined();
   });
+
+  it("refuses a side effect that carries no idempotency key at all", async () => {
+    const h = harness();
+    h.dispatch({ ...payload, idempotency_key: null });
+    await h.settle();
+
+    // Without a key there is nothing to make a retry safe, and a reconnect
+    // would run the action twice — so do not run it once.
+    expect(h.runs).toBe(0);
+    expect(h.sent.at(-1)!.payload).toMatchObject({
+      status: "REJECTED",
+      reject_reason: { code: "unsafe_operation" },
+    });
+  });
 });

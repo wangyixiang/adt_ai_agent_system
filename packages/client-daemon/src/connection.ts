@@ -58,6 +58,12 @@ export class DaemonConnection {
       // which would otherwise shift the array under this loop.
       for (const handler of [...(this.listeners.get(env.type) ?? [])]) handler(env);
     });
+    // A socket can fail at any time. Without a listener Node treats an 'error'
+    // event as unhandled and throws it out of the event loop, which would take
+    // the daemon down with it.
+    ws.on("error", (error: Error) => {
+      console.warn(`[daemon] socket error: ${error.message}`);
+    });
   }
 
   static connect(

@@ -64,6 +64,17 @@ export class ClientDaemon {
     const sessionStore = opts.sessionStore ?? openSessionStore(":memory:");
     const remembered = sessionStore.load();
 
+    // Resuming means the Server may hand back a step we had already begun.
+    // Acting on that safely needs a ledger that outlives this process: with a
+    // memory-only one, "no entry" would look like "never ran" and the side
+    // effect would happen a second time.
+    const resumable = remembered !== null && ledger.persistent;
+    if (remembered && !ledger.persistent) {
+      console.warn(
+        "[daemon] not resuming: the idempotency ledger is not persistent, so a re-dispatched side effect could run twice",
+      );
+    }
+
     let connection: DaemonConnection;
     try {
       connection = await DaemonConnection.connect(
@@ -72,7 +83,7 @@ export class ClientDaemon {
           credentials: opts.credentials,
           clientInfo: opts.clientInfo,
           capabilities: registry.descriptors(),
-          session: remembered ? { sessionId: remembered.sessionId } : null,
+          session: resumable ? { sessionId: remembered!.sessionId } : null,
         },
         (ready, stateSync) => {
           const runStep = attachStepRunner({

@@ -117,6 +117,17 @@ const newWorkflowId = () => `wf_${randomUUID()}`;
 const newStepId = () => `step_${randomUUID()}`;
 const newEventId = () => `ev_${randomUUID()}`;
 
+/**
+ * Wall-clock readings are at least this large (2001-09-09). A smaller
+ * `createdAt` is a legacy stamp written by an older process on its monotonic
+ * clock, and must not be measured against a wall clock — that would read as
+ * "it has been running for 50 years" and trip the time budget immediately.
+ */
+const WALL_CLOCK_FLOOR_MS = 1_000_000_000_000;
+
+const elapsedSince = (createdAt: number, wallClockNow: number): number =>
+  createdAt >= WALL_CLOCK_FLOOR_MS ? Math.max(0, wallClockNow - createdAt) : 0;
+
 export class WorkflowEngine {
   private readonly store: WorkflowStore;
   private readonly guardrails: GuardrailConfig;
@@ -328,8 +339,9 @@ export class WorkflowEngine {
           notSolvedRounds: workflow.notSolvedRounds,
           // Wall clock on both sides: `createdAt` is persisted and read back by
           // a possibly-newer process, so a monotonic reading would make the
-          // budget unenforceable after a restart.
-          elapsedMs: this.wallClock() - workflow.createdAt,
+          // budget unenforceable after a restart (and a legacy monotonic stamp
+          // must not be read as "running for decades").
+          elapsedMs: elapsedSince(workflow.createdAt, this.wallClock()),
         },
         this.guardrails,
       );

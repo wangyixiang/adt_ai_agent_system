@@ -59,14 +59,15 @@ describe("openLedger", () => {
     ledger.close();
   });
 
-  it("treats an unreadable entry as no record instead of throwing at the step runner", () => {
+  it("treats an unreadable entry as unconfirmed, not as never seen", () => {
     const path = join(mkdtempSync(join(tmpdir(), "adt-ledger-")), "ledger.db");
     const first = openLedger(path);
     first.markDone("idem_1", "reset_ack", { reset_ack: true });
     first.close();
 
-    // Simulate a corrupted / schema-drifted row (the runner must not be the one
-    // that discovers it by crashing).
+    // Simulate a corrupted / schema-drifted row. The action *did* happen, so the
+    // safe reading is "we cannot confirm the outcome" — which the runner answers
+    // with UNKNOWN instead of executing a second time (WORKFLOW_SPEC.md §4.3).
     const { DatabaseSync } = sqlite();
     const raw = new DatabaseSync(path);
     raw.exec("UPDATE ledger SET result = 'not json' WHERE key = 'idem_1'");
@@ -74,10 +75,22 @@ describe("openLedger", () => {
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const reopened = openLedger(path);
-    expect(reopened.get("idem_1")).toBeUndefined();
+    expect(reopened.get("idem_1")).toEqual({ state: "in_flight" });
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
     reopened.close();
+  });
+
+  it("knows whether its entries survive a restart", () => {
+    const file = openLedger(join(mkdtempSync(join(tmpdir(), "adt-ledger-")), "ledger.db"));
+    expect(file.persistent).toBe(true);
+    file.close();
+
+    // Resuming a session on top of a memory-only ledger is unsafe, so the
+    // caller needs to be able to tell the difference.
+    const memory = openLedger(":memory:");
+    expect(memory.persistent).toBe(false);
+    memory.close();
   });
 
   it("reads a row written by the older two-column ledger as done", () => {

@@ -18,7 +18,7 @@
 - **台账三态语义（本阶段确立）**：`未见过`（可执行）／`执行中`（**不得执行**，报 `UNKNOWN` 待对账）／`已完成`（回放结果）。失败/拒绝**清除**标记（不是"执行中"）。
 - **只读 Step 不碰台账**（没有 `idempotency_key`）：重发即重跑，读操作幂等。
 - **`output_type` 是声明的一部分**，不是自由文本：它必须与 `evidence.type` 一致；缺失声明时不阻断（`CAPABILITY_SPEC.md` §5.4 的兼容口子照旧，只是告警）。
-- **校验依据冻结在 Step 上**：`output_type` 与 `output_schema` 一样在派发时快照（`CAPABILITY_SPEC.md` §4.1），不读实时清单。
+- **校验依据冻结在 Step 上**：`output_type` 与 `output_schema` 一样在派发时快照（`CAPABILITY_SPEC.md` §4），不读实时清单。
 - **时间基准（本阶段确立）**：**持久化到库里、且会被人读的**时间一律墙钟（Workflow 的 `created_at`/`ended_at`、Step 的 `updated_at`）；**事件的 `ts` 保持单调**（`PROTOCOL_SPEC.md` §2 明确如此，且排序靠 `seq` 不靠 `ts`）。这条写进文档，避免下次又猜。
 - **不 push**；合并用本地 `ff-merge`（见 `docs/superpowers/WORKFLOW.md`）。
 - **文档纪律**：`PROTOCOL_SPEC.md` v0.9 → **v0.10**（§5.2 补客户端 resume 行为、§6 Manifest 增 `output_type`、§8 说明 `expected_output` 的来源与校验）、`CAPABILITY_SPEC.md` v0.9 → **v0.10**（§7-5 关闭）、`RECORD_SPEC.md` v0.7 → **v0.8**（时间基准说明）、`docs/REQUIREMENTS.md` §7 行同步、README 当前状态。
@@ -114,7 +114,7 @@ Expected: FAIL（模块不存在 / `markInFlight` 等未定义）
 
 - [ ] **Step 3: 实现**
 
-`sessionStore.ts` 复制 `ledger.ts` 的 `createRequire("node:sqlite")` 加载方式（Vite 解析不了 `node:sqlite`，见 Task 2 的注释）；表 `session(id text primary key, session_id text not null, user_id text not null, updated_at bigint not null)`，只保留一行（固定 `id='current'`）。
+`sessionStore.ts` 复制 `ledger.ts` 的 `createRequire("node:sqlite")` 加载方式（Vite 解析不了 `node:sqlite`，见 Task 2 的注释）；表 `session(id text primary key, session_id text not null, user_id text not null)`，只保留一行（固定 `id='current'`）。
 `ledger.ts` 把表改成 `ledger(key text primary key, state text not null, type text, result text)`：`markInFlight` 写 `state='in_flight'`；`markDone` 写 `state='done'` + type/result（覆盖）；`clear` 删除该行；`get` 按 `state` 还原三态，坏 JSON 仍按"无记录"处理并告警。**迁移**：老库里的行没有 `state` 列，`openLedger` 时 `ALTER TABLE ... ADD COLUMN` 不存在才加，并把 `result` 非空的老行补成 `state='done'`（老版本只在完成时写行）。
 
 - [ ] **Step 4: 运行测试确认通过**
@@ -225,7 +225,7 @@ git commit -m "feat(daemon): never silently re-run a side effect the ledger cann
 - Produces:
   - `ClientDaemonOptions.sessionStore?: SessionStore`（默认内存实现；文件版由宿主传入，与 `ledger` 同样口径）
   - `DaemonConnection.connect(cfg, onReady)`：先按 `cfg.session`（`{sessionId} | null`）尝试 `session.resume`，成功则用 `workflow.state_sync` 的 `session_id`；**失败/超时/`session_expired`/`auth_failed` → 改用 `session.hello`**（并把 `session` 置空由调用方持久化）
-  - `ClientConfig` 增 `session?: { sessionId: string } | null` 与 `knownWorkflows?: string[]`
+  - `ClientConfig` 增 `session?: { sessionId: string } | null`；`known_workflows` 固定传 `[]`（服务端只用它筛选已终态 Workflow，不值得为此在客户端持久化任何东西）
   - **就绪信号**：`hello` 的自然是 `session.welcome`；`resume` 的是它回的 `workflow.state_sync`（信封上的 `session_id`/`user_id` 即新会话身份）。因此 `onReady` 的签名扩为 `onReady(connection, stateSync?: WorkflowStateSyncPayload)`——daemon 用它拿到 `pending_step`；同时仍 `connection.on("workflow.state_sync", …)` 兜住"连接建立之后又来的"那一次
   - `ClientDaemon.connect`：连接成功后 `sessionStore.save({sessionId, userId})`；断线/失败时不清（下次还要试 resume）；回落成功则 `save` 新会话
   - `attachStepRunner` 暴露 `runStep(deps, run, dispatch): Promise<void>`（由 `handleStep` 改名导出），事件处理器只负责调用它
@@ -511,7 +511,7 @@ git commit -m "fix(workflow): stamp workflow timestamps with the wall clock"
 
 **Files:**
 - Modify: `docs/specs/PROTOCOL_SPEC.md`（v0.9 → **v0.10**：§5.2 补客户端 resume 的期望行为与回落、§6 Manifest 增 `output_type`、§8 说明 `expected_output` 来自派发快照并被用于校验 `evidence.type`）
-- Modify: `docs/specs/CAPABILITY_SPEC.md`（v0.9 → **v0.10**：§7-5 关闭；§4.1 的"派发时冻结"补上 `output_type`）
+- Modify: `docs/specs/CAPABILITY_SPEC.md`（v0.9 → **v0.10**：§7-5 关闭；§4 的"派发时冻结"补上 `output_type`）
 - Modify: `docs/specs/RECORD_SPEC.md`（v0.7 → **v0.8**：§6 旁补一句时间基准——`created_at`/`ended_at`/`duration_ms` 是墙钟；entry 的 `ts` 是单调读数，排序以条目顺序为准）
 - Modify: `docs/REQUIREMENTS.md`（§7 三行版本号；NFR-3 的落实说明补"客户端 resume 已实现"）
 - Modify: `README.md`（当前状态补本阶段；`后续` 仍是 P4d）
@@ -557,3 +557,29 @@ git commit -m "docs: client resume, manifest output_type and the wall-clock conv
 
 1. **P4d（KB 导出）**：ADR-005 出站。
 2. 审计列出的其余开放项（D4–D8：超时对齐、LLM 重试、Windows 适配器调研、client-ui、P4c 的 N8/N9 等）——**按人指定顺序处理**，本阶段不动。
+
+---
+
+## Review 修复轮（Review fix pass）
+
+整体评审的结论：**可合并，无阻塞项**；四项修复各自都有"一旦回退就会失败"的测试；评审逐点追踪了重连 / 重发 / "标记与执行之间崩溃"三条路径，确认在**台账持久且可读**的前提下不会发生第二次物理执行。以下为逐条裁决（含 deferred minors 清点）。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **A1** 持久 `sessionStore` + 内存台账的组合：重启后 resume 成功、台账为空 → **重复执行副作用** | **已修** | `Ledger` 增 `persistent`；`ClientDaemon.connect` 仅在台账可跨进程时才 resume，否则告警并新开会话（`resume.test.ts` 新增第 3 例） |
+| **A2** `state='done'` 但 JSON 坏掉 → 被当作"没发生过" → 重新执行 | **已修** | 坏行按 `in_flight` 处理（不可确认 → 让 Runner 报 `UNKNOWN`），语义与 §4.3 一致（`ledger.test.ts` 更新并改名） |
+| **A3** 同一 `idempotency_key` 并发处理没有互斥（检查与标记之间有空窗） | **已修** | 进程内 `inProcess` 集合：重复派发 → `UNKNOWN`；`runStep` 包一层并在 `finally` 释放（原执行体改名 `executeStep`） |
+| **A4** 副作用 Step 缺 `idempotency_key` 时无保护地执行 | **已修** | 缺 key 的副作用 Step → `REJECTED(unsafe_operation)`（不执行；`stepRunner.idempotency.test.ts` 新增用例） |
+| **A5** 握手成功后 socket `'error'` 无人监听（我引入的回归：`teardown` 摘掉了 error 处理器）→ 可能掀翻 daemon | **已修** | `DaemonConnection` 构造时挂一个记录型 error 处理器（`connection.socketError.test.ts`：用假 socket 断言 emit 不抛且告警） |
+| **A6** `completion_candidate` 事件的 `ts` 用墙钟，与其它事件（单调）不同源 → 我新写的 `RECORD_SPEC` §6.1 变成假话 | **已修** | `registerWorkflowProtocol` 增可注入 `now`（与引擎同源），`start()`/test-support 各传自己的时钟（`recordProtocol.test.ts`：注入 `now: 4242`，断言**所有** entry 的 `ts` 都是 4242） |
+| **A7** 升级前创建的 Workflow，其 `created_at` 是单调读数 → 配了时间预算的部署会**立刻误判**为超时 | **已修** | `elapsedSince()`：`createdAt` 小于墙钟下限（2001-09-09）时按"无法测量"处理（不计入预算）＋测试 |
+| **A8** `CAPABILITY_SPEC.md §4.1` 是**悬空引用**（该文件没有 §4.1，在途规则在 §4），且被本阶段传播到迁移注释与测试 | **已修** | 迁移 007/010、两个测试注释、本计划统一改为 §4 |
+| **A9** 计划与实现不一致：`ClientConfig.knownWorkflows` 未加（固定 `[]`）、会话表没有 `updated_at` 列 | **已修（改计划）** | 计划正文两处改为与实现一致（计划是被执行的契约，必须同真） |
+| **A10（延后）** 重连期间清单变更不会同步（resume 不重发 `capability.sync`，服务端保留旧声明） | **已记录为接受的限制** | `PROTOCOL_SPEC.md` §5.2 写明；增量同步留给后续（需要 `revision` 语义扩展，超出 NFR-3 范围） |
+| **A11（延后）** "台账已有结果 → 回放 `COMPLETED`"只有单元测试、没有端到端 | **延后（理由）** | 回放是纯客户端分支（不依赖服务端协作），单元测试已覆盖；端到端已覆盖"`pending_step` → Runner"这条通路（`reconnect.e2e`）。等出现真实回放场景再补 |
+| **A12（延后）** `summary.duration_ms` 没有直接断言 | **已修** | 见下：`builder.test.ts` 追加断言 |
+| **A13（延后）** 没有测试断言 resume 时**跳过** `capability.sync`（清单存活） | **已修** | `resume.test.ts` 断言重连后该会话的能力仍在、且没有"陈旧 revision"告警 |
+
+> 说明：A12/A13 是评审在"测试质量"一节列出的盲区，同样按"逐条裁决"处理，不留悬空。
+
+**本阶段刻意不做**（与 `## Self-Review` 末节一致）：D4–D8、P4c 的 N8/N9、内联阈值强制、能力层"大输出自动外置"。

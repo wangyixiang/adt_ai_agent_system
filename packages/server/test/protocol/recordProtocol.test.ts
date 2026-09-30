@@ -14,8 +14,10 @@ const script = [
   { kind: "completion_candidate" as const, summary: "看起来好了", evidenceRefs: [] },
 ];
 
-async function completedWorkflow(): Promise<{ srv: TestServer; c: TestClient; recordId: string }> {
-  const srv = await startTestServer({ planner: [...script] });
+async function completedWorkflow(
+  options: { now?: () => number } = {},
+): Promise<{ srv: TestServer; c: TestClient; recordId: string }> {
+  const srv = await startTestServer({ planner: [...script], ...options });
   const c = await TestClient.connect(srv.url);
   await c.hello({ username: "alice", secret: "pw-alice" });
 
@@ -59,8 +61,29 @@ async function completedWorkflow(): Promise<{ srv: TestServer; c: TestClient; re
 }
 
 describe("record and report protocol", () => {
-  it("filters by wall-clock time range", async () => {
-    const { srv, c, recordId } = await completedWorkflow();
+  it("stamps every entry with the same ordering clock", async () => {
+    // One clock for the whole log: an entry written by the protocol layer must
+    // not land on a different time base than the engine's own events
+    // (RECORD_SPEC.md §6.1).
+    const { srv, c, recordId } = await completedWorkflow({ now: () => 4242 });
+
+    const got = await c.sendRaw({
+      ...c.base("record.get_request"),
+      payload: { record_id: recordId },
+    });
+    const record = (got.payload as { record: { entries: Array<{ kind: string; ts: number }> } })
+      .record;
+
+    expect(record.entries.some((entry) => entry.kind === "completion_candidate")).toBe(true);
+    expect(record.entries.map((entry) => entry.ts)).toEqual(
+      record.entries.map(() => 4242),
+    );
+
+    await c.close();
+    await srv.close();
+  });
+
+  it("filters by wall-clock time range", async () => {    const { srv, c, recordId } = await completedWorkflow();
 
     const within = new Date().toISOString();
     const listWith = async (from: string, to: string) =>
