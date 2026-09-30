@@ -92,7 +92,10 @@ export class SessionManager implements SessionResolver {
     if (!session) return null;
     this.byConn.delete(connectionId);
     session.connection = null;
-    session.disconnectedAt = this.now();
+    // Set-once: a heartbeat death may already have stamped the epoch, and the
+    // later socket close must not push it forward — the session TTL and the
+    // reclamation grace must count from the same moment.
+    if (session.disconnectedAt === null) session.disconnectedAt = this.now();
     return session;
   }
 
@@ -108,6 +111,14 @@ export class SessionManager implements SessionResolver {
   attach(sessionId: string, connection: Connection): Session | null {
     const session = this.byId.get(sessionId);
     if (!session || this.isExpired(session)) return null;
+
+    // The connection may have been serving another session; release that one
+    // so no session is left holding a connection it no longer owns.
+    const occupant = this.byConn.get(connection.id);
+    if (occupant && occupant.id !== session.id) {
+      occupant.connection = null;
+      if (occupant.disconnectedAt === null) occupant.disconnectedAt = this.now();
+    }
 
     if (session.connection) this.byConn.delete(session.connection.id);
     session.connection = connection;

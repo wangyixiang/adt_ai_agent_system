@@ -62,4 +62,35 @@ describe("SessionManager", () => {
     expect(sessions.attach(s.id, makeConnection("c2"))).toBeNull();
     expect(sessions.attach("sess_nope", makeConnection("c3"))).toBeNull();
   });
+
+  it("releases the connection from the session it was previously serving", () => {
+    let t = 1000;
+    const sessions = new SessionManager({ ttlMs: 100, now: () => t });
+    const conn = makeConnection("c1");
+    const a = sessions.create("usr_1", conn);
+    const b = sessions.create("usr_1", makeConnection("c2"));
+
+    // The same connection is rebound to another session (reachable via a
+    // resume whose payload targets a different session of the same user).
+    expect(sessions.attach(b.id, conn)).not.toBeNull();
+
+    expect(sessions.byConnection("c1")!.id).toBe(b.id);
+    expect(sessions.get(a.id)!.connection).toBeNull();
+  });
+
+  it("keeps the first disconnect epoch when the socket closes later", () => {
+    let t = 1000;
+    const sessions = new SessionManager({ ttlMs: 100, now: () => t });
+    const s = sessions.create("usr_1", makeConnection("c1"));
+
+    // Heartbeat death stamps the epoch ...
+    sessions.markDisconnected(s.id);
+    t += 40;
+    // ... and the later socket close must not push it forward.
+    sessions.detach("c1");
+    expect(sessions.get(s.id)!.disconnectedAt).toBe(1000);
+
+    t += 61; // 1101: past the ttl measured from the first death
+    expect(sessions.sweep()).toEqual([s.id]);
+  });
 });
