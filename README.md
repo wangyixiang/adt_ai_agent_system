@@ -14,8 +14,8 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 - **P3b client-daemon 只读闭环**：客户端自有的 Capability 声明（`CapabilityRegistry`）、可插拔适配器（`git.collect_diagnostics` / `filesystem.read_file` / `docker.inspect_container` + 占位能力）、工作区约束与子进程超时、`step.dispatch` → `step.status` 执行链路。
 - **P4a 受控执行与 `UNKNOWN` 对账**：
   - **受控执行**：`requires_confirmation` 的副作用 Step 绝不自动执行——Client 先 `WAITING(user_confirmation)`，由宿主回调决定，拒绝走 `REJECTED(user_declined)`；`side_effect` 且未要求确认的 Step 仍被本地拦下（防御 Server 漏标）。新增副作用能力 `terminal.execute_command`、`sim_rig.trigger_reset`，以及只读对账伴随能力 `sim_rig.query_state`。
-  - **建议路径**：`human.manual_action` 由 daemon 拦截，展示 `instruction` 并把工程师反馈包装为 `evidence(source=user_input, type=manual_action_result)`。
-  - **`UNKNOWN` 对账**：Step 超时只读 → `FAILED(timeout)`、副作用 → `UNKNOWN`（人类等待豁免），`StepTimeoutMonitor` 扫描并在超时后推进 Workflow；对账裁定由 Planner 产出（`PlannerDecision.reconcile`，LLM 侧有 `action=reconcile` 工具），Engine 只落在「UNKNOWN 才能被收敛」的确定性规则上。State 机补齐 `WAITING → REJECTED`、`PENDING → UNKNOWN` 两条 spec 边。
+  - **建议路径**：`human.manual_action` 由 daemon 拦截，展示 `instruction` 并把工程师反馈包装为 `evidence(source=user_input, type=manual_action_result)`；Server 侧把该保留能力补进"规划器可选能力"，否则规划器永远不会提议它。
+  - **`UNKNOWN` 对账**：Step 超时只读 → `FAILED(timeout)`、副作用 → `UNKNOWN`（人类等待豁免，重复 `RUNNING`/`progress` 视为保活、重置计时器），`StepTimeoutMonitor` 扫描并在超时后推进 Workflow；对账裁定由 Planner 产出（`PlannerDecision.reconcile`，LLM 侧有 `action=reconcile` 工具且必须给出 `evidence_refs`），Engine 只落在确定性规则上。存在未对账 `UNKNOWN` 时**禁止再下发副作用 Step**（`WORKFLOW_SPEC.md` §4.3：规划器连副作用能力都看不到，Engine 再兜一层）。State 机补齐 `WAITING → REJECTED`、`PENDING → UNKNOWN` 两条 spec 边。
   - **幂等台账**：Server 为副作用 Step 生成 Workflow 内稳定 `idempotency_key`；Client 用 `node:sqlite` 持久化「键 → 结果」，重连重发同一 Step 直接回放、不重复执行。
   - **Record 忠实性**：`guardrail_triggered.ref.threshold` 带出配置阈值；工程师输入记为 `user_input` 条目；`reconciliation_resolved.ref.evidence_refs` 落盘。
 

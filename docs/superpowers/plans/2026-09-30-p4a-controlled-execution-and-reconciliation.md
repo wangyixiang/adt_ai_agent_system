@@ -953,3 +953,28 @@ P4a 验收通过后写 **P4b（blob 通道）**，再写 **P4c（KB 导出）**�
 - `pnpm -r --if-present test`：shared 13 · server 193（+1 skipped real-LLM）· client-daemon 54 → **260 passed / 1 skipped**。
 - `pnpm -r --if-present typecheck`：干净。
 - Review Focus 五条均有对应测试：T6 / T2+T3 / T4 / T8（含跨进程重开）/ T5；另有 Task 9 的四条端到端（确认执行、拒绝重规划、超时对账、resume 同键重发）。
+
+---
+
+## Review 修复轮（Review fix pass）
+
+整分支 fresh review 的结论是 **不可直接合并**，其中一条阻塞项与若干非阻塞项已在同一分支上修复（仍未合并）：
+
+**阻塞项 B1 — `WORKFLOW_SPEC.md` §4.3 的"副作用阻塞规则"此前无人执行。**
+规格原文："当一个 Workflow 内存在未对账的 `UNKNOWN` 时，Server **禁止再下发其它副作用 Step**（只读 Step 与对账 Step 允许）。" P4a 恰好让 `UNKNOWN` 从"客户端的罕见路径"变成"服务端计时器的常规路径"，因此在这一阶段补齐：
+* `engine.dispatchStep` 增加确定性守卫：存在 `UNKNOWN` 时拒绝副作用 Step，抛 `WorkflowBlockedError`，不产生任何状态变更。
+* `orchestrator.advance` **在存在 `UNKNOWN` 时把副作用能力从规划器可选能力里摘掉**（主要防线，规格即以"不许选"表达），并把违反这条规则的规划器输出转为确定性的 `FAILED(planner_error)`——沿用既有"不可用的规划器输出 = 确定性失败，绝不悬挂"约定，而不是让 Workflow 停住。
+
+**非阻塞项修复：**
+* **N1 期限跨重启失效**：`updatedAt` 改为**墙钟**（`EngineDeps.wallClock`，默认 `Date.now`），事件/Workflow 的排序时间戳仍用单调的 `now`；`StepTimeoutMonitor` 的注入项由 `now` 更名为 `clock` 并要求传入引擎同款墙钟（原来的默认值 `performance.now()` 正是这个坑）。持久化的 `performance.now()` 对下一个进程没有意义。
+* **N2 重复 `RUNNING`/`progress` 不重置计时器**：`StepStatusUpdate` 的 `RUNNING` 变体带上可选 `progress`；`applyStepStatus` 对"重复 `RUNNING`"执行保活（刷新 `updatedAt` 并发一条 `step_status` 事件，不做状态转换），落实 `PROTOCOL_SPEC.md` §9 的"任意 `step.status` 重置计时器"。
+* **N3 建议路径在生产规划器下不可达**：保留能力 `human.manual_action` 与其 I/O schema 移入 `@adt/shared`（协议级保留名），编排层把它补进规划器可选能力——否则 `CAPABILITY_SPEC.md` §6 声明的"所有 Client 隐式支持"永远没有入口。新增端到端用例覆盖"指令进去、工程师反馈出来、Record 落 `user_input`"。
+* **N4 "没能运行"被记成 `COMPLETED(exit_code:-1)`**：`CommandResult` 增 `failure: "timeout" | "spawn"`（仅当进程没有给出正常退出码时设置），`terminal.execute_command` 据此记 `FAILED(timeout)` / `FAILED(capability_error)`；非零**退出码**仍是 `COMPLETED` 的观察。
+* **N5 对账可以不带证据**：`PlannerDecision.reconcile.evidenceRefs` 改为**必填**，`engine.reconcileUnknown` 拒绝空引用（`WORKFLOW_SPEC.md` §4.3"证据不足时退回工程师确认"），LLM 工具 schema 同步标记为 required。
+* **N6 `SPEC_VERSIONS.capability_spec` 仍是 `0.7`**：随 v0.8 更正。
+* **N7 健壮性**：台账读到损坏 JSON 视为"无记录"并告警（不再让整个 Step 卡住）；`StepTimeoutMonitor.sweep` 增加在途保护（避免两次扫描对同一 Step 重复推进）；`ClientDaemon.connect` 握手失败时关闭自己创建的台账。
+
+**本轮明确不做（记录为后续）：**
+* **`WORKFLOW_SPEC.md` §4.4 会话级副作用串行**（同一 `session` 内最多一个活跃副作用 Step）仍只有"每 Workflow 单步"这一层；跨 Workflow 的排队属于 P4b 的编排工作。
+* **正向 `user_confirmation`（confirmed）Record 条目**：确认目前只体现为 `RUNNING` + 后续证据，`RECORD_SPEC.md` §4 的 `decision: "confirmed"` 尚未单独落条目（P2b 起既有）。
+* **真实确认 UI**：宿主回调即本阶段交付面，交互界面归 client-ui。
