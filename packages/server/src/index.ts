@@ -181,7 +181,7 @@ import { selectPlanner } from "./llm/selectPlanner";
 import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
-import { kbConfigFromEnv } from "./kb/config";
+import { kbConfigFromEnv, kbWorstCaseMs } from "./kb/config";
 import { createHttpDepositor } from "./kb/depositor";
 import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
@@ -302,6 +302,20 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   // unavailable, and the protocol says so instead of failing at call time.
   const kbConfig = kbConfigFromEnv(process.env);
   const knowledgeDepositor = kbConfig ? createHttpDepositor(kbConfig) : null;
+  if (kbConfig) {
+    // A synchronous export blocks this connection's message chain (ADR-005 §4),
+    // so a slow one can starve its own heartbeats and get the session reclaimed.
+    // Defaults are safe (≈31.5s vs 45s); a raised KB_TIMEOUT_MS is not.
+    const livenessMs = (opts.heartbeatIntervalMs ?? 15_000) * (opts.maxMissed ?? 3);
+    const worstCaseMs = kbWorstCaseMs(kbConfig);
+    if (worstCaseMs >= livenessMs) {
+      console.warn(
+        `[kb] worst-case export time ${worstCaseMs}ms is not below the heartbeat liveness threshold ` +
+          `${livenessMs}ms: a slow export can block this connection's heartbeats and tear the session down. ` +
+          `Lower KB_TIMEOUT_MS / KB_MAX_RETRIES, or raise the heartbeat settings.`,
+      );
+    }
+  }
 
   const workflowProtocol = registerWorkflowProtocol({
     router: server.router,

@@ -53,3 +53,19 @@ export function kbConfigFromEnv(env: Record<string, string | undefined>): KbConf
     retryBaseMs: DEFAULT_RETRY_BASE_MS,
   };
 }
+
+/**
+ * Worst-case wall time one **synchronous** export can hold a connection open
+ * (ADR-005 §4): every attempt gets its own timeout window, plus the backoff sum.
+ *
+ * Worth comparing against the heartbeat liveness threshold: the message router
+ * serializes per connection, so a blocked export also blocks that connection's
+ * heartbeats.
+ */
+export function kbWorstCaseMs(config: KbConfig): number {
+  let backoff = 0;
+  for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
+    backoff += config.retryBaseMs * 2 ** (attempt - 1);
+  }
+  return config.timeoutMs * (config.maxRetries + 1) + backoff;
+}

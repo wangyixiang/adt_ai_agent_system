@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHttpDepositor } from "../../src/kb/depositor";
-import { kbConfigFromEnv } from "../../src/kb/config";
+import { kbConfigFromEnv, kbWorstCaseMs } from "../../src/kb/config";
 import type { DepositPayload } from "../../src/kb/deposit";
 
 const payload = { deposit_id: "dep_1" } as unknown as DepositPayload;
@@ -82,6 +82,38 @@ describe("HttpKnowledgeDepositor", () => {
     expect(JSON.stringify(outcome)).not.toContain("s3cret");
   });
 
+  it("scrubs the token even when the endpoint echoes it back", async () => {
+    const h = depositorWith([new Response("denied for s3cret", { status: 401 })]);
+
+    const outcome = await h.depositor.deposit(payload);
+    expect(outcome.status).toBe("failed");
+    expect(JSON.stringify(outcome)).not.toContain("s3cret");
+  });
+
+  it("never leaks a credential embedded in the endpoint URL", async () => {
+    // Node's fetch rejects a URL with userinfo, and its message quotes the URL.
+    const h = depositorWith(
+      [
+        new TypeError(
+          "Request cannot be constructed from a URL that includes credentials: http://user:hunter2@kb.test/deposit",
+        ),
+      ],
+      { endpointUrl: "http://user:hunter2@kb.test/deposit" },
+    );
+
+    const outcome = await h.depositor.deposit(payload);
+    expect(outcome.status).toBe("failed");
+    expect(JSON.stringify(outcome)).not.toContain("hunter2");
+  });
+
+  it("does not retry a 429, because ADR-005 §5 lists only network errors, timeouts and 5xx", async () => {
+    const h = depositorWith([new Response("slow down", { status: 429 })]);
+
+    const outcome = await h.depositor.deposit(payload);
+    expect(outcome).toMatchObject({ status: "failed", error_code: "export_failed" });
+    expect(h.attempts()).toBe(1);
+  });
+
   it("retries a timeout, because ADR-005 §5 lists it as retryable", async () => {
     // Deliberately different from the LLM provider, which does not retry its own
     // timeout; here the contract says to retry, so the worst case is bounded by
@@ -125,5 +157,20 @@ describe("kbConfigFromEnv", () => {
       timeoutMs: 3000,
       maxRetries: 0,
     });
+  });
+});
+
+describe("kbWorstCaseMs", () => {
+  it("bounds a synchronous export by timeout × attempts plus the backoff sum", () => {
+    const config = kbConfigFromEnv({ KB_ENDPOINT_URL: "http://kb.test", KB_TOKEN: "t" })!;
+
+    // 10_000 × (2 + 1) attempts + (500 + 1000) backoff.
+    expect(kbWorstCaseMs(config)).toBe(31_500);
+  });
+
+  it("shrinks as retries are disabled", () => {
+    const config = kbConfigFromEnv({ KB_ENDPOINT_URL: "http://kb.test", KB_TOKEN: "t" })!;
+
+    expect(kbWorstCaseMs({ ...config, maxRetries: 0 })).toBe(10_000);
   });
 });

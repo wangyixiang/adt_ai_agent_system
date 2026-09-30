@@ -16,15 +16,28 @@ export interface KnowledgeDepositor {
 
 /**
  * A transient status is worth another attempt; a 4xx is a verdict, not a hiccup
- * (ADR-005 §5).
+ * (ADR-005 §5). 429 is a 4xx, and the ADR's table lists only network errors,
+ * timeouts and 5xx as retryable — so it is *not* retried here, deliberately
+ * unlike the LLM provider (ADR-004 A2).
  */
-const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
+const isRetryableStatus = (status: number): boolean => status >= 500;
 
 const MAX_SNIPPET = 200;
 
 function describeError(error: unknown): string {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return String(error);
+}
+
+/**
+ * Credentials must never reach the client (ADR-005 §2), and the failure
+ * `message` is client-visible. A token can come back in the endpoint's own
+ * response body, and Node's `fetch` quotes the URL when it rejects one carrying
+ * userinfo — so both are scrubbed out of anything we return.
+ */
+function redact(message: string, config: KbConfig): string {
+  const withoutToken = config.token ? message.split(config.token).join("[redacted]") : message;
+  return withoutToken.replace(/\/\/[^/@\s]*@/g, "//[redacted]@");
 }
 
 /** A short, token-free excerpt of the response body for the human to read. */
@@ -89,7 +102,7 @@ export function createHttpDepositor(config: KbConfig, deps: HttpDepositorDeps = 
         if (!isRetryableStatus(response.status)) break;
       }
 
-      return { status: "failed", error_code: "export_failed", message: lastMessage };
+      return { status: "failed", error_code: "export_failed", message: redact(lastMessage, config) };
     },
   };
 }
