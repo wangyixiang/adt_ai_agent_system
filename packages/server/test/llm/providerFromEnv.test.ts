@@ -25,4 +25,11 @@ describe("llmProviderFromEnv", () => {
     expect(retriesFrom({ LLM_API_KEY: "k", LLM_MAX_RETRIES: "-1" })).toBe(2);
     expect(retriesFrom({ LLM_API_KEY: "k", LLM_MAX_RETRIES: "2.5" })).toBe(2);
   });
+
+  it("falls back when the count is above the cap", () => {
+    // Each retry gets its own timeout window, so a runaway count multiplies the
+    // worst-case latency; an absurd value is unusable, not honoured.
+    expect(retriesFrom({ LLM_API_KEY: "k", LLM_MAX_RETRIES: "11" })).toBe(2);
+    expect(retriesFrom({ LLM_API_KEY: "k", LLM_MAX_RETRIES: "1000000000" })).toBe(2);
+  });
 });

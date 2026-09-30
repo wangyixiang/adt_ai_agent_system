@@ -52,4 +52,11 @@ describe("buildDeposit", () => {
     });
     expect(b.deposit_id).not.toBe(a.deposit_id);
   });
+
+  it("refuses a report deposit that carries no report", () => {
+    // A compile error for typed callers; the runtime guard is for untyped ones,
+    // since this function is exported from the package.
+    // @ts-expect-error a report deposit must carry its report
+    expect(() => buildDeposit({ record, object: "report", now })).toThrow(/report/);
+  });
 });

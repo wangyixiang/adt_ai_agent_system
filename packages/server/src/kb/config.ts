@@ -1,3 +1,5 @@
+import { parseBoundedInt } from "../env";
+
 /**
  * KB outbound configuration (ADR-005 §2).
  *
@@ -18,16 +20,11 @@ const DEFAULT_AUTH_SCHEME = "Bearer";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_MS = 500;
-
 /**
- * A missing or unusable value falls back to the default rather than silently
- * disabling retries: `Number("")` is `0`, which would read as "retry nothing".
+ * Each attempt gets its own timeout window, so a runaway count multiplies the
+ * worst-case wall time; an absurd value is unusable, not honoured.
  */
-function parseNonNegativeInt(value: string | undefined, fallback: number): number {
-  if (value === undefined || value.trim() === "") return fallback;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
-}
+const MAX_RETRIES = 10;
 
 /**
  * ADR-005 §5 — an unconfigured endpoint **or** missing credentials means export
@@ -48,8 +45,8 @@ export function kbConfigFromEnv(env: Record<string, string | undefined>): KbConf
     authHeader: authHeader.trim() === "" ? DEFAULT_AUTH_HEADER : authHeader,
     authScheme: env.KB_AUTH_SCHEME ?? DEFAULT_AUTH_SCHEME,
     token,
-    timeoutMs: parseNonNegativeInt(env.KB_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
-    maxRetries: parseNonNegativeInt(env.KB_MAX_RETRIES, DEFAULT_MAX_RETRIES),
+    timeoutMs: parseBoundedInt(env.KB_TIMEOUT_MS, { fallback: DEFAULT_TIMEOUT_MS }),
+    maxRetries: parseBoundedInt(env.KB_MAX_RETRIES, { fallback: DEFAULT_MAX_RETRIES, max: MAX_RETRIES }),
     retryBaseMs: DEFAULT_RETRY_BASE_MS,
   };
 }

@@ -73,7 +73,7 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - `LLM_API_KEY`：设置后才启用；未设置时回退为 no-op 规划器（Workflow 不会产生 Step，直接给完成候选）。
 - `LLM_BASE_URL`：默认 `https://api.deepseek.com/v1`。
 - `LLM_MODEL`：默认 `deepseek-v4.1-flash`。
-- `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
+- `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试），上限 `10`（超出按默认值处理）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
 
 真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
 
@@ -86,7 +86,7 @@ Server 通过环境变量启用"把 Record/Report 导出到第三方 Knowledge B
 - `KB_AUTH_HEADER`：默认 `Authorization`。
 - `KB_AUTH_SCHEME`：默认 `Bearer`（即 `Authorization: Bearer <token>`）；**置空则发裸 token**，适配 `X-API-Key` 这类自定义头。
 - `KB_TIMEOUT_MS`：默认 `10000`。
-- `KB_MAX_RETRIES`：默认 `2`。只对**网络错误 / 超时 / 5xx**重试，退避 500ms→1000ms；**4xx 不重试**——`ADR-005` §5 只列了 5xx（`429` 也是 4xx，因此**不重试**；这与 LLM 侧的 `ADR-004` 修订 A2 **故意不同**）。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 31.5s）——投递是**同步**的，这段时间该客户端连接上的其它消息（**含心跳**）会排队（`ADR-005` §4）。默认心跳判死阈值是 45s（15s × 3），所以默认配置安全；若把 `KB_TIMEOUT_MS` 调大到让最坏耗时逼近该阈值，导出期间的心跳会被饿死、会话可能被判失联——Server 启动时会就此**告警**。
+- `KB_MAX_RETRIES`：默认 `2`，上限 `10`（超出按默认值处理）。只对**网络错误 / 超时 / 5xx**重试，退避 500ms→1000ms；**4xx 不重试**——`ADR-005` §5 只列了 5xx（`429` 也是 4xx，因此**不重试**；这与 LLM 侧的 `ADR-004` 修订 A2 **故意不同**）。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 31.5s）——投递是**同步**的，这段时间该客户端连接上的其它消息（**含心跳**）会排队（`ADR-005` §4）。默认心跳判死阈值是 45s（15s × 3），所以默认配置安全；若把 `KB_TIMEOUT_MS` 调大到让最坏耗时逼近该阈值，导出期间的心跳会被饿死、会话可能被判失联——Server 启动时会就此**告警**。
 
 ## 参考
 

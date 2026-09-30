@@ -1,4 +1,5 @@
 import type { LlmProvider, LlmRequest, LlmResponse } from "./provider";
+import { parseBoundedInt } from "../env";
 
 export interface OpenAiCompatibleOptions {
   baseUrl: string;
@@ -25,6 +26,11 @@ export interface OpenAiCompatibleOptions {
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_MS = 500;
+/**
+ * Each retry gets its own timeout window, so a runaway count multiplies the
+ * worst-case latency; an absurd value is unusable, not honoured.
+ */
+const MAX_RETRIES = 10;
 
 /** A transient status is worth another attempt; a 4xx is a verdict, not a hiccup. */
 const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
@@ -166,18 +172,8 @@ export function llmProviderFromEnv(
       baseUrl,
       apiKey,
       model,
-      maxRetries: parseRetries(env.LLM_MAX_RETRIES),
+      maxRetries: parseBoundedInt(env.LLM_MAX_RETRIES, { fallback: DEFAULT_MAX_RETRIES, max: MAX_RETRIES }),
     }),
     model,
   };
-}
-
-/**
- * A missing or unusable value falls back to the default rather than silently
- * disabling retries: `Number("")` is `0`, which would read as "retry nothing".
- */
-function parseRetries(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return DEFAULT_MAX_RETRIES;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_RETRIES;
 }

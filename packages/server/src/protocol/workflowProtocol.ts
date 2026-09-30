@@ -12,7 +12,7 @@ import {
   type RecordStore,
 } from "../record/store";
 import { generateReport, resolveDetailLevel } from "../report/generate";
-import { buildDeposit } from "../kb/deposit";
+import { buildDeposit, type BuildDepositInput } from "../kb/deposit";
 import type { KnowledgeDepositor } from "../kb/depositor";
 import type { StepStatusUpdate, WorkflowEngine } from "../workflow/engine";
 import type { WorkflowOrchestrator } from "../workflow/orchestrator";
@@ -638,7 +638,10 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowPr
       return;
     }
 
-    let report: { format: "markdown"; content: string } | undefined;
+    // `submitted_at` is a wall-clock reading; the engine's `now` is a monotonic
+    // ordering clock and would be the wrong time base here (RECORD_SPEC §6.1).
+    const wallClock = () => Date.now();
+    let depositInput: BuildDepositInput;
     if (requested === "report") {
       const generated = generateReport(record, "full");
       if (generated.status !== "ok") {
@@ -658,16 +661,19 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): WorkflowPr
         );
         return;
       }
-      report = { format: generated.format, content: generated.content };
+      depositInput = {
+        record,
+        object: "report",
+        report: { format: generated.format, content: generated.content },
+        now: wallClock,
+      };
+    } else {
+      depositInput = { record, object: "record", now: wallClock };
     }
 
     // Synchronous per ADR-005 §4: the request waits for the outbound call, and
     // `ok` means "the endpoint accepted it", not "the KB filed it".
-    const outcome = await depositor.deposit(
-      // `submitted_at` is a wall-clock reading; the engine's `now` is a monotonic
-      // ordering clock and would be the wrong time base here (RECORD_SPEC §6.1).
-      buildDeposit({ record, object: requested, report, now: () => Date.now() }),
-    );
+    const outcome = await depositor.deposit(buildDeposit(depositInput));
 
     send(
       conn,

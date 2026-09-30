@@ -105,6 +105,15 @@ describe("record.export_request", () => {
     expect(payload.content_sha256).toMatch(/^[0-9a-f]{64}$/);
     // The record is deposited as the finished document, entries and all.
     expect(JSON.stringify(payload.content)).toContain(recordId);
+    // ADR-005 §3: `spec_versions` travels with a record deposit — and is copied
+    // from the record, not invented.
+    const got = await c.sendRaw({
+      ...c.base("record.get_request"),
+      payload: { record_id: recordId },
+    });
+    expect(payload.spec_versions).toEqual(
+      (got.payload as { record: { spec_versions: Record<string, string> } }).record.spec_versions,
+    );
 
     await c.close();
     await srv.close();

@@ -160,7 +160,7 @@ export {
   type OpenAiCompatibleOptions,
 } from "./llm/openaiCompatible";
 export { selectPlanner } from "./llm/selectPlanner";
-export { buildDeposit, type DepositObject, type DepositPayload } from "./kb/deposit";
+export { buildDeposit, type BuildDepositInput, type DepositObject, type DepositPayload } from "./kb/deposit";
 export {
   createHttpDepositor,
   type DepositOutcome,

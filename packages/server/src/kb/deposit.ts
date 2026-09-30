@@ -41,20 +41,30 @@ function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
+/** A record deposit carries the finished document; a report deposit carries the report. */
+export type BuildDepositInput =
+  | { record: RecordDocument; object: "record"; now: () => number }
+  | {
+      record: RecordDocument;
+      object: "report";
+      report: { format: "markdown"; content: string };
+      now: () => number;
+    };
+
 /**
  * Builds the deposit for one Record (default) or one Report derived from it.
  *
  * `object: "report"` deposits the report **only** — never the raw Record — so
  * choosing a report really does withhold the original evidence (ADR-005 §3).
+ * The input is a discriminated union, so "a report with no report" is a
+ * compile error; the runtime guard catches untyped callers.
  */
-export function buildDeposit(input: {
-  record: RecordDocument;
-  object: DepositObject;
-  report?: { format: "markdown"; content: string };
-  now: () => number;
-}): DepositPayload {
-  const { record, object, report, now } = input;
-  const content: unknown = object === "report" ? report ?? null : record;
+export function buildDeposit(input: BuildDepositInput): DepositPayload {
+  const { record, object, now } = input;
+  if (object === "report" && !input.report) {
+    throw new TypeError("a report deposit must carry its report");
+  }
+  const content: unknown = object === "report" ? input.report : record;
   const contentSha = sha256Hex(canonicalJson(content));
 
   const payload: DepositPayload = {

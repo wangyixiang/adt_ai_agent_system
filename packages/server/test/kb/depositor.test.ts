@@ -134,6 +134,13 @@ describe("kbConfigFromEnv", () => {
     expect(kbConfigFromEnv({ KB_ENDPOINT_URL: "", KB_TOKEN: "t" })).toBeNull();
   });
 
+  it("falls back when the retry count is above the cap", () => {
+    const env = { KB_ENDPOINT_URL: "http://kb.test", KB_TOKEN: "t" };
+
+    expect(kbConfigFromEnv({ ...env, KB_MAX_RETRIES: "11" })!.maxRetries).toBe(2);
+    expect(kbConfigFromEnv({ ...env, KB_MAX_RETRIES: "1000000000" })!.maxRetries).toBe(2);
+  });
+
   it("applies the documented defaults and honours overrides", () => {
     const base = kbConfigFromEnv({ KB_ENDPOINT_URL: "http://kb.test", KB_TOKEN: "t" })!;
     expect(base).toMatchObject({
