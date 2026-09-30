@@ -39,4 +39,16 @@ describe("state machine", () => {
     expect(canTransitionStep("RUNNING", "COMPLETED")).toBe(true);
     expect(canTransitionStep("PENDING", "WAITING")).toBe(true);
   });
+
+  it("lets an engineer decline while the step waits for confirmation", () => {
+    // WORKFLOW_SPEC.md §4.2: PENDING → WAITING(user_confirmation) → REJECTED.
+    expect(canTransitionStep("WAITING", "REJECTED")).toBe(true);
+    expect(canTransitionStep("WAITING", "RUNNING")).toBe(true);
+  });
+
+  it("lets a side-effect step go UNKNOWN even if it never started", () => {
+    // WORKFLOW_SPEC.md §4.3: PENDING / RUNNING → UNKNOWN.
+    expect(canTransitionStep("PENDING", "UNKNOWN")).toBe(true);
+    expect(canTransitionStep("PENDING", "COMPLETED")).toBe(false);
+  });
 });

@@ -25,9 +25,13 @@ type NonTerminalStepState = Exclude<StepState, TerminalStepState>;
 
 /** Allowed edges between non-terminal states (WORKFLOW_SPEC.md §4). */
 const NON_TERMINAL_EDGES: Record<NonTerminalStepState, readonly StepState[]> = {
-  PENDING: ["RUNNING", "WAITING", "REJECTED"],
+  // UNKNOWN from PENDING: a side-effect step whose client never managed to
+  // report back is still "result unknown" (§4.3).
+  PENDING: ["RUNNING", "WAITING", "REJECTED", "UNKNOWN"],
   RUNNING: ["WAITING", "COMPLETED", "FAILED", "UNKNOWN"],
-  WAITING: ["RUNNING", "COMPLETED", "FAILED", "UNKNOWN"],
+  // REJECTED from WAITING: the engineer declines a confirmation, or the client
+  // discovers it cannot run the step, while the step is waiting (§4.2).
+  WAITING: ["RUNNING", "COMPLETED", "FAILED", "REJECTED", "UNKNOWN"],
 };
 
 /**
