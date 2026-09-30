@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.5（字段澄清：`summary.duration` → `summary.duration_ms`（毫秒整数），与实现和 `PROTOCOL_SPEC.md` v0.7 对齐；取代 v0.4）
+- **Version:** v0.6（`step_dispatched` 的 `ref` 增 `input`（对应 FR-12"全部 Step（目的、所用能力、输入）"）；`completion_criteria` 的修订历史落为 `criteria_revisions` 字段；与实现和 `PROTOCOL_SPEC.md` v0.7 对齐，取代 v0.5）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -56,7 +56,8 @@ Record
 ├── ended_at               Workflow 终止时间
 ├── terminal_state         COMPLETED | FAILED | CANCELLED
 ├── terminal_reason        可选。CANCELLED 时区分"取消"/"放弃"等意图；FAILED 时区分失败原因（v0.3 扩展，取值见 WORKFLOW_SPEC.md §2）
-├── completion_criteria    v0.3 新增：Request 级完成条件及其修订历史（见 WORKFLOW_SPEC.md §8.1）
+├── completion_criteria    v0.3 新增：Request 级完成条件（最新一条，见 WORKFLOW_SPEC.md §8.1）
+├── criteria_revisions     v0.6 新增：completion_criteria 的每次修订（Array<{ ts, criteria }>，按时间顺序），使"为什么判定完成"可追溯
 ├── user_request           原始问题描述（含附件/环境信息引用）
 ├── summary                列表视图用的最小摘要（见 §5）
 ├── entries[]              详情视图：按时间顺序排列的完整过程（见 §4）
@@ -115,7 +116,7 @@ Entry
 
 | kind | 说明 | ref 包含 |
 |---|---|---|
-| `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective` |
+| `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增） |
 | `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构） |
 | `user_confirmation` | 工程师对一个有副作用的动作做了确认/拒绝（对齐 `WORKFLOW_SPEC.md` §4.2） | `step_id`, `decision`（confirmed \| declined） |
 | `user_input` | 工程师补充信息或反馈"建议"的执行结果（包括 `human.manual_action` 的反馈，见 `WORKFLOW_SPEC.md` §6.1） | `step_id`（如适用）, `content` |

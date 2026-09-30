@@ -1,6 +1,6 @@
 # WORKFLOW_SPEC.md
 
-- **Version:** v0.4（缺口收敛：新增 Step 终态 `UNKNOWN` 与对账、取消判定推广、`CANCELLING` 收敛、终止护栏、`completion_criteria`、Evidence 受控词表、会话级副作用串行；对齐 `PROTOCOL_SPEC.md` v0.4、`CAPABILITY_SPEC.md` v0.5、`RECORD_SPEC.md` v0.3，取代 v0.3）
+- **Version:** v0.5（系统失败原因补充：§2 的 `FAILED` 增 `invalid_input` / `invalid_output` / `planner_error`，对应 P3a 的 Planner/校验路径；对齐 `PROTOCOL_SPEC.md` v0.7、`CAPABILITY_SPEC.md` v0.6、`RECORD_SPEC.md` v0.6，取代 v0.4）
 - **层级:** Specification — Client 与 Server 共享的行为契约
 - **拆分说明:** 原 v0.2 的 `CLIENT_SPEC.md` 和 `SERVER_SPEC.md` 里，Step 状态机、Evidence 结构、Completion 判定流程被各自定义了一遍，且已经出现细节漂移（例如 Evidence 两种不同的示例结构、Execution Loop 图里 "Done Candidate" 与其余各处 "Completion Candidate" 不一致）。本文件把这些内容整合为唯一权威定义，`architecture/CLIENT_SPEC.md` 与 `architecture/SERVER_SPEC.md` 均应引用本文件，不再各自维护副本。
 
@@ -42,7 +42,7 @@ CREATED ──▶ RUNNING ──▶ COMPLETED
 * `RUNNING`：Workflow 正在推进
 * `CANCELLING`（v0.2 新增，**过渡态，不是终止态**）：工程师已表达取消意图，但当前有一个不可中断的 Step 在执行，Server 不再下发新 Step，等待该 Step 自然结束后终止
 * `COMPLETED`：Request 已完成最终确认（见 §9）——**终止态**
-* `FAILED`：Server 判定 Workflow 无法继续完成——**终止态**。v0.4 起，判定不再只依赖 LLM 判断：至少还包括 §13 的终止护栏触发、以及 §2.2 的孤儿回收。可携带可选的 `terminal_reason`，取值见下。
+* `FAILED`：Server 判定 Workflow 无法继续完成——**终止态**。v0.4 起，判定不再只依赖 LLM 判断：至少还包括 §13 的终止护栏触发、以及 §2.2 的孤儿回收；v0.5 起还包括规划与证据校验失败（`planner_error`：LLM 不可用或输出不可解析；`invalid_input`：Planner 产出的 Step `input` 不合 Capability 的 `input_schema`，不下发；`invalid_output`：Evidence `result` 不合 `output_schema`）。可携带可选的 `terminal_reason`，取值见下。
 * `CANCELLED`（v0.2 新增）：工程师主动终止（无论理由是"取消"还是"放弃"）——**终止态**。可携带一个可选的 `terminal_reason`（例如 `user_cancelled` / `abandoned` / `superseded` 等），用于区分终止的具体意图，但这只是元数据，不影响状态机的转换逻辑。（`workflow.cancel_request` 的**输入字段**名为 `reason`；写入 Workflow 状态后即 `terminal_reason`，见 `PROTOCOL_SPEC.md` §7.3、§7.4。）
 
 **`terminal_reason` 枚举（v0.4 扩展，原先只用于 `CANCELLED`）：**
@@ -50,7 +50,7 @@ CREATED ──▶ RUNNING ──▶ COMPLETED
 | 终止态 | `terminal_reason` 取值 |
 |---|---|
 | `COMPLETED` | 恒为 `null` |
-| `FAILED` | `client_unreachable`（§2.2 孤儿回收）/ `step_limit` / `retry_limit` / `user_round_limit` / `time_budget`（§13 护栏）；其他系统判定原因预留为自由字符串 |
+| `FAILED` | `client_unreachable`（§2.2 孤儿回收）/ `step_limit` / `retry_limit` / `user_round_limit` / `time_budget`（§13 护栏）/ `planner_error` / `invalid_input` / `invalid_output`（v0.5 规划与校验失败）；其他系统判定原因预留为自由字符串 |
 | `CANCELLED` | `user_cancelled` / `abandoned` / `superseded` 等（§2.1） |
 
 > `PROTOCOL_SPEC.md` 的 `workflow.terminated.terminal_reason`、`RECORD_SPEC.md` 的 `terminal_reason` 与本节使用同一套取值。

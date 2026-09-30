@@ -6,7 +6,7 @@ const base: RecordDocument = {
   record_id: "rec_1",
   workflow_id: "wf_1",
   owner_user_id: "usr_1",
-  spec_versions: { workflow_spec: "0.4", capability_spec: "0.6" },
+  spec_versions: { workflow_spec: "0.5", capability_spec: "0.6" },
   created_at: 0,
   ended_at: 60_000,
   terminal_state: "COMPLETED",
