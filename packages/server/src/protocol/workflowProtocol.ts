@@ -1,4 +1,4 @@
-import { newMessageId, nowUtcIso, PROTOCOL_VERSION, type Envelope } from "@adt/shared";
+import { newMessageId, nowUtcIso, PROTOCOL_VERSION, validateJsonSchema, type Envelope, type JsonSchema } from "@adt/shared";
 import { randomUUID } from "node:crypto";
 import type { SessionManager, Session } from "../session/sessionManager";
 import type { Connection } from "../ws/connection";
@@ -81,6 +81,43 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
     requires_confirmation: step.sideEffect,
     idempotency_key: step.idempotencyKey,
   };
+}
+
+/**
+ * CAPABILITY_SPEC.md §5.2: a COMPLETED step's `evidence.result` must satisfy the
+ * Capability's `output_schema`; an invalid result is recorded as
+ * `FAILED(invalid_output)`. A missing schema or a missing `result` does not
+ * block (CAPABILITY_SPEC.md §5.4) — it warns.
+ */
+async function withOutputValidation(
+  conn: Connection,
+  session: Session,
+  engine: WorkflowEngine,
+  stepId: string,
+  update: StepStatusUpdate,
+): Promise<StepStatusUpdate> {
+  if (update.state !== "COMPLETED") return update;
+
+  const step = await engine.getStep(stepId);
+  const schema = step
+    ? (session.capabilities.get(step.capability)?.output_schema as JsonSchema | undefined)
+    : undefined;
+  if (!schema) {
+    conn.warn(`no output_schema for step ${stepId}; skipping evidence validation`);
+    return update;
+  }
+
+  const result = (update.evidence as { result?: unknown } | undefined)?.result;
+  if (result === undefined) {
+    conn.warn(`evidence for step ${stepId} has no result; skipping validation`);
+    return update;
+  }
+
+  const validation = validateJsonSchema(schema, result);
+  if (validation.valid) return update;
+
+  conn.warn(`invalid evidence result for step ${stepId}: ${validation.errors.join("; ")}`);
+  return { state: "FAILED", failReason: { code: "invalid_output" } };
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
@@ -242,8 +279,10 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
+    const effective = await withOutputValidation(conn, session, engine, payload.step_id, update);
+
     try {
-      await engine.applyStepStatus(workflow.id, payload.step_id, update);
+      await engine.applyStepStatus(workflow.id, payload.step_id, effective);
     } catch (error) {
       // An unknown step id is a protocol error, not a silent hang.
       if (error instanceof Error && /unknown step/i.test(error.message)) {
