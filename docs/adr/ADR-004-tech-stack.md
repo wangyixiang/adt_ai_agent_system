@@ -48,7 +48,7 @@ packages/
 | HTTP / WebSocket | **Fastify + `ws`** |
 | 进程模型 | MVP **单实例**；Workflow Engine 为进程内模块（`ADR-001` 权威） |
 | 持久化 | **PostgreSQL**（Workflow 状态事务一致性；Record 全文检索用 `tsvector` / `pg_trgm`） |
-| blob | **本地文件系统**，通过 `BlobStore` 抽象隔离（未来可换 MinIO / S3） |
+| blob | **本地文件系统**，通过 `BlobStore` 抽象隔离（未来可换 MinIO / S3）。**P4c 已落地**：`LocalBlobStore` 按 sha256 内容寻址、流式写入并边写边校验；元数据在 `blobs` 表；过期**只回收未被任何 Record 引用的 blob**（保住 Record 的可回溯性） |
 | LLM | **Provider 抽象层** + MVP 先接云端商用 API（要求可靠的结构化输出 / 函数调用） |
 | 认证 | 本地账号（密码哈希 + 令牌）；`user_id` 握手后必填并校验 |
 

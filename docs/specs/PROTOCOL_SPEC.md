@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.8（资源冲突如实上报：`resource_conflict` 进入人类等待集合，并在 §8 补冲突流程；§3 的"会话级副作用串行"改为"提供方判断 + 如实上报"）
+**Version:** v0.9（blob 通道写实：§7.5 补齐两个方向的申请字段、签名令牌、上传完成语义、默认值与"只回收未被 Record 引用者"的回收规则）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -455,7 +455,36 @@ Client                                    Server
 
 * 允许的 `media_type` 由白名单约束；超限、超尺寸或不合规的申请被拒：`protocol.error`，code=`blob_rejected`（见 §12）。
 * Record 保留 `content_ref`，使证据可回溯（见 `RECORD_SPEC.md` §3）。
-* 阈值、单 blob 上限、`content_ref` 生命周期由 Server 配置；建议默认：内联阈值 64 KiB、单 blob 上限 512 MiB。
+* 阈值、单 blob 上限、`content_ref` 生命周期由 Server 配置；默认值见下。
+
+**实现契约（v0.9 写实）：**
+
+`content_ref` 形如 `blob_<uuid>`。申请与响应的字段：
+
+| 字段 | 方向 | 含义 |
+|---|---|---|
+| `direction` | 请求，必填 | `upload`（客户端 → Server）或 `download`（Server → 客户端） |
+| `name` / `media_type` / `size` / `sha256` | `upload` 必填 | 声明将要发送的内容；`media_type` 必须在白名单内，`size` 不得超过单 blob 上限，`sha256` 为小写 64 位十六进制 |
+| `content_ref` | `download` 必填 | 要取回的 blob；必须存在、已提交、且属于**发起申请的同一个 `user_id`** |
+| `content_ref` / `url` / `expires_at` | 响应 | `url = <baseUrl>/blob/<content_ref>?token=<签名令牌>`；`expires_at` 为 ISO-8601 |
+
+* **令牌**：签名内容为 `content_ref | direction | user_id | expires_at`，服务端**不保存**会话状态，因此在密钥稳定的前提下，重启前签发的 URL 仍然可用。密钥取 `BLOB_SECRET`；**未配置时每次启动生成随机密钥并告警**（宁可不跨重启，也不要一个硬编码的生产密钥）。有效期默认 15 分钟。
+* **传输**：`PUT`（上传）与 `GET`（下载）都**流式**处理，`size`/`sha256` 边收边校验；不符则上传失败且**不提交**该引用。二进制不经 WS 连接。
+* **上传完成的凭据是 `PUT` 的 2xx 响应**（不新增"上传完成"消息）：客户端必须在收到 2xx 之后，才可以把该 `content_ref` 写进 `evidence.result`。响应体回 `{content_ref, size, sha256}`。
+* **下载的鉴权与隐私**：令牌方向不符、`content_ref` 不符、已过期 → `401`；不存在、未提交、或属主不符 → 一律 `404`（不透露该 ref 是否存在）。
+* **`url` 的来源**：`baseUrl` 由 Server 配置（默认 `http://127.0.0.1:${PORT}`，反向代理部署时用 `BLOB_BASE_URL` 覆盖）。
+* **回收**：blob 有保留期，但**只回收没有被任何 Record 引用的 blob**——Record 不可变，它引用过的证据必须仍能取回。
+
+**默认值（可配置）：**
+
+| 项 | 默认 | 说明 |
+|---|---|---|
+| 内联阈值 | 64 KiB | **只登记、不强制**：本版本不因为超阈值内联而拒绝证据（客户端自觉走 blob） |
+| 单 blob 上限 | 512 MiB | 超过即 `blob_rejected`；上传途中超限则中止 |
+| 令牌有效期 | 15 分钟 | `expires_at` |
+| blob 保留期 | 30 天 | 到期仅成为"可回收"，被 Record 引用者不回收 |
+| 回收扫描周期 | 10 分钟 | 后台扫描 |
+| 媒体类型白名单 | `text/plain`、`text/csv`、`text/markdown`、`application/json`、`application/zip`、`application/gzip`、`application/octet-stream`、`image/png`、`image/jpeg` | 可配置 |
 
 ---
 
@@ -720,7 +749,7 @@ step.status   step.status
 | `unknown_step` | 请求级失败 | 原请求失败，连接继续 |
 | `unknown_message_type` | 可忽略 + 告警 | **不得断开连接**，忽略该消息并记录告警 |
 | `malformed_payload` | 请求级失败 | 丢弃该消息 + 告警，连接继续 |
-| `blob_rejected`（v0.4 新增） | 请求级失败 | `blob.allocate_request` 被拒（超尺寸 / 类型不在白名单等），连接继续 |
+| `blob_rejected`（v0.4 新增） | 请求级失败 | `blob.allocate_request` 被拒（超尺寸 / 类型不在白名单 / 方向不支持 / 引用了不存在或不属于自己的 blob），连接继续（§7.5 v0.9） |
 | `auth_failed`（v0.5 新增） | 致命 | 认证失败：断开，不下发 `session.welcome`（§5.1） |
 
 `session.resume` 的认证失败同样走 `auth_failed`（致命，断开）；`session_id` 未知或超过会话 TTL 走 `session_expired`（致命，断开）。两者都不下发 `workflow.state_sync`（§5.2）。
