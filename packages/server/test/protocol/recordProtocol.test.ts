@@ -59,6 +59,37 @@ async function completedWorkflow(): Promise<{ srv: TestServer; c: TestClient; re
 }
 
 describe("record and report protocol", () => {
+  it("filters by wall-clock time range", async () => {
+    const { srv, c, recordId } = await completedWorkflow();
+
+    const within = new Date().toISOString();
+    const listWith = async (from: string, to: string) =>
+      c.sendRaw({
+        ...c.base("record.list_request"),
+        payload: {
+          filters: { time_range: { from, to }, keyword: null, terminal_state: null },
+          cursor: null,
+          page_size: 20,
+        },
+      });
+
+    // `ended_at` is a wall-clock reading, so a range around "now" contains it.
+    const around = await listWith(
+      new Date(Date.parse(within) - 3_600_000).toISOString(),
+      new Date(Date.parse(within) + 3_600_000).toISOString(),
+    );
+    expect(
+      (around.payload as { records: Array<{ record_id: string }> }).records.map((r) => r.record_id),
+    ).toEqual([recordId]);
+
+    // ...and a range long before it does not.
+    const longAgo = await listWith("2001-01-01T00:00:00.000Z", "2001-01-02T00:00:00.000Z");
+    expect((longAgo.payload as { records: unknown[] }).records).toEqual([]);
+
+    await c.close();
+    await srv.close();
+  });
+
   it("lists and fetches the caller's own record", async () => {
     const { srv, c, recordId } = await completedWorkflow();
 

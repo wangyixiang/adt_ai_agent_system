@@ -9,7 +9,7 @@ import { TEST_DATABASE_URL } from "@adt/test-support";
 let pool: ReturnType<typeof createPool>;
 let store: PostgresWorkflowStore;
 let engine: WorkflowEngine;
-const clock = { t: 1000 };
+const clock = { t: 1000, wall: 1_700_000_000_000 };
 
 beforeAll(async () => {
   pool = createPool(TEST_DATABASE_URL);
@@ -18,6 +18,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await pool.query("TRUNCATE workflows, workflow_steps, workflow_events");
   clock.t = 1000;
+  clock.wall = 1_700_000_000_000;
   store = new PostgresWorkflowStore(pool);
   engine = new WorkflowEngine({ store, now: () => clock.t });
 });
@@ -89,13 +90,17 @@ describe("WorkflowEngine basics", () => {
   });
 
   it("fails with time_budget when the workflow runs too long", async () => {
+    // The budget is measured on the wall clock, because `createdAt` outlives
+    // this process (see the clock test): stepping the ordering clock forward is
+    // not what "it ran too long" means.
     const limited = new WorkflowEngine({
       store,
       now: () => clock.t,
+      wallClock: () => clock.wall,
       guardrails: { ...DEFAULT_GUARDRAILS, timeBudgetMs: 500 },
     });
     const wf = await limited.create("usr_1", "sess_1", { text: "x" }, open);
-    clock.t = 2000;
+    clock.wall += 2000;
 
     await expect(limited.dispatchStep(wf.id, readOnly)).rejects.toThrow(/time_budget/);
 

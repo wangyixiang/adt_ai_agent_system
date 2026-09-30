@@ -99,8 +99,9 @@ export interface EngineDeps {
   store: WorkflowStore;
   guardrails?: GuardrailConfig;
   /**
-   * Ordering clock for events and workflow timestamps. Monotonic and
-   * process-local (PROTOCOL_SPEC.md §2) — it is NOT compared across restarts.
+   * Ordering clock for event timestamps. Monotonic and process-local
+   * (PROTOCOL_SPEC.md §2) — it is deliberately NOT used for anything that is
+   * persisted and read back by a later process (see `wallClock`).
    */
   now?: () => number;
   /**
@@ -231,7 +232,7 @@ export class WorkflowEngine {
       ...workflow,
       state,
       terminalReason: reason,
-      endedAt: this.now(),
+      endedAt: this.wallClock(),
     };
     const events = [
       ...extraEvents,
@@ -264,7 +265,7 @@ export class WorkflowEngine {
       state: "CREATED",
       terminalReason: null,
       criteria,
-      createdAt: this.now(),
+      createdAt: this.wallClock(),
       endedAt: null,
       notSolvedRounds: 0,
     };
@@ -325,7 +326,10 @@ export class WorkflowEngine {
           stepCount: existing.length + 1,
           consecutiveRetries: 0,
           notSolvedRounds: workflow.notSolvedRounds,
-          elapsedMs: this.now() - workflow.createdAt,
+          // Wall clock on both sides: `createdAt` is persisted and read back by
+          // a possibly-newer process, so a monotonic reading would make the
+          // budget unenforceable after a restart.
+          elapsedMs: this.wallClock() - workflow.createdAt,
         },
         this.guardrails,
       );
