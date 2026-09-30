@@ -37,8 +37,13 @@ export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unkno
     case "user_confirmation":
       return `工程师${ref.decision === "confirmed" ? "确认" : "拒绝"}了副作用动作。`;
     case "step_rejected": {
-      const reason = ref.reject_reason as { code?: unknown } | null | undefined;
-      return `未执行 ${String(ref.capability)}（原因 ${String(reason?.code ?? "unknown")}）。`;
+      const reason = ref.reject_reason as { code?: unknown; message?: unknown } | null | undefined;
+      const code = String(reason?.code ?? "unknown");
+      // The provider's own words are the clearest, and they are already inside
+      // `ref`, so using them introduces no new facts (RECORD_SPEC.md §4).
+      return typeof reason?.message === "string" && reason.message.length > 0
+        ? `未执行 ${String(ref.capability)}：${reason.message}`
+        : `未执行 ${String(ref.capability)}（原因 ${code}）。`;
     }
     case "user_input":
       return "工程师补充了信息。";
@@ -59,6 +64,18 @@ export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unkno
 
 const asPayload = (event: WorkflowEvent): Record<string, unknown> =>
   (event.payload ?? {}) as Record<string, unknown>;
+
+/**
+ * Human wording for the terminal reasons an engineer actually reads. The raw
+ * code stays on `terminal_reason` for machines; this is only the sentence in
+ * `final_result`.
+ */
+const TERMINAL_REASON_LABELS: Record<string, string> = {
+  resource_conflict: "设备或资源被占用",
+};
+
+const terminalReasonText = (reason: string | null): string =>
+  reason === null ? "未知原因" : (TERMINAL_REASON_LABELS[reason] ?? reason);
 
 function toEntry(
   event: WorkflowEvent,
@@ -224,7 +241,7 @@ export function buildRecord(input: BuildRecordInput): RecordDocument {
           ? "通过受控执行解决"
           : "通过建议解决"
         : workflow.state === "FAILED"
-          ? `无法继续：${workflow.terminalReason ?? "未知原因"}`
+          ? `无法继续：${terminalReasonText(workflow.terminalReason)}`
           : `已取消${workflow.terminalReason ? `（${workflow.terminalReason}）` : ""}`;
 
   const finalResult: Record<string, unknown> =

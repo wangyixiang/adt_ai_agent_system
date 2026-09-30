@@ -346,4 +346,47 @@ describe("record builder", () => {
     });
     expect(record.entries.map((e) => e.kind)).toEqual(["evidence_received"]);
   });
+
+  it("explains a resource conflict in the engineer's terms", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "FAILED", terminalReason: "resource_conflict" },
+      steps: [step({ state: "REJECTED" })],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "REJECTED",
+          rejectReason: { code: "resource_conflict", message: "测试台正被占用" },
+        }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_conflict",
+    });
+
+    const rejected = record.entries.find((entry) => entry.kind === "step_rejected")!;
+    expect(rejected.narrative).toContain("测试台正被占用");
+    // The machine-readable code stays on the workflow; humans get a sentence.
+    expect(record.terminal_reason).toBe("resource_conflict");
+    expect((record.final_result as { failure_summary: string }).failure_summary).toContain("占用");
+  });
+
+  it("keeps the reason code when the provider said nothing readable", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step({ state: "REJECTED" })],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "REJECTED",
+          rejectReason: { code: "capability_unavailable" },
+        }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_plain_reject",
+    });
+
+    const rejected = record.entries.find((entry) => entry.kind === "step_rejected")!;
+    expect(rejected.narrative).toContain("capability_unavailable");
+  });
 });
