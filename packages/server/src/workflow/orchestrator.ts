@@ -153,6 +153,10 @@ export class WorkflowOrchestrator {
           // Frozen at dispatch so a later capability.sync cannot move the goalposts
           // for an in-flight step (CAPABILITY_SPEC.md §4.1).
           outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
+        // Same reasoning for the promised evidence type: what the capability
+        // declared when it was dispatched is what its evidence is checked
+        // against (CAPABILITY_SPEC.md §5.2).
+        expectedOutput: capability?.output_type ?? null,
           // Same reasoning for the deadline: the monitor must not consult the
           // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
           timeoutMs:

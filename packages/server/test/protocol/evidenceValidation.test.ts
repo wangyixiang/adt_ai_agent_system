@@ -12,7 +12,7 @@ const readStep = {
   },
 };
 
-async function running(srv: Awaited<ReturnType<typeof startTestServer>>) {
+async function running(srv: Awaited<ReturnType<typeof startTestServer>>, outputType?: string) {
   const c = await TestClient.connect(srv.url);
   await c.hello({
     username: "alice",
@@ -22,6 +22,7 @@ async function running(srv: Awaited<ReturnType<typeof startTestServer>>) {
         name: "git.collect_diagnostics",
         side_effect: false,
         interruptible: true,
+        ...(outputType === undefined ? {} : { output_type: outputType }),
         output_schema: {
           type: "object",
           required: ["branch"],
@@ -152,6 +153,81 @@ describe("evidence output validation", () => {
       },
     });
     expect((await srv.engine.getStep(stepId))!.state).toBe("FAILED");
+    await c.close();
+    await srv.close();
+  });
+
+  it("records FAILED(invalid_output) when the evidence is not the promised output type", async () => {
+    const srv = await startTestServer({
+      planner: [readStep, { kind: "completion_candidate", summary: "done", evidenceRefs: [] }],
+    });
+    const { c, workflowId, stepId } = await running(srv, "git_status");
+    await c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: {
+        workflow_id: workflowId,
+        step_id: stepId,
+        status: "COMPLETED",
+        // The shape is fine (`branch` is a string), so only the declared
+        // output type can be what rejects it.
+        evidence: { source: "capability", type: "docker_info", result: { branch: "main" } },
+      },
+    });
+
+    expect((await srv.engine.getStep(stepId))!.state).toBe("FAILED");
+    await c.close();
+    await srv.close();
+  });
+
+  it("records FAILED(invalid_output) when a step promises output but returns none", async () => {
+    const srv = await startTestServer({
+      planner: [readStep, { kind: "completion_candidate", summary: "done", evidenceRefs: [] }],
+    });
+    const { c, workflowId, stepId } = await running(srv, "git_status");
+    await c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "COMPLETED" },
+    });
+
+    expect((await srv.engine.getStep(stepId))!.state).toBe("FAILED");
+    await c.close();
+    await srv.close();
+  });
+
+  it("does not block a capability that declares no output type (§5.4)", async () => {
+    const srv = await startTestServer({
+      planner: [readStep, { kind: "completion_candidate", summary: "done", evidenceRefs: [] }],
+    });
+    const { c, workflowId, stepId } = await running(srv);
+    await c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: {
+        workflow_id: workflowId,
+        step_id: stepId,
+        status: "COMPLETED",
+        evidence: { source: "capability", type: "whatever", result: { branch: "main" } },
+      },
+    });
+
+    expect((await srv.engine.getStep(stepId))!.state).toBe("COMPLETED");
     await c.close();
     await srv.close();
   });

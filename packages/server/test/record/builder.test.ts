@@ -33,6 +33,7 @@ const step = (over: Partial<StepSnapshot> = {}): StepSnapshot => ({
   waitClass: null,
   input: {},
   outputSchema: null,
+  expectedOutput: null,
   updatedAt: 100,
   timeoutMs: 0,
   ...over,

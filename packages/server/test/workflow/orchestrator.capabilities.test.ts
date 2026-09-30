@@ -75,6 +75,7 @@ describe("planner capabilities + input validation", () => {
         side_effect: false,
         interruptible: true,
         idempotent: false,
+        output_type: "manual_action_result",
         input_schema: {
           type: "object",
           required: ["instruction"],

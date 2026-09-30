@@ -80,6 +80,8 @@ export interface NewStep {
   input?: Record<string, unknown>;
   /** Snapshot of the capability's output schema, for in-flight validation. */
   outputSchema?: Record<string, unknown> | null;
+  /** Snapshot of the capability's declared evidence type, same reason. */
+  expectedOutput?: string | null;
   idempotencyKey?: string | null;
   /** step_timeout budget from the capability's timeout_hint; 0 = no timeout. */
   timeoutMs?: number;
@@ -361,6 +363,7 @@ export class WorkflowEngine {
         waitClass: null,
         input: step.input ?? {},
         outputSchema: step.outputSchema ?? null,
+        expectedOutput: step.expectedOutput ?? null,
         updatedAt: this.wallClock(),
         timeoutMs: step.timeoutMs ?? 0,
       };

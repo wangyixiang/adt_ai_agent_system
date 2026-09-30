@@ -39,6 +39,7 @@ const unknownStep: StepSnapshot = {
   waitClass: null,
   input: {},
   outputSchema: null,
+  expectedOutput: null,
   updatedAt: 0,
   timeoutMs: 0,
 };

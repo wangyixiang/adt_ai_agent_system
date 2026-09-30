@@ -99,7 +99,8 @@ export interface StepDispatchPayload {
   objective: string;
   capability: string;
   input: Record<string, unknown>;
-  expected_output: null;
+  /** The evidence type the capability declared; null when it declared none. */
+  expected_output: string | null;
   requires_confirmation: boolean;
   idempotency_key: string | null;
 }
@@ -112,7 +113,7 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
     objective: step.objective,
     capability: step.capability,
     input: step.input,
-    expected_output: null,
+    expected_output: step.expectedOutput,
     requires_confirmation: step.sideEffect,
     idempotency_key: step.idempotencyKey,
   };
@@ -138,12 +139,6 @@ async function withOutputValidation(
   // Never read a schema off a step that belongs to another workflow.
   if (!step || step.workflowId !== workflowId) return update;
 
-  const schema = step.outputSchema as JsonSchema | null | undefined;
-  if (!schema) {
-    conn.warn(`no output_schema for step ${stepId}; skipping evidence validation`);
-    return update;
-  }
-
   const invalid = (reason: string): StepStatusUpdate => {
     conn.warn(`invalid evidence for step ${stepId}: ${reason}`);
     return {
@@ -152,6 +147,23 @@ async function withOutputValidation(
       failReason: { code: "invalid_output" },
     };
   };
+
+  // The promised output type first: if the evidence is not the kind of output
+  // the capability declared, its shape hardly matters (CAPABILITY_SPEC.md §5.2).
+  if (step.expectedOutput !== null) {
+    const type = (update.evidence as { type?: unknown } | undefined)?.type;
+    if (type !== step.expectedOutput) {
+      return invalid(
+        `evidence.type is ${String(type)}, expected ${step.expectedOutput}`,
+      );
+    }
+  }
+
+  const schema = step.outputSchema as JsonSchema | null | undefined;
+  if (!schema) {
+    conn.warn(`no output_schema for step ${stepId}; skipping evidence validation`);
+    return update;
+  }
 
   const result = (update.evidence as { result?: unknown } | undefined)?.result;
   if (result === undefined) return invalid("evidence has no result");
