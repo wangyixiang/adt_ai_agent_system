@@ -115,7 +115,11 @@ export class WorkflowOrchestrator {
 
     // Reconciliation (WORKFLOW_SPEC.md §4.3): the planner judged an UNKNOWN
     // side-effect step from the evidence gathered afterwards. It is not a new
-    // step, so One-Step Planning does not apply; the engine applies the verdict.
+    // step, so One-Step Planning does not apply; the engine applies the verdict
+    // and the ordinary loop continues — otherwise a reconciled workflow would
+    // sit with no active step and no next proposal (stalled until some client
+    // message). Recursion is bounded: each reconcile consumes one UNKNOWN step,
+    // and reconciling a step that is not UNKNOWN throws.
     if (decision.kind === "reconcile") {
       await this.deps.engine.reconcileUnknown(
         workflowId,
@@ -123,7 +127,7 @@ export class WorkflowOrchestrator {
         decision.outcome,
         decision.evidenceRefs ?? [],
       );
-      return {};
+      return this.advance(workflowId);
     }
 
     // A completion candidate is a proposal; the protocol layer records the

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { LlmPlanner } from "../../src/workflow/llmPlanner";
 import { ScriptedLlmProvider } from "@adt/test-support";
 import type { NormalizedCapability } from "@adt/shared";
-import type { WorkflowSnapshot } from "../../src/workflow/store";
+import type { StepSnapshot, WorkflowSnapshot } from "../../src/workflow/store";
 
 const caps: NormalizedCapability[] = [
   {
@@ -24,6 +24,23 @@ const workflow: WorkflowSnapshot = {
   createdAt: 0,
   endedAt: null,
   notSolvedRounds: 0,
+};
+
+const unknownStep: StepSnapshot = {
+  id: "step_unknown",
+  workflowId: "wf_1",
+  state: "UNKNOWN",
+  objective: "复位",
+  capability: "sim_rig.trigger_reset",
+  sideEffect: true,
+  interruptible: false,
+  idempotencyKey: "idem_1",
+  attempt: 1,
+  waitClass: null,
+  input: {},
+  outputSchema: null,
+  updatedAt: 0,
+  timeoutMs: 0,
 };
 
 describe("LlmPlanner", () => {
@@ -112,5 +129,66 @@ describe("LlmPlanner", () => {
     });
     const tool = llm.requests[0]!.tools[0]!;
     expect((tool.parameters as any).properties.criteria).toBeDefined();
+  });
+
+  it("parses a reconcile decision and advertises the UNKNOWN step", async () => {
+    const llm = new ScriptedLlmProvider([
+      {
+        toolCalls: [
+          {
+            name: "propose_step",
+            arguments: {
+              action: "reconcile",
+              reconcile: {
+                step_id: "step_unknown",
+                outcome: "COMPLETED",
+                evidence_refs: ["step_state"],
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    const planner = new LlmPlanner({ provider: llm });
+    const decision = await planner.proposeNext({
+      workflow,
+      steps: [unknownStep],
+      events: [],
+      capabilities: caps,
+    });
+
+    expect(decision).toEqual({
+      kind: "reconcile",
+      stepId: "step_unknown",
+      outcome: "COMPLETED",
+      evidenceRefs: ["step_state"],
+    });
+    // The model has to be told which step is reconcilable.
+    expect(llm.requests[0]!.messages[1]!.content).toContain("step_unknown");
+  });
+
+  it("refuses to reconcile a step that is not UNKNOWN", async () => {
+    const llm = new ScriptedLlmProvider([
+      {
+        toolCalls: [
+          {
+            name: "propose_step",
+            arguments: {
+              action: "reconcile",
+              reconcile: { step_id: "step_done", outcome: "COMPLETED", evidence_refs: [] },
+            },
+          },
+        ],
+      },
+    ]);
+    const planner = new LlmPlanner({ provider: llm });
+    await expect(
+      planner.proposeNext({
+        workflow,
+        steps: [{ ...unknownStep, id: "step_done", state: "COMPLETED" }],
+        events: [],
+        capabilities: caps,
+      }),
+    ).rejects.toThrow(/not UNKNOWN/);
   });
 });

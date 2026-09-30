@@ -38,12 +38,18 @@ describe("reconciliation", () => {
 
     const planner: Planner = {
       initialCriteria: async () => ({ mode: "open", revision: 0 }),
-      proposeNext: async (): Promise<PlannerDecision> => ({
-        kind: "reconcile",
-        stepId: step.id,
-        outcome: "COMPLETED",
-        evidenceRefs: ["step_evidence_1"],
-      }),
+      proposeNext: async ({ steps }): Promise<PlannerDecision> => {
+        const unknown = steps.find((candidate) => candidate.state === "UNKNOWN");
+        if (unknown) {
+          return {
+            kind: "reconcile",
+            stepId: unknown.id,
+            outcome: "COMPLETED",
+            evidenceRefs: ["step_evidence_1"],
+          };
+        }
+        return { kind: "completion_candidate", summary: "done", evidenceRefs: [] };
+      },
     };
     const orchestrator = new WorkflowOrchestrator({
       engine,

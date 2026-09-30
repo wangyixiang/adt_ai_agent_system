@@ -18,6 +18,10 @@ const SYSTEM_PROMPT = [
   "- The step's `capability` MUST be one of the available capabilities.",
   "- `step.input` must satisfy that capability's input schema.",
   "- Propose a completion candidate only when the evidence already justifies it; the engineer still confirms.",
+  "- A side-effecting step can end UNKNOWN: it may or may not have taken effect.",
+  "  Gather objective evidence with read-only steps first, then settle it with",
+  "  action=reconcile (outcome COMPLETED or FAILED). Reconcile only a step listed",
+  "  as UNKNOWN, and never without evidence for the verdict.",
 ].join("\n");
 
 /** The `completion_criteria` shape the planner must produce (WORKFLOW_SPEC.md §8.1). */
@@ -46,7 +50,7 @@ function proposeStepTool(capabilities: NormalizedCapability[]): LlmTool {
       type: "object",
       required: ["action"],
       properties: {
-        action: { type: "string", enum: ["step", "completion_candidate"] },
+        action: { type: "string", enum: ["step", "completion_candidate", "reconcile"] },
         step: {
           type: "object",
           required: ["objective", "capability", "input"],
@@ -61,6 +65,15 @@ function proposeStepTool(capabilities: NormalizedCapability[]): LlmTool {
           required: ["summary", "evidence_refs"],
           properties: {
             summary: { type: "string" },
+            evidence_refs: { type: "array", items: { type: "string" } },
+          },
+        },
+        reconcile: {
+          type: "object",
+          required: ["step_id", "outcome"],
+          properties: {
+            step_id: { type: "string" },
+            outcome: { type: "string", enum: ["COMPLETED", "FAILED"] },
             evidence_refs: { type: "array", items: { type: "string" } },
           },
         },
@@ -102,6 +115,7 @@ function renderEvidence(events: WorkflowEvent[]): string {
 
 function renderPlanningContext(input: PlannerInput): string {
   const { workflow, steps, events, capabilities } = input;
+  const unknown = steps.filter((step) => step.state === "UNKNOWN");
   const requestText =
     typeof (workflow.userRequest as { text?: unknown } | null)?.text === "string"
       ? (workflow.userRequest as { text: string }).text
@@ -120,6 +134,11 @@ function renderPlanningContext(input: PlannerInput): string {
     "Steps so far:",
     steps.length
       ? steps.map((step) => `- ${step.id} [${step.state}] ${step.capability}: ${step.objective}`).join("\n")
+      : "(none)",
+    "",
+    "Steps whose outcome is UNKNOWN and may be reconciled:",
+    unknown.length
+      ? unknown.map((step) => `- ${step.id} (${step.capability})`).join("\n")
       : "(none)",
     "",
     "Evidence so far:",
@@ -161,6 +180,28 @@ function parseDecision(
         ? completion.evidence_refs.filter((item): item is string => typeof item === "string")
         : [],
       ...withCriteria,
+    };
+  }
+
+  if (args.action === "reconcile") {
+    const raw = (args.reconcile ?? {}) as {
+      step_id?: unknown;
+      outcome?: unknown;
+      evidence_refs?: unknown;
+    };
+    if (
+      typeof raw.step_id !== "string" ||
+      (raw.outcome !== "COMPLETED" && raw.outcome !== "FAILED")
+    ) {
+      throw new Error("planner reconcile is missing step_id/outcome");
+    }
+    return {
+      kind: "reconcile",
+      stepId: raw.step_id,
+      outcome: raw.outcome,
+      evidenceRefs: Array.isArray(raw.evidence_refs)
+        ? raw.evidence_refs.filter((item): item is string => typeof item === "string")
+        : [],
     };
   }
 
@@ -240,6 +281,17 @@ export class LlmPlanner implements Planner {
 
     const call = response.toolCalls.find((candidate) => candidate.name === PROPOSE_STEP_TOOL);
     if (!call) throw new Error("planner produced no usable decision");
-    return parseDecision(call.arguments, input.capabilities);
+    const decision = parseDecision(call.arguments, input.capabilities);
+    // The model may only settle a step that is actually UNKNOWN (WORKFLOW_SPEC.md
+    // §4.3); anything else is a bad decision, not a silent state change.
+    if (decision.kind === "reconcile") {
+      const target = input.steps.find((step) => step.id === decision.stepId);
+      if (!target || target.state !== "UNKNOWN") {
+        throw new Error(
+          `planner tried to reconcile a step that is not UNKNOWN: ${decision.stepId}`,
+        );
+      }
+    }
+    return decision;
   }
 }
