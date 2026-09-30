@@ -4,3 +4,4 @@ dist/
 .env
 .superpowers/
 docs/superpowers/handoffs/
+.adt/

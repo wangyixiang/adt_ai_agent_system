@@ -36,6 +36,8 @@ const output = (printed: string[]): string => printed.join("\n");
  */
 function scriptedCli(options: {
   commands: Array<string | (() => string | Promise<string>)>;
+  /** True once the run has terminated — the gate must not read deferred output. */
+  isDone: () => boolean;
   confirmation?: string;
   completion?: string;
   conflict?: string;
@@ -55,7 +57,7 @@ function scriptedCli(options: {
       if (question.startsWith("✋")) return options.feedback ?? "";
       if (question.startsWith("接受这个结论")) return options.completion ?? "y";
 
-      if (started && !output(printed).includes("结束：")) {
+      if (started && !options.isDone()) {
         await new Promise((resolve) => setTimeout(resolve, 20));
         return ""; // the run is still going: re-prompt
       }
@@ -87,9 +89,11 @@ async function startCli(options: {
       ? {}
       : { knowledgeDepositor: options.knowledgeDepositor }),
   });
-  const scripted = scriptedCli(options);
+  // The gate must not read printed output: the queue holds prints back while a
+  // question is pending, so watching the wire is the only deadlock-free signal.
+  let terminated = false;
+  const scripted = scriptedCli({ ...options, isDone: () => terminated });
   const queue = createPromptQueue(scripted.prompter);
-  const print = scripted.prompter.print;
   const workspaceRoot = await mkdtemp(join(tmpdir(), "adt-cli-"));
 
   const daemon = await ClientDaemon.connect({
@@ -100,10 +104,13 @@ async function startCli(options: {
     ledger: openLedger(":memory:"),
     sessionStore: openSessionStore(":memory:"),
     ...(options.registry === undefined ? {} : { registry: options.registry }),
-    ...buildHostCallbacks(queue, print),
+    ...buildHostCallbacks(queue, queue.print),
   });
 
-  const cliDone = runCli({ daemon, prompts: queue, print, workspaceRoot });
+  daemon.connection.on("workflow.terminated", () => {
+    terminated = true;
+  });
+  const cliDone = runCli({ daemon, prompts: queue, workspaceRoot });
 
   return {
     srv,

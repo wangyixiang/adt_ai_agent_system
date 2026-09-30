@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { createPromptQueue, buildHostCallbacks, parseArgs } from "../src/console";
+import { PassThrough } from "node:stream";
+import { createPromptQueue, buildHostCallbacks, parseArgs, readlinePrompter } from "../src/console";
 
 function scripted(lines: string[]) {
   const asked: string[] = [];
@@ -22,6 +23,31 @@ describe("createPromptQueue", () => {
     const [a, b] = await Promise.all([queue.ask("q1? "), queue.ask("q2? ")]);
     expect([a, b]).toEqual(["first", "second"]);
     expect(asked).toEqual(["q1? ", "q2? "]);
+  });
+
+  it("holds an inbound line back until the pending question is answered", async () => {
+    // A dispatch that lands mid-question would otherwise print inside it.
+    const lines: string[] = [];
+    const resolvers: Array<(value: string) => void> = [];
+    const queue = createPromptQueue({
+      ask: (q: string) =>
+        new Promise<string>((resolve) => {
+          lines.push(`ASK ${q}`);
+          resolvers.push(resolve);
+        }),
+      print: (line: string) => void lines.push(`OUT ${line}`),
+    });
+
+    const pending = queue.ask("继续吗？");
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let the ask start
+    expect(lines).toEqual(["ASK 继续吗？"]);
+
+    queue.print("入站的一行");
+    expect(lines).toEqual(["ASK 继续吗？"]); // held back, not printed inside it
+
+    resolvers.shift()!("y");
+    await pending;
+    expect(lines).toEqual(["ASK 继续吗？", "OUT 入站的一行"]);
   });
 });
 
@@ -116,6 +142,22 @@ describe("buildHostCallbacks", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("re-asks when the feedback cannot be understood, instead of losing it", async () => {
+    const { prompter, asked } = scripted(["done", "failed: 灯没变"]);
+    const callbacks = buildHostCallbacks(createPromptQueue(prompter), () => {});
+
+    expect(
+      await callbacks.onUserInput!({
+        workflowId: "wf_1",
+        stepId: "st_1",
+        capability: "human.manual_action",
+        objective: "手动复位",
+        input: {},
+      }),
+    ).toEqual({ outcome: "failed", observation: "灯没变" });
+    expect(asked).toHaveLength(2);
+  });
 });
 
 describe("parseArgs", () => {
@@ -165,5 +207,45 @@ describe("parseArgs", () => {
   it("ignores a bare -- separator instead of eating the next flag", () => {
     // `pnpm -C packages/client-cli start -- --user x` hands tsx a literal "--".
     expect(parseArgs(["--", "--user", "alice"], {}).username).toBe("alice");
+  });
+});
+
+describe("readlinePrompter", () => {
+  function harness() {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let echoed = "";
+    output.on("data", (chunk: Buffer) => {
+      echoed += chunk.toString();
+    });
+    return {
+      prompter: readlinePrompter(input, output),
+      input,
+      output,
+      echoed: () => echoed,
+    };
+  }
+
+  it("does not echo what is typed while the question is hidden", async () => {
+    // A password must never reach the terminal, and — because the hidden prompt
+    // shares the one readline interface — it must not be echoed by another one.
+    const h = harness();
+    const answer = h.prompter.askHidden("密码（不回显）：");
+    h.input.write("hunter2\n");
+
+    expect(await answer).toBe("hunter2");
+    expect(h.echoed()).toContain("密码（不回显）：");
+    expect(h.echoed()).not.toContain("hunter2");
+    h.prompter.close();
+  });
+
+  it("echoes an ordinary question, so the human can see what they type", async () => {
+    const h = harness();
+    const answer = h.prompter.ask("> ");
+    h.input.write(":help\n");
+
+    expect(await answer).toBe(":help");
+    expect(h.echoed()).toContain(":help");
+    h.prompter.close();
   });
 });

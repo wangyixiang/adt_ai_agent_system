@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { Writable } from "node:stream";
 
 import {
   downloadBlob,
@@ -32,27 +33,54 @@ export interface Prompter {
 }
 
 /**
- * One question at a time. Dispatches arrive asynchronously while the human is
- * mid-answer, so every question — the command prompt and the daemon's host
- * callbacks alike — goes through this queue. Two pending questions would eat
- * each other's input.
+ * One question at a time — and one *speaker* at a time.
+ *
+ * Dispatches arrive asynchronously while the human is mid-answer, so every
+ * question (the command prompt and the daemon's host callbacks alike) goes
+ * through this queue: two pending questions would eat each other's input. The
+ * queue also owns printing, holding inbound lines back until the question on
+ * screen has been answered, so a dispatch never lands inside it.
  */
-export function createPromptQueue(prompter: Prompter): { ask(question: string): Promise<string> } {
+export function createPromptQueue(prompter: Prompter): PromptQueue {
   let chain: Promise<unknown> = Promise.resolve();
+  let pending = 0;
+  const deferred: string[] = [];
+
+  const flush = (): void => {
+    if (pending > 0) return;
+    while (deferred.length > 0) prompter.print(deferred.shift()!);
+  };
 
   return {
     ask(question: string): Promise<string> {
+      pending++;
       const next = chain.then(
         () => prompter.ask(question),
         () => prompter.ask(question),
       );
       chain = next.then(
-        () => undefined,
-        () => undefined,
+        () => {
+          pending--;
+          flush();
+        },
+        () => {
+          pending--;
+          flush();
+        },
       );
       return next;
     },
+    print(line: string): void {
+      if (pending > 0) deferred.push(line);
+      else prompter.print(line);
+    },
   };
+}
+
+/** The queue's two halves: ask a question, or say something between questions. */
+export interface PromptQueue {
+  ask(question: string): Promise<string>;
+  print(line: string): void;
 }
 
 export function renderConfirmationPrompt(request: ConfirmationRequest): string {
@@ -117,10 +145,17 @@ export function buildHostCallbacks(
     },
 
     onUserInput: async (request: UserInputRequest): Promise<ManualActionFeedback | undefined> => {
-      const line = await askOrNull(renderUserInputPrompt(request));
-      if (line === null) return undefined;
-      // `null` means "no feedback", which the daemon spells `undefined`.
-      return parseManualFeedback(line) ?? undefined;
+      for (;;) {
+        const line = await askOrNull(renderUserInputPrompt(request));
+        if (line === null) return undefined;
+        // An empty line is a real answer: "nothing to report".
+        if (line.trim() === "") return undefined;
+
+        const feedback = parseManualFeedback(line);
+        if (feedback !== null) return feedback;
+        // A mistyped report must not be silently dropped — nor read as "declined".
+        print('请回报 succeeded | failed | partially | unknown（可跟 ": 观察"），或直接回车不回报。');
+      }
     },
 
     onResourceConflict: async (request: ResourceConflictRequest): Promise<"wait" | "stop"> => {
@@ -190,14 +225,15 @@ export const CLI_HELP = [
 
 export interface CliIo {
   daemon: ClientDaemon;
-  prompts: { ask(question: string): Promise<string> };
-  print: (line: string) => void;
+  /** The queue owns printing too, so inbound lines never land inside a question. */
+  prompts: PromptQueue;
   workspaceRoot: string;
 }
 
 /** The command loop: reads a line, runs a command, until `:quit` or EOF. */
 export async function runCli(io: CliIo): Promise<void> {
-  const { daemon, prompts, print, workspaceRoot } = io;
+  const { daemon, prompts, workspaceRoot } = io;
+  const print = (line: string): void => prompts.print(line);
   const connection = daemon.connection;
 
   connection.on("step.dispatch", (env) => print(renderDispatch(env.payload as StepDispatchPayload)));
@@ -258,7 +294,7 @@ export async function runCli(io: CliIo): Promise<void> {
 
 async function runCommand(
   command: Command,
-  io: Pick<CliIo, "workspaceRoot" | "print"> & { connection: ClientDaemon["connection"] },
+  io: { connection: ClientDaemon["connection"]; print: (line: string) => void; workspaceRoot: string },
 ): Promise<void> {
   const { connection, print, workspaceRoot } = io;
 
@@ -341,28 +377,53 @@ async function runCommand(
 /**
  * The real terminal. `ask` rejects once the input is closed, which is how the
  * host callbacks learn that nobody is there to answer.
+ *
+ * There is deliberately only ever **one** readline interface on stdin: a second
+ * one would echo a password the hidden prompt is trying to hide, and would eat
+ * the line the user typed next. Hiding is done by gating the single interface's
+ * echo, not by starting another.
  */
 export function readlinePrompter(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
-): Prompter & { close(): void } {
-  const rl = createInterface({ input, output, terminal: true });
+): Prompter & { close(): void; askHidden(question: string): Promise<string> } {
+  let muted = false;
+  const gate = new Writable({
+    write(chunk: unknown, encoding: BufferEncoding, done: (error?: Error | null) => void) {
+      if (!muted) output.write(chunk as string, encoding);
+      done();
+    },
+  });
+  const rl = createInterface({ input, output: gate, terminal: true });
   let closed = false;
   rl.on("close", () => {
     closed = true;
   });
 
-  return {
-    ask(question: string): Promise<string> {
-      if (closed) return Promise.reject(new Error("EOF"));
-      return new Promise<string>((resolve, reject) => {
-        const onClose = (): void => reject(new Error("EOF"));
-        rl.once("close", onClose);
-        rl.question(question, (answer) => {
-          rl.off("close", onClose);
-          resolve(answer);
-        });
+  const ask = (question: string): Promise<string> => {
+    if (closed) return Promise.reject(new Error("EOF"));
+    return new Promise<string>((resolve, reject) => {
+      const onClose = (): void => reject(new Error("EOF"));
+      rl.once("close", onClose);
+      rl.question(question, (answer) => {
+        rl.off("close", onClose);
+        resolve(answer);
       });
+    });
+  };
+
+  return {
+    ask,
+    async askHidden(question: string): Promise<string> {
+      // The prompt is ours to write; readline's echo of the answer is not.
+      output.write(question);
+      muted = true;
+      try {
+        return await ask("");
+      } finally {
+        muted = false;
+        output.write("\n");
+      }
     },
     print(line: string): void {
       output.write(`${line}\n`);

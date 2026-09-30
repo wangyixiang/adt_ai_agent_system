@@ -1,7 +1,5 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { createInterface } from "node:readline";
-import { Writable } from "node:stream";
 
 import { ClientDaemon, openLedger, openSessionStore } from "@adt/client-daemon";
 
@@ -13,31 +11,6 @@ import {
   runCli,
 } from "./console";
 
-/**
- * Reads a secret without echoing it. A password on argv is visible to `ps`, so
- * `--secret` is a convenience rather than the only way in.
- *
- * The echo is muted by pointing readline at a stream that swallows writes —
- * no private readline internals are touched.
- */
-async function askSecretWithoutEcho(): Promise<string> {
-  const muted = new Writable({
-    write(_chunk, _encoding, done) {
-      done();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output: muted, terminal: true });
-
-  return new Promise<string>((resolve) => {
-    process.stdout.write("密码（不回显）：");
-    rl.question("", (answer) => {
-      rl.close();
-      process.stdout.write("\n");
-      resolve(answer);
-    });
-  });
-}
-
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.username === "") {
@@ -46,11 +19,15 @@ async function main(): Promise<void> {
     return;
   }
 
+  // One interface for the whole session — the hidden prompt is hidden by gating
+  // this one's echo, never by starting a second readline on the same stdin.
   const terminal = readlinePrompter(process.stdin, process.stdout);
   const prompts = createPromptQueue(terminal);
-  const print = (line: string): void => terminal.print(line);
+  const print = (line: string): void => prompts.print(line);
 
-  const secret = args.secret ?? (await askSecretWithoutEcho());
+  // A password on argv is visible to `ps`, so `--secret` is a convenience
+  // rather than the only way in.
+  const secret = args.secret ?? (await terminal.askHidden("密码（不回显）："));
   if (secret === "") {
     process.stderr.write("没有拿到密码。\n");
     process.exitCode = 2;
@@ -76,7 +53,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    await runCli({ daemon, prompts, print, workspaceRoot: args.workspaceRoot });
+    await runCli({ daemon, prompts, workspaceRoot: args.workspaceRoot });
   } finally {
     await daemon.close();
     terminal.close();
