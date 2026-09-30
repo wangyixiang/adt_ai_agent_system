@@ -52,6 +52,8 @@ export interface TestServerOptions {
   reclaimIntervalMs?: number;
   /** Fallback step_timeout for capabilities that declare no timeout_hint. */
   stepTimeoutMs?: number;
+  /** Grace added on top of a step's timeout (default 2s; see the orchestrator). */
+  stepTimeoutGraceMs?: number;
   /** How often the step timeout monitor sweeps (default 1s). */
   timeoutSweepIntervalMs?: number;
   /** Scripted planner decisions; an exhausted script yields a completion candidate. */
@@ -203,6 +205,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
     defaultStepTimeoutMs: opts.stepTimeoutMs,
+    stepTimeoutGraceMs: opts.stepTimeoutGraceMs,
   });
 
   const protocol = registerWorkflowProtocol({

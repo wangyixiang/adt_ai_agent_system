@@ -196,6 +196,8 @@ export interface StartOptions {
   reclaimIntervalMs?: number;
   /** Fallback step_timeout for capabilities that declare no timeout_hint. */
   stepTimeoutMs?: number;
+  /** Grace added on top of a step's timeout (default 2s; see the orchestrator). */
+  stepTimeoutGraceMs?: number;
   /** How often the step timeout monitor sweeps (default 1s). */
   stepTimeoutSweepIntervalMs?: number;
   onSessionDead?: (sessionId: string) => void;
@@ -283,6 +285,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
     defaultStepTimeoutMs: opts.stepTimeoutMs,
+    stepTimeoutGraceMs: opts.stepTimeoutGraceMs,
   });
 
   const workflowProtocol = registerWorkflowProtocol({

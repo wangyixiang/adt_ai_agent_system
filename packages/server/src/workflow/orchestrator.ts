@@ -28,10 +28,23 @@ export interface OrchestratorDeps {
   capabilitiesOf?: (sessionId: string) => NormalizedCapability[];
   /** Fallback step_timeout for capabilities that declare no timeout_hint. */
   defaultStepTimeoutMs?: number;
+  /**
+   * Added on top of the derived step_timeout. The client caps its own local
+   * execution at the capability's `timeout_hint`; waiting slightly longer means
+   * the client's own verdict arrives first, instead of the Server racing it to
+   * a conclusion it can only guess at (PROTOCOL_SPEC.md §9).
+   */
+  stepTimeoutGraceMs?: number;
 }
 
 /** WORKFLOW_SPEC.md §13: a step that never reports back is bounded anyway. */
 const DEFAULT_STEP_TIMEOUT_MS = 60_000;
+
+/**
+ * How much longer than the capability's own limit the Server waits. Two
+ * seconds is enough to cover a round trip plus the client's bookkeeping.
+ */
+export const DEFAULT_STEP_TIMEOUT_GRACE_MS = 2_000;
 
 /**
  * Validates a planner-produced step input against the Capability's input
@@ -160,10 +173,11 @@ export class WorkflowOrchestrator {
           // Same reasoning for the deadline: the monitor must not consult the
           // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
           timeoutMs:
-            decision.step.timeoutMs ??
-            capability?.timeout_hint ??
-            this.deps.defaultStepTimeoutMs ??
-            DEFAULT_STEP_TIMEOUT_MS,
+            (decision.step.timeoutMs ??
+              capability?.timeout_hint ??
+              this.deps.defaultStepTimeoutMs ??
+              DEFAULT_STEP_TIMEOUT_MS) +
+            (this.deps.stepTimeoutGraceMs ?? DEFAULT_STEP_TIMEOUT_GRACE_MS),
         });
       } catch (error) {
         // A planner that proposes a side effect while one is unresolved is a
