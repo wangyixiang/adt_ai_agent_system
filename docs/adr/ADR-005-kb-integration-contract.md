@@ -22,7 +22,7 @@
 ### 1. 范围
 
 * 本版本实现**导出半边**（本系统 → KB）。
-* **实现状态（2026-09-30 补注）：** 本 ADR 只定**契约**；出站半边**尚未实现**，实现安排在 P4d。在此之前 `record.export_request` 的协议面无服务端实现。
+* **实现状态（2026-09-30；同日 P4d 更新）：** 出站半边**已实现**。`record.export_request` 由 Server 处理：按 `object` 取 Record（可见性同 `PROTOCOL_SPEC.md` §10）或据其生成 Report，构造 §3 的投递包，向配置的 KB 端点 `POST`，把结果映射回 `record.export_result`。配置见 §2，失败与重试见 §5，**本阶段明确不做**的事见 §7。
 * 只定义**投递契约**与抽象接口；具体 KB 后端在确定后按其接口补充一份 KB 集成 Spec。
 * `FR-23`（KB 检索）只做**接口预留**，不在本版本实现。
 
@@ -78,6 +78,13 @@ deposit
 * 与投递端**分开**，互不复用；MVP 不实现，仅占位。
 * 保持 `SERVER_SPEC.md` §4 与 `CAPABILITY_SPEC.md` §7-3 的既有结论：**检索逻辑在第三方系统内，Server 只消费；且不把检索建模为 Capability**（不经过 Client，不生成 Step）。
 
+### 7. 本阶段明确不做（P4d 记录）
+
+* **blob 引用不随导出解析**：投递包的 `content` 里若含 `content_ref`（大体积证据走 blob 通道，见 `PROTOCOL_SPEC.md` §7.5），KB 拿到的**只是引用，不是字节**。要把大体积证据真正交给 KB，需按其存储接口在"上传字节 / 内联小文件 / 只给引用"之间做一次决定——这属于将来那份 KB 集成 Spec，不在本阶段。
+* **FR-23 检索**：只保留 §6 的接口位置，不实现。
+* **审核状态回读**：本系统不追踪（§4）。
+* **异步投递 / 多 KB 路由**：见 Rejected Alternatives 与 Consequences。
+
 ---
 
 ## Rejected Alternatives
@@ -102,10 +109,10 @@ deposit
 
 **需要落实：**
 
-* Server 增加配置项（KB 端点、凭据、超时）；未配置时导出不可用。
+* **已实现（P4d）**：Server 配置项（KB 端点、凭据、超时、重试）——`KB_ENDPOINT_URL` / `KB_AUTH_HEADER`（默认 `Authorization`）/ `KB_AUTH_SCHEME`（默认 `Bearer`，置空即裸 token）/ `KB_TOKEN` / `KB_TIMEOUT_MS`（默认 10s）/ `KB_MAX_RETRIES`（默认 2）；端点或凭据缺失即 `export_unavailable`。
 * `PROTOCOL_SPEC.md` §10.3 的 `error_code` 取值与本 ADR 对齐（已一致：`export_unavailable` / `export_failed` / `invalid_object`）。
-* 目标 KB 确定后，据其真实接口补一份 **KB 集成 Spec**（含检索实现，若届时 `FR-23` 进入排期）。
+* 目标 KB 确定后，据其真实接口补一份 **KB 集成 Spec**（含检索实现，若届时 `FR-23` 进入排期；并一并决定 §7 的 blob 交付方式）。
 
 **仍然延后：**
 
-* KB 检索实现（FR-23）、审核状态回读、多 KB 路由、KB 侧的数据治理与权限。
+* KB 检索实现（FR-23）、审核状态回读、多 KB 路由、KB 侧的数据治理与权限；以及 §7 的 blob 引用解析。

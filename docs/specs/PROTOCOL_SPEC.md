@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.11（§9 `step_timeout` = 依据值 + 宽限（默认 2s）、并补客户端本地上限的同款分流）
+**Version:** v0.12（§10.3 的 KB 导出出站已实现：指向 `ADR-005` 的传输/鉴权/重试契约，并写明同步投递的代价）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -708,7 +708,9 @@ step.status   step.status
 * `status`：`ok` | `failed`；`failed` 时 `error_code` 取值 `export_unavailable` / `export_failed` / `invalid_object`，并给出 `message`。
 * 只能导出**自己**的 Record（同 §10 的可见性规则）；`record_id` 不存在或不属于自己 → `protocol.error(code=unknown_record)`。
 * 导出**不修改** Record，可重复发起。
-* 实际出站（Server → KB 的协议、鉴权、数据格式）由后续 **KB 集成 ADR** 定义；本版本只固定这一层最小协议面。
+* 实际出站（Server → KB 的协议、鉴权、数据格式）由 **`ADR-005`** 定义，并已实现（P4d）：Server 向**配置的 KB 接收端点** `POST` 投递包（`deposit_version` / 稳定 `deposit_id` / `content_sha256` / `submitted_at` / `content`），鉴权按 `ADR-005` §2，失败与重试按 §5——未配置端点或凭据 → `export_unavailable`；网络错误 / 超时 / 5xx 有限重试后 `export_failed`；4xx **不重试**；`object` 非法 → `invalid_object`。
+* 投递是**同步**的（`ADR-005` §4）：`record.export_request` 的处理会等待出站返回，最坏耗时 = `timeout × (maxRetries + 1)` + 退避总和（默认约 31s）。`ok` 只表示"**端点已接收（2xx）**"，**不表示已被收录**。
+* 投递包里的 `content` 对 `object=record` 是 `RECORD_SPEC.md` §3 的成品文档，对 `object=report` 是 `{ "format": "markdown", "content": "..." }`——**只投递 Report，不附带 Record**。
 
 ---
 
@@ -954,7 +956,7 @@ session.heartbeat → session.heartbeat → ...
 1. **认证与授权的完整形态**：v0.5 已实现**最小身份与授权**（本地账号认证、`user_id` 必填并由 Server 校验、副作用确认仅限提交人、Record 仅提交人可见，见 §5.1、§10 与 `ADR-003`）。仍延后：沙箱、多租户、角色体系、组织 SSO 联邦、TLS 启用。
 2. **跨 Client 续接同一 Workflow**：例如手机发起、电脑继续同一个 `workflow_id`。本版本明确不支持——`session.resume` 只在同一逻辑 session（同一个 Client 实例）内工作。
 3. **多 Server 实例下的 Workflow 路由**：一个 Workflow 该固定在哪个 Server 实例上处理，如何做水平扩展，不在本文件范围内。
-4. **第三方 Knowledge Base 的完整集成**：v0.5 已实现**导出半边**的最小协议面（§10.3）。仍延后：KB 检索（FR-23）的接口、导出的出站协议 / 鉴权 / 数据格式、审核状态回读——由后续 KB 集成 ADR 定义。
+4. **第三方 Knowledge Base 的完整集成**：v0.5 实现了**导出半边**的最小协议面（§10.3），v0.12 起**出站**也已实现（按 `ADR-005` 投递 Record/Report）。仍延后：KB 检索（FR-23）的接口（`ADR-005` §6 已预留 `KnowledgeProvider`）、审核状态回读、多 KB 路由，以及投递包里的 **blob 引用解析**（`ADR-005` §7）——目标 KB 确定后据其真实接口补一份 KB 集成 Spec。
 5. **blob 通道的具体传输协议与鉴权**（v0.4 新增）：§7.5 只定义"引用 + 申请制通道"的形态与字段位置；具体是 HTTP PUT/GET、分块协议还是对象存储直传，以及其鉴权方式，留给实现与安全规格决定。
 
 > v0.3 的第 2 条（Schema 语言选型）与第 4 条（大体积 Evidence 传输）已在 v0.4 解决，不再列为未决项。

@@ -28,15 +28,16 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 - **D4+D5（超时语义 + LLM 有界重试）**：
   - **超时两端一套词**：副作用超时（服务端 `step_timeout` 到点，或客户端在本地掐掉）一律 `UNKNOWN`——它可能已部分生效；**只读**才是 `FAILED(timeout)`。服务端 `step_timeout` 在能力的 `timeout_hint` 之上叠 **2s 宽限**，让客户端的观察先到。
   - **LLM 有界重试**（`ADR-004` 修订 A2）：只对 429 / 5xx / 网络错误按 500ms→1000ms 退避重试（`LLM_MAX_RETRIES`，默认 2），**不重试**其它 4xx、自身超时与模型语义错误；终局仍是 `planner_error`。
+- **P4d KB 导出（`ADR-005` 出站）**：提交人显式把一条 Record（默认）或 Report 投递到**配置的 KB 端点**，同步拿到结论。投递包由纯函数生成（`deposit_version` / 稳定 `deposit_id = hash(record_id, object, content_sha256)` / `content_sha256` / 墙钟 `submitted_at` / `content`）；`object=report` 时**只投 Report、不夹带 Record**。出站是 `KnowledgeDepositor` 接缝 + HTTP 实现：`POST` + 配置的鉴权头 + 超时，**网络错误 / 超时 / 5xx 有限重试（默认 2 次，指数退避），4xx 不重试**；**未配置端点或凭据 → `export_unavailable`**（绝不假装成功）。导出**不改 Record**、**不影响 Workflow 状态**。**blob 引用不随导出解析**（KB 只拿到引用，见 `ADR-005` §7）。
 
-后续：**P4d**（KB 导出，`ADR-005` 出站）。Client UI 尚未开始。
+后续：**D7（b）`client-cli`** 控制台客户端（确认 / 建议 / 资源冲突询问 / Record·Report 阅读 / blob 取回 / 触发导出），它同时是手工验收的场所。正式 Client UI 尚未开始。
 
 ## 结构
 
 ```text
 packages/
 ├── shared          # 协议类型、信封编解码、错误处置矩阵、去重窗口、受限子集 JSON Schema 校验器、blob 协议类型
-├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器、blob 通道
+├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器、blob 通道、KB 导出出站
 ├── client-daemon   # 连接/握手/能力声明/心跳 + 可插拔 Capability 适配器（只读 + 受控副作用）、幂等台账、blob 收发
 └── test-support    # 测试用 Server 启动器、WS 测试客户端、脚本化 LLM provider
 ```
@@ -75,6 +76,17 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
 
 真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
+
+### KB 导出（可选，`ADR-005`）
+
+Server 通过环境变量启用"把 Record/Report 导出到第三方 Knowledge Base"的出站：
+
+- `KB_ENDPOINT_URL`：KB 接收端点；**与 `KB_TOKEN` 任一缺失/为空即导出不可用**（`record.export_result` 回 `export_unavailable`，不会退化成"发到某个默认地址"）。
+- `KB_TOKEN`：凭据；**只保存在 Server 端**，不下发 Client、不写入 Record、也不出现在失败信息里。
+- `KB_AUTH_HEADER`：默认 `Authorization`。
+- `KB_AUTH_SCHEME`：默认 `Bearer`（即 `Authorization: Bearer <token>`）；**置空则发裸 token**，适配 `X-API-Key` 这类自定义头。
+- `KB_TIMEOUT_MS`：默认 `10000`。
+- `KB_MAX_RETRIES`：默认 `2`。只对**网络错误 / 超时 / 5xx（含 429）**重试，退避 500ms→1000ms；**4xx 不重试**（它是结论，不是抖动）。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 31s）——投递是**同步**的，这段时间该客户端连接上的其它消息会排队（`ADR-005` §4）。
 
 ## 参考
 

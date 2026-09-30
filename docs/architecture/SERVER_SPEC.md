@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.11（交叉引用更正：KB 导出的出站契约已由 `ADR-005` 定案，不再是"待后续 ADR 定义"；其余同 v0.10）
+- **Version:** v0.12（KB 导出的**出站**已实现（P4d）：按 `ADR-005` 的传输/鉴权/重试/失败语义投递 Record/Report，未配置端点或凭据 → `export_unavailable`；只剩 FR-23 检索未实现）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -123,7 +123,7 @@ Server MUST：
 21. **管理本地账号（创建 / 禁用 / 改密）与会话，校验 Client 认证；未认证连接不得进入业务消息**（v0.8 新增，对应 `ADR-003` §3、`PROTOCOL_SPEC.md` §5.1）
 22. **在所有 Record 查询上按 `user_id` 过滤，保证只返回提交人自己的 Record**（v0.8 新增，对应 `ADR-003` §6、`PROTOCOL_SPEC.md` §10）
 23. **只接受提交人本人对副作用动作的确认**（v0.8 新增，对应 `ADR-003` §5）
-24. **在提交人请求时，把指定 Record/Report 导出到第三方 Knowledge Base（出站）；不追踪 KB 侧审核状态**（v0.8 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3）
+24. **在提交人请求时，把指定 Record/Report 导出到第三方 Knowledge Base（出站）；不追踪 KB 侧审核状态**（v0.8 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3；v0.12 出站已实现——按 `ADR-005` §2/§5 的传输、鉴权与失败重试语义，未配置端点或凭据 → `export_unavailable`）
 25. **保留断线会话（可配置 TTL），接受已认证的 `session.resume` 并回 `workflow.state_sync`（同步 Server 权威状态与待执行 Step）；TTL 逾期未恢复则回收其孤儿 Workflow**（v0.9 新增，对应 `PROTOCOL_SPEC.md` §5.2、`WORKFLOW_SPEC.md` §2.2、NFR-3）
 
 Server MUST NOT：
@@ -156,8 +156,8 @@ Knowledge 和 Context 都是 Planner 的输入，不是 Workflow State——它�
 **关于第三方 Knowledge Base 的边界（v0.4 新增）：**
 
 * 检索逻辑（如何匹配、如何排序、知识库本身的构建与维护）都在第三方系统内，Server 只负责查询和消费结果，不实现自己的检索引擎，也不做历史案例的相似度匹配（对齐 `PRODUCT.md` D-5、`ARCHITECTURE.md` §4 MUST NOT）。
-* **导出半边已实现（v0.8）**：本版本提供"提交人显式发起导出"（Record/Report → KB 的出站，见 `PROTOCOL_SPEC.md` §10.3）。KB 侧的**接收与审核不在本系统内**，本系统**不追踪审核状态**。`RECORD_SPEC.md` §8 的导出友好设计继续有效。
-* **仍未实现（v0.8；v0.11 更正）**：KB **检索**（FR-23）的接口，以及导出的**出站实现**（P4d）。出站契约本身已经定案——`ADR-005`（已接受）定义了传输/鉴权/重试/失败语义；`PROTOCOL_SPEC.md` §10.3 定义了协议面。实现时按这两份落地，无需再等一份 ADR。
+* **导出半边已实现（v0.8；v0.12 补齐出站）**：协议面（`PROTOCOL_SPEC.md` §10.3）自 v0.8 起就在，**出站**（P4d）现在也实现了——Server 按 `ADR-005` §2/§5 向配置的 KB 端点投递 Record/Report，并同步等待结果（最坏 `timeout × (maxRetries + 1)` + 退避；`ok` 只表示端点已接收，不表示已被收录）。KB 侧的**接收与审核不在本系统内**，本系统**不追踪审核状态**。`RECORD_SPEC.md` §8 的导出友好设计继续有效。
+* **仍未实现（v0.8；v0.11/v0.12 更正）**：只剩 KB **检索**（FR-23）的接口——`ADR-005` §6 已预留独立的 `KnowledgeProvider`（与投递端分开），等目标 KB 确定后再按其真实接口补一份 KB 集成 Spec。导出的**出站**已实现（P4d）。
 
 ---
 
