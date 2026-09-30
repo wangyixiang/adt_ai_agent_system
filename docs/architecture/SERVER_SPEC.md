@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.10（资源冲突：副作用 Step 的串行保证由"提供方判断 + 如实上报"取代，Server 只认人类等待与终结两个信号，不仲裁资源；对应 `WORKFLOW_SPEC.md` v0.6、`PROTOCOL_SPEC.md` v0.8，取代 v0.9）
+- **Version:** v0.11（交叉引用更正：KB 导出的出站契约已由 `ADR-005` 定案，不再是"待后续 ADR 定义"；其余同 v0.10）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -157,7 +157,7 @@ Knowledge 和 Context 都是 Planner 的输入，不是 Workflow State——它�
 
 * 检索逻辑（如何匹配、如何排序、知识库本身的构建与维护）都在第三方系统内，Server 只负责查询和消费结果，不实现自己的检索引擎，也不做历史案例的相似度匹配（对齐 `PRODUCT.md` D-5、`ARCHITECTURE.md` §4 MUST NOT）。
 * **导出半边已实现（v0.8）**：本版本提供"提交人显式发起导出"（Record/Report → KB 的出站，见 `PROTOCOL_SPEC.md` §10.3）。KB 侧的**接收与审核不在本系统内**，本系统**不追踪审核状态**。`RECORD_SPEC.md` §8 的导出友好设计继续有效。
-* **仍未实现（v0.8）**：KB **检索**（FR-23）的接口，以及导出的出站协议 / 鉴权 / 数据格式——由后续 **KB 集成 ADR** 定义。
+* **仍未实现（v0.8；v0.11 更正）**：KB **检索**（FR-23）的接口，以及导出的**出站实现**（P4d）。出站契约本身已经定案——`ADR-005`（已接受）定义了传输/鉴权/重试/失败语义；`PROTOCOL_SPEC.md` §10.3 定义了协议面。实现时按这两份落地，无需再等一份 ADR。
 
 ---
 
