@@ -1,6 +1,6 @@
 /**
  * Names registered in CAPABILITY_SPEC.md §2 / §6.
- * `sim_rig.trigger_reset` is the MVP simulated side-effect capability (CAPABILITY_SPEC.md v0.6).
+ * `sim_rig.trigger_reset` is the MVP simulated side-effect capability (CAPABILITY_SPEC.md v0.7).
  */
 export const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
   "filesystem.read_file",

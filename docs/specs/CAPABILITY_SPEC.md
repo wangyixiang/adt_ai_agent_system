@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.6（MVP：登记模拟副作用能力 `sim_rig.trigger_reset` 与 `sim_rig` 的 I/O schema；依据 MVP 范围说明，取代 v0.5）
+- **Version:** v0.7（登记 `docker.inspect_container` 的 I/O schema；给 `filesystem.read_file` / `git.collect_diagnostics` 的输出命名 `file_content` / `git_status`；注明 MVP 占位能力 `local-agent.diagnose_project` / `browser.open_page` 只声明不实现；取代 v0.6）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -164,7 +164,8 @@ Client 应能够向 Server 更新 Capability 状态（对应协议消息 `capabi
 ```text
 filesystem.read_file:
   input:  { type: object, required: [path], properties: { path: {type: string} } }
-  output: { type: object, required: [content, encoding],
+  output: file_content            # v0.7：补充输出名称
+          { type: object, required: [content, encoding],
             properties: { content: {type: string}, encoding: {type: string},
                           path: {type: string} } }
 
@@ -175,6 +176,12 @@ git.collect_diagnostics:
             properties: { branch: {type: string},
                           modified_files: {type: integer},
                           untracked_files: {type: integer} } }
+
+docker.inspect_container:         # v0.7 新增
+  input:  { type: object, required: [container], properties: { container: {type: string} } }
+  output: container_info
+          { type: object, required: [running],
+            properties: { running: {type: boolean}, image: {type: string} } }
 
 test_rig.trigger_reset:
   input:  { type: object, properties: { reason: {type: string} } }
@@ -188,6 +195,8 @@ sim_rig.trigger_reset:            # MVP 模拟项
 ```
 
 > 上表给出格式示例，不代表完整清单。新增 Capability 时，**input/output schema 与 `side_effect` 一样是登记的必要项**（见 §2、§3）。
+
+> **MVP 占位能力（v0.7）：** `local-agent.diagnose_project` / `browser.open_page` 在 MVP 中**只声明、不实现**——不携带 schema（按 §5.4，Server 跳过校验并告警），执行时返回 `capability_error`，**不得伪造证据**。
 
 ### 5.4 缺失 schema 的兼容处理
 
