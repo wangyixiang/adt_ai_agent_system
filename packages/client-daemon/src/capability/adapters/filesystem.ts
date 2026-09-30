@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import type { CapabilityAdapter, ExecutionResult } from "../result";
 import type { CapabilitySpec } from "../spec";
 import { resolveRealWithinWorkspace } from "../workspace";
@@ -24,13 +24,17 @@ export function filesystemReadFile(spec: CapabilitySpec): CapabilityAdapter {
         return { status: "rejected", code: "invalid_input", message: "path escapes the workspace" };
       }
 
-      let size: number;
+      let info;
       try {
-        size = (await stat(abs)).size;
+        info = await lstat(abs);
       } catch {
         return { status: "failed", code: "capability_error", message: "no such file" };
       }
-      if (size > MAX_BYTES) {
+      // Never read a FIFO/device/socket — it could block forever.
+      if (!info.isFile()) {
+        return { status: "failed", code: "capability_error", message: "not a regular file" };
+      }
+      if (info.size > MAX_BYTES) {
         return { status: "failed", code: "capability_error", message: "file too large" };
       }
 

@@ -26,18 +26,22 @@ export class ClientDaemon {
 
   static async connect(opts: ClientDaemonOptions): Promise<ClientDaemon> {
     const registry = opts.registry ?? defaultRegistry();
-    const connection = await DaemonConnection.connect({
-      url: opts.url,
-      credentials: opts.credentials,
-      clientInfo: opts.clientInfo,
-      capabilities: registry.descriptors(),
-    });
-    attachStepRunner({
-      connection,
-      registry,
-      workspaceRoot: opts.workspaceRoot,
-      run: opts.run,
-    });
+    const connection = await DaemonConnection.connect(
+      {
+        url: opts.url,
+        credentials: opts.credentials,
+        clientInfo: opts.clientInfo,
+        capabilities: registry.descriptors(),
+      },
+      (ready) => {
+        attachStepRunner({
+          connection: ready,
+          registry,
+          workspaceRoot: opts.workspaceRoot,
+          run: opts.run,
+        });
+      },
+    );
     return new ClientDaemon(connection, registry);
   }
 

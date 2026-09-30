@@ -124,4 +124,21 @@ describe("attachStepRunner", () => {
       payload: { status: "REJECTED", reject_reason: { code: "invalid_input" } },
     });
   });
+
+  it("never executes a side-effect capability", async () => {
+    let executed = false;
+    const { sent, dispatch } = harness({
+      spec: { name: "sim_rig.trigger_reset", side_effect: true, interruptible: false },
+      execute: async () => {
+        executed = true;
+        return { status: "completed", type: "reset_ack", result: {} };
+      },
+    });
+    dispatch(dispatchPayload({ capability: "sim_rig.trigger_reset", requires_confirmation: false }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(executed).toBe(false);
+    expect(sent[0]).toMatchObject({
+      payload: { status: "REJECTED", reject_reason: { code: "user_declined" } },
+    });
+  });
 });

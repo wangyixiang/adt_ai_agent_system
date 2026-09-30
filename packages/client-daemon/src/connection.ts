@@ -40,7 +40,10 @@ export class DaemonConnection {
     });
   }
 
-  static connect(cfg: ClientConfig): Promise<DaemonConnection> {
+  static connect(
+    cfg: ClientConfig,
+    onReady?: (connection: DaemonConnection) => void,
+  ): Promise<DaemonConnection> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(cfg.url);
       const timer = setTimeout(
@@ -102,6 +105,9 @@ export class DaemonConnection {
           };
           connection.send("capability.sync", sync);
           connection.startHeartbeat();
+          // Attach listeners (e.g. the step runner) before resolving, so a
+          // dispatch arriving right after the welcome cannot be dropped.
+          onReady?.(connection);
           resolve(connection);
           return;
         }

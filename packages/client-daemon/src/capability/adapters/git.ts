@@ -9,6 +9,18 @@ interface GitStatus {
 }
 
 /**
+ * Extracts the branch from the `## ` header line: `## main...origin/main`,
+ * `## main`, `## HEAD (no branch)`, and `## No commits yet on main`.
+ */
+function parseBranch(header: string): string {
+  const rest = header.slice(3).trim();
+  if (rest.startsWith("No commits yet on ")) {
+    return rest.slice("No commits yet on ".length).trim();
+  }
+  return rest.split("...")[0]!.split(" ")[0] ?? "";
+}
+
+/**
  * Parses `git status --porcelain=v1 --branch`:
  * the first `## ` line carries the branch; `?? ` lines are untracked; every
  * other entry (staged, modified, renamed, …) counts as changed.
@@ -21,7 +33,7 @@ function parsePorcelain(stdout: string): GitStatus {
   for (const line of stdout.split(/\r?\n/)) {
     if (line === "") continue;
     if (line.startsWith("## ")) {
-      branch = line.slice(3).split("...")[0]!.split(" ")[0] ?? "";
+      branch = parseBranch(line);
       continue;
     }
     if (line.startsWith("?? ")) {

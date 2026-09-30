@@ -62,4 +62,13 @@ describe("filesystem.read_file", () => {
     const missing = await adapter().execute({ path: "nope.txt" }, ctx());
     expect(missing.status).toBe("failed");
   });
+
+  it("refuses a non-regular file", async () => {
+    const result = await adapter().execute({ path: "logs" }, ctx());
+    expect(result).toEqual({
+      status: "failed",
+      code: "capability_error",
+      message: "not a regular file",
+    });
+  });
 });

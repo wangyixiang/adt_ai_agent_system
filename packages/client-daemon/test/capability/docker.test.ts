@@ -34,4 +34,15 @@ describe("docker.inspect_container", () => {
     expect(result.status).toBe("rejected");
     expect((result as { code: string }).code).toBe("invalid_input");
   });
+
+  it("rejects a container name that looks like a CLI flag", async () => {
+    let called = false;
+    const run: CommandRunner = async () => {
+      called = true;
+      return { code: 0, stdout: "[]", stderr: "" };
+    };
+    const result = await adapter().execute({ container: "--format={{.State.Running}}" }, ctxWith(run));
+    expect(result.status).toBe("rejected");
+    expect(called).toBe(false);
+  });
 });

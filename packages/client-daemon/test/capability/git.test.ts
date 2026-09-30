@@ -21,6 +21,20 @@ describe("git.collect_diagnostics", () => {
     });
   });
 
+  it("reads the branch from a repository that has no commits yet", async () => {
+    const run: CommandRunner = async () => ({
+      code: 0,
+      stdout: "## No commits yet on main\n?? first.txt\n",
+      stderr: "",
+    });
+    const result = await adapter().execute({}, ctxWith(run));
+    expect(result).toEqual({
+      status: "completed",
+      type: "git_status",
+      result: { branch: "main", modified_files: 0, untracked_files: 1 },
+    });
+  });
+
   it("fails when git exits non-zero", async () => {
     const run: CommandRunner = async () => ({ code: 128, stdout: "", stderr: "not a repo" });
     const result = await adapter().execute({ project_path: "." }, ctxWith(run));

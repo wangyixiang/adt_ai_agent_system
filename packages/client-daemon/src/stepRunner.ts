@@ -57,6 +57,14 @@ async function handleStep(
     return;
   }
 
+  // P3b executes read-only capabilities only. Side-effect execution needs the
+  // confirmation flow (P4), so it is never auto-run here — even if the server
+  // forgot to set `requires_confirmation`.
+  if (adapter.spec.side_effect) {
+    send("REJECTED", { reject_reason: { code: "user_declined" } });
+    return;
+  }
+
   // CAPABILITY_SPEC.md §5.2: input that violates the declared input schema is
   // REJECTED (do not try the same thing again), not a failure.
   const input = dispatch.input ?? {};
