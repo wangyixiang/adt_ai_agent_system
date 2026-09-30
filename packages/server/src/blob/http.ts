@@ -30,10 +30,15 @@ export function registerBlobRoutes(app: FastifyInstance, deps: BlobHttpDeps): vo
   const { repository, store, signer, config } = deps;
   const now = deps.now ?? (() => Date.now());
 
-  // Fastify rejects content types it cannot parse (415), and a blob is
-  // arbitrary bytes. This hands the raw stream straight to the handler instead
-  // of buffering it — the protocol route is WebSocket, so no JSON body route
-  // depends on the default parser here.
+  // Fastify rejects content types it cannot parse (415) and, worse, `text/plain`
+  // and `application/json` have built-in parsers that consume the body — which
+  // would leave the handler with an empty stream. Register a pass-through
+  // parser for every allowed type (overriding the built-ins) plus a catch-all,
+  // so a blob is always handed over as an unread stream. The protocol route is
+  // WebSocket, so no JSON body route depends on the defaults here.
+  app.addContentTypeParser([...config.allowedMediaTypes], (_request, payload, done) => {
+    done(null, payload);
+  });
   app.addContentTypeParser("*", (_request, payload, done) => {
     done(null, payload);
   });

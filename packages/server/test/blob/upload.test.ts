@@ -66,12 +66,17 @@ const allocate = async (data: Buffer, contentRef = "blob_a"): Promise<void> => {
   });
 };
 
-const put = (contentRef: string, data: Buffer, token = tokenFor(contentRef, "upload")) =>
+const put = (
+  contentRef: string,
+  data: Buffer,
+  token = tokenFor(contentRef, "upload"),
+  mediaType = "text/plain",
+) =>
   app.inject({
     method: "PUT",
     url: `/blob/${contentRef}?token=${token}`,
     payload: data,
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": mediaType },
   });
 
 describe("PUT /blob/:contentRef", () => {
@@ -85,6 +90,20 @@ describe("PUT /blob/:contentRef", () => {
     expect(response.json()).toMatchObject({ content_ref: "blob_a", size: data.length, sha256: sha(data) });
     expect((await repo.get("blob_a"))!.committedAt).toBe(NOW);
     expect(await store.has(sha(data))).toBe(true);
+  });
+
+  it("stores the bytes whatever the declared type is, including ones Fastify parses itself", async () => {
+    // `text/plain` has a built-in parser that would consume the stream; this
+    // pins that the blob route still receives the bytes.
+    for (const mediaType of ["text/plain", "application/json", "application/octet-stream"]) {
+      const data = Buffer.from(`payload for ${mediaType}`);
+      const contentRef = `blob_${mediaType.replace(/\W/g, "_")}`;
+      await allocate(data, contentRef);
+
+      const response = await put(contentRef, data, tokenFor(contentRef, "upload"), mediaType);
+      expect(response.statusCode).toBe(201);
+      expect(await store.has(sha(data))).toBe(true);
+    }
   });
 
   it("refuses bytes that do not match the declaration, and does not commit", async () => {

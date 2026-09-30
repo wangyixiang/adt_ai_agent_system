@@ -136,11 +136,18 @@ export class DaemonConnection {
     this.listeners.set(type, handlers);
   }
 
-  send(type: string, payload: unknown): void {
+  private off(type: string, handler: (env: Envelope) => void): void {
+    const handlers = this.listeners.get(type);
+    if (!handlers) return;
+    const index = handlers.indexOf(handler);
+    if (index >= 0) handlers.splice(index, 1);
+  }
+
+  private sendWithId(type: string, payload: unknown, messageId: string): void {
     this.ws.send(
       encodeEnvelope({
         protocol_version: PROTOCOL_VERSION,
-        message_id: newMessageId(),
+        message_id: messageId,
         session_id: this.sessionId,
         workflow_id: null,
         user_id: this.userId,
@@ -150,6 +157,52 @@ export class DaemonConnection {
         payload,
       }),
     );
+  }
+
+  send(type: string, payload: unknown): void {
+    this.sendWithId(type, payload, newMessageId());
+  }
+
+  /**
+   * Sends a request and waits for the reply that quotes it. `protocol.error`
+   * is watched too, because a refusal arrives under its own type — matching on
+   * `in_reply_to` is what keeps concurrent requests apart.
+   */
+  request(
+    type: string,
+    payload: unknown,
+    replyType: string,
+    timeoutMs = 10_000,
+  ): Promise<Record<string, unknown>> {
+    const messageId = newMessageId();
+
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const onReply = (env: Envelope): void => {
+        if (env.in_reply_to !== messageId) return;
+        done();
+        if (env.type === "protocol.error") {
+          const failure = (env.payload ?? {}) as { code?: string; message?: string };
+          reject(new Error(`${failure.code ?? "error"}: ${failure.message ?? ""}`));
+          return;
+        }
+        resolve((env.payload ?? {}) as Record<string, unknown>);
+      };
+
+      const timer = setTimeout(() => {
+        done();
+        reject(new Error(`timed out waiting for ${replyType}`));
+      }, timeoutMs);
+
+      const done = (): void => {
+        clearTimeout(timer);
+        this.off(replyType, onReply);
+        this.off("protocol.error", onReply);
+      };
+
+      this.on(replyType, onReply);
+      this.on("protocol.error", onReply);
+      this.sendWithId(type, payload, messageId);
+    });
   }
 
   close(): Promise<void> {

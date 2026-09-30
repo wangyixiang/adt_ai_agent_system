@@ -5,6 +5,7 @@ export { defaultRegistry } from "./capability/defaultRegistry";
 export { mvpDescriptors, mvpSpec } from "./capability/descriptors";
 export { nodeCommandRunner } from "./capability/exec";
 export { openLedger, type Ledger, type LedgerEntry } from "./ledger";
+export { downloadBlob, uploadBlob, type BlobClientDeps } from "./blob";
 export { resolveWithinWorkspace } from "./capability/workspace";
 export {
   attachStepRunner,
