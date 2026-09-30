@@ -68,7 +68,7 @@ export type StepStatusUpdate =
   | { state: "RUNNING" }
   | { state: "WAITING"; waitClass: "human" | "execution" }
   | { state: "COMPLETED"; evidence?: unknown }
-  | { state: "FAILED"; evidence?: unknown }
+  | { state: "FAILED"; evidence?: unknown; failReason?: { code: string; message?: string } }
   | { state: "REJECTED" }
   | { state: "UNKNOWN" };
 
@@ -295,11 +295,14 @@ export class WorkflowEngine {
         update.state === "COMPLETED" || update.state === "FAILED"
           ? update.evidence
           : undefined;
+      const failReason = update.state === "FAILED" ? update.failReason : undefined;
       const stepEvent = this.event(workflowId, "step_status", {
         stepId,
         state: next.state,
-        // Evidence is stored verbatim; Capability schema validation is P3/P4.
+        // Stored verbatim here; the protocol layer validates `result` against
+        // the Capability output schema and records `invalid_output` upstream.
         ...(evidence === undefined ? {} : { evidence }),
+        ...(failReason === undefined ? {} : { failReason }),
       });
 
       // A queued cancel converges the moment its non-interruptible step ends —
@@ -393,6 +396,27 @@ export class WorkflowEngine {
         );
       }
       return this.terminate(workflow, "FAILED", "client_unreachable");
+    });
+  }
+
+  /**
+   * Deterministic failure for a workflow the Server cannot continue (planner
+   * unavailable, invalid planner output). A queued cancel still wins — a
+   * CANCELLING workflow converges to CANCELLED (WORKFLOW_SPEC.md §2.1).
+   */
+  async fail(workflowId: string, reason: string): Promise<WorkflowSnapshot> {
+    return this.withWorkflowLock(workflowId, async () => {
+      const workflow = await this.requireWorkflow(workflowId);
+      if (isTerminalWorkflow(workflow.state)) return workflow;
+
+      if (workflow.state === "CANCELLING") {
+        return this.terminate(
+          workflow,
+          "CANCELLED",
+          workflow.terminalReason ?? "user_cancelled",
+        );
+      }
+      return this.terminate(workflow, "FAILED", reason);
     });
   }
 
