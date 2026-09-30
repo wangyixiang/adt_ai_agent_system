@@ -123,7 +123,7 @@ async function withOutputValidation(
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
-  const { router, engine, store, orchestrator, planner, records, recordStore } = deps;
+  const { router, sessions, engine, store, orchestrator, planner, records, recordStore } = deps;
   const notified = new Set<string>();
 
   const send = (
@@ -248,6 +248,22 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
+    // Idempotent create (PROTOCOL_SPEC.md §7.1): a replayed client_request_id
+    // returns the workflow it already created, without re-planning.
+    const existingId = sessions.findClientRequest(session.id, payload.client_request_id);
+    if (existingId) {
+      const existing = await engine.get(existingId);
+      send(
+        conn,
+        session,
+        "workflow.created",
+        existingId,
+        { workflow_id: existingId, workflow_status: existing?.state ?? "CREATED" },
+        env.message_id,
+      );
+      return;
+    }
+
     const capabilities = [...session.capabilities.asMap().values()];
     const criteria = await planner.initialCriteria(request, capabilities).catch((error) => {
       conn.warn(`initial criteria failed: ${(error as Error).message}`);
@@ -255,6 +271,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
     });
 
     const workflow = await engine.create(session.userId, session.id, request, criteria);
+    sessions.rememberClientRequest(session.id, payload.client_request_id, workflow.id);
 
     send(
       conn,

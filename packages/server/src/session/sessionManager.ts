@@ -21,6 +21,8 @@ export interface Session {
   capabilities: CapabilityRegistry;
   /** Session-lifetime dedup window; survives reconnects (PROTOCOL_SPEC.md §2). */
   dedup: DedupWindow;
+  /** `client_request_id` -> `workflow_id`, scoped to this session (PROTOCOL_SPEC.md §7.1). */
+  clientRequests: Map<string, string>;
 }
 
 export interface SessionManagerOptions {
@@ -60,6 +62,7 @@ export class SessionManager implements SessionResolver {
       disconnectedAt: null,
       capabilities: new CapabilityRegistry(this.known),
       dedup: new DedupWindow(),
+      clientRequests: new Map(),
     };
     this.byId.set(session.id, session);
     this.byConn.set(connection.id, session);
@@ -154,5 +157,14 @@ export class SessionManager implements SessionResolver {
 
   capabilitiesOf(sessionId: string): Map<string, NormalizedCapability> {
     return this.byId.get(sessionId)?.capabilities.asMap() ?? new Map();
+  }
+
+  /** Records the workflow a `client_request_id` already created (idempotency). */
+  rememberClientRequest(sessionId: string, clientRequestId: string, workflowId: string): void {
+    this.byId.get(sessionId)?.clientRequests.set(clientRequestId, workflowId);
+  }
+
+  findClientRequest(sessionId: string, clientRequestId: string): string | null {
+    return this.byId.get(sessionId)?.clientRequests.get(clientRequestId) ?? null;
   }
 }
