@@ -106,16 +106,6 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
 
   const records = new RecordService({ store: finalizeStore, workflowStore });
 
-  const script = [...(opts.planner ?? [])];
-  const orchestrator = new WorkflowOrchestrator({
-    engine,
-    store: workflowStore,
-    planner: {
-      proposeNext: async () =>
-        script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
-    },
-  });
-
   const sessionTtlMs = opts.sessionTtlMs ?? 86_400_000;
   const reclaimer = new OrphanReclaimer({
     engine,
@@ -137,6 +127,17 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
       reclaimer.onSessionDead(sessionId);
     },
     onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
+  });
+
+  const script = [...(opts.planner ?? [])];
+  const orchestrator = new WorkflowOrchestrator({
+    engine,
+    store: workflowStore,
+    planner: {
+      proposeNext: async () =>
+        script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
+    },
+    capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
   });
 
   registerWorkflowProtocol({

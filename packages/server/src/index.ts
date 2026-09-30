@@ -178,11 +178,6 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   const engine = new WorkflowEngine({ store: workflowStore });
   const recordStore = new PostgresRecordStore(pool);
   const records = new RecordService({ store: recordStore, workflowStore });
-  const orchestrator = new WorkflowOrchestrator({
-    engine,
-    store: workflowStore,
-    planner: opts.planner ?? NOOP_PLANNER,
-  });
   const reclaimer = new OrphanReclaimer({
     engine,
     store: workflowStore,
@@ -203,6 +198,13 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
       reclaimer.onSessionDead(sessionId);
     },
     onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
+  });
+
+  const orchestrator = new WorkflowOrchestrator({
+    engine,
+    store: workflowStore,
+    planner: opts.planner ?? NOOP_PLANNER,
+    capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
   });
 
   registerWorkflowProtocol({

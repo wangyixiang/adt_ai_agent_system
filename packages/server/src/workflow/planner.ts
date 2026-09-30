@@ -1,3 +1,4 @@
+import type { NormalizedCapability } from "@adt/shared";
 import type { NewStep } from "./engine";
 import type { StepSnapshot, WorkflowEvent, WorkflowSnapshot } from "./store";
 
@@ -5,6 +6,8 @@ export interface PlannerInput {
   workflow: WorkflowSnapshot;
   steps: StepSnapshot[];
   events: WorkflowEvent[];
+  /** The owning session's declared Capabilities (CAPABILITY_SPEC.md §3). */
+  capabilities: NormalizedCapability[];
 }
 
 export type PlannerDecision =
