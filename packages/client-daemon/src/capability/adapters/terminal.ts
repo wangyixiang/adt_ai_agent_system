@@ -28,6 +28,19 @@ export function terminalExecuteCommand(spec: CapabilitySpec): CapabilityAdapter 
         timeoutMs: spec.timeout_hint ?? 30_000,
       });
 
+      // "Did not run" is not an observation (CAPABILITY_SPEC.md §5.3), so it
+      // must not be dressed up as `exit_code: -1`.
+      if (result.failure === "timeout") {
+        return { status: "failed", code: "timeout", message: "command exceeded its timeout" };
+      }
+      if (result.failure !== undefined) {
+        return {
+          status: "failed",
+          code: "capability_error",
+          message: result.stderr.trim() || "command could not be started",
+        };
+      }
+
       return {
         status: "completed",
         type: spec.output_type ?? "command_result",

@@ -1,4 +1,4 @@
-import { validateJsonSchema, type JsonSchema } from "@adt/shared";
+import { HUMAN_MANUAL_ACTION, validateJsonSchema, type JsonSchema } from "@adt/shared";
 import { nodeCommandRunner } from "./capability/exec";
 import type { CapabilityRegistry } from "./capability/registry";
 import type { CommandRunner, ExecutionResult } from "./capability/result";
@@ -13,9 +13,10 @@ export interface StepDispatcher {
 /**
  * The reserved advisory capability (CAPABILITY_SPEC.md §6). It is never in the
  * Manifest — the Server may dispatch it as a suggestion, and the daemon asks
- * the engineer to perform the action and report back.
+ * the engineer to perform the action and report back. Re-exported for callers
+ * that used to import it from here.
  */
-export const HUMAN_MANUAL_ACTION = "human.manual_action";
+export { HUMAN_MANUAL_ACTION };
 
 export interface ConfirmationRequest {
   workflowId: string;

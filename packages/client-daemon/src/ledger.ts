@@ -66,7 +66,15 @@ export function openLedger(location: string): Ledger {
     get(key: string): LedgerEntry | undefined {
       const row = read.get(key) as { type: string; result: string } | undefined;
       if (!row) return undefined;
-      return { type: row.type, result: JSON.parse(row.result) as unknown };
+      try {
+        return { type: row.type, result: JSON.parse(row.result) as unknown };
+      } catch {
+        // A corrupted row must not throw out of the step runner (that would
+        // leave the step without a status). Treat it as "no record" — the
+        // action is re-confirmed rather than silently replayed.
+        console.warn(`[ledger] unreadable entry for ${key}; ignoring it`);
+        return undefined;
+      }
     },
     set(key: string, entry: LedgerEntry): void {
       write.run(key, entry.type, JSON.stringify(entry.result ?? null));

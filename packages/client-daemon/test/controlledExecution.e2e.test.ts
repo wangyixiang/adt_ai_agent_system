@@ -243,8 +243,64 @@ describe("controlled execution end to end", () => {
     await srv.close();
   });
 
-  it("re-dispatches a pending step under the same idempotency key on resume", async () => {
-    const srv = await startTestServer({ planner: [{ kind: "step", step: resetStep }] });
+  it("runs the advisory path end to end: instruction in, engineer report out", async () => {
+    const srv = await startTestServer({
+      planner: [
+        {
+          kind: "step",
+          step: {
+            objective: "让工程师手动换电源线",
+            capability: "human.manual_action",
+            sideEffect: false,
+            interruptible: true,
+            input: { instruction: "断电后更换电源线，然后上电" },
+          },
+        },
+        { kind: "completion_candidate", summary: "完成", evidenceRefs: [] },
+      ],
+    });
+
+    const asked: string[] = [];
+    const daemon = await ClientDaemon.connect({
+      url: srv.url,
+      credentials,
+      clientInfo,
+      workspaceRoot: process.cwd(),
+      ledger: openLedger(":memory:"),
+      onUserInput: async (request) => {
+        asked.push(request.capability);
+        return { outcome: "succeeded", observation: "换好了，指示灯恢复正常" };
+      },
+    });
+    const c = daemon.connection;
+
+    let workflowId = "";
+    c.on("workflow.created", (env) => {
+      workflowId = (env.payload as { workflow_id: string }).workflow_id;
+    });
+    autoSolve(c, () => workflowId);
+
+    const terminated = await new Promise<Record<string, unknown>>((resolve) => {
+      c.on("workflow.terminated", (env) => resolve(env.payload as Record<string, unknown>));
+      c.send("workflow.request", request);
+    });
+
+    expect(terminated.terminal_state).toBe("COMPLETED");
+    expect(asked).toEqual(["human.manual_action"]);
+
+    // The engineer's report is the evidence, recorded as a user_input entry.
+    const record = await readRecord(c, terminated.record_id as string);
+    const userInput = record.entries.find((entry) => entry.kind === "user_input")!;
+    expect(userInput.ref.content).toEqual({
+      outcome: "succeeded",
+      observation: "换好了，指示灯恢复正常",
+    });
+
+    await daemon.close();
+    await srv.close();
+  });
+
+  it("re-dispatches a pending step under the same idempotency key on resume", async () => {    const srv = await startTestServer({ planner: [{ kind: "step", step: resetStep }] });
     const daemon = await ClientDaemon.connect({
       url: srv.url,
       credentials,

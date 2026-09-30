@@ -58,4 +58,32 @@ describe("terminal.execute_command", () => {
     expect(result.status).toBe("rejected");
     expect(called).toBe(false);
   });
+
+  it("fails when the command could not run, instead of reporting exit_code -1", async () => {
+    const spawnFailure: CommandRunner = async () => ({
+      code: -1,
+      stdout: "",
+      stderr: "not found",
+      failure: "spawn",
+    });
+    expect(
+      await terminalExecuteCommand(mvpSpec("terminal.execute_command")).execute(
+        { command: "nope" },
+        ctxWith(spawnFailure),
+      ),
+    ).toEqual({ status: "failed", code: "capability_error", message: "not found" });
+
+    const timedOut: CommandRunner = async () => ({
+      code: -1,
+      stdout: "",
+      stderr: "",
+      failure: "timeout",
+    });
+    expect(
+      await terminalExecuteCommand(mvpSpec("terminal.execute_command")).execute(
+        { command: "sleep", args: ["600"] },
+        ctxWith(timedOut),
+      ),
+    ).toEqual({ status: "failed", code: "timeout", message: "command exceeded its timeout" });
+  });
 });

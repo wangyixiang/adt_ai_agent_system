@@ -4,6 +4,12 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   code: number;
+  /**
+   * Set when the command did not produce a normal exit status: `timeout` (we
+   * killed it) or `spawn` (it never started). Adapters must not report these
+   * as a completed observation — "couldn't run" is not a result.
+   */
+  failure?: "timeout" | "spawn";
 }
 
 /** Runs a local command; never rejects — failures are encoded in `code`. */

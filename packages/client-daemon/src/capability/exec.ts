@@ -21,13 +21,26 @@ export function nodeCommandRunner(): CommandRunner {
           windowsHide: true,
         },
         (error, stdout, stderr) => {
-          const code =
-            error === null
-              ? 0
-              : typeof (error as { code?: unknown }).code === "number"
-                ? (error as { code: number }).code
-                : -1;
-          resolve({ stdout: String(stdout), stderr: String(stderr), code });
+          if (error === null) {
+            resolve({ stdout: String(stdout), stderr: String(stderr), code: 0 });
+            return;
+          }
+
+          // A numeric `code` is a real exit status (the command ran). Anything
+          // else means the process never reported one: either we killed it
+          // (`killed`), or it could not be started at all.
+          const raw = (error as { code?: unknown; killed?: boolean }).code;
+          if (typeof raw === "number") {
+            resolve({ stdout: String(stdout), stderr: String(stderr), code: raw });
+            return;
+          }
+
+          resolve({
+            stdout: String(stdout),
+            stderr: String(stderr),
+            code: -1,
+            failure: (error as { killed?: boolean }).killed === true ? "timeout" : "spawn",
+          });
         },
       );
     });

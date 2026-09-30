@@ -25,5 +25,15 @@ describe("nodeCommandRunner", () => {
       timeoutMs: 200,
     });
     expect(result.code).not.toBe(0);
+    expect(result.failure).toBe("timeout");
+  });
+
+  it("distinguishes a command that could not start from one that exited non-zero", async () => {
+    const result = await nodeCommandRunner()("adt-definitely-not-a-real-binary", [], {
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    expect(result.failure).toBe("spawn");
+    expect(result.code).toBe(-1);
   });
 });

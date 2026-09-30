@@ -45,25 +45,35 @@ export class ClientDaemon {
   static async connect(opts: ClientDaemonOptions): Promise<ClientDaemon> {
     const registry = opts.registry ?? defaultRegistry();
     const ownedLedger = opts.ledger ?? openLedger(":memory:");
-    const connection = await DaemonConnection.connect(
-      {
-        url: opts.url,
-        credentials: opts.credentials,
-        clientInfo: opts.clientInfo,
-        capabilities: registry.descriptors(),
-      },
-      (ready) => {
-        attachStepRunner({
-          connection: ready,
-          registry,
-          workspaceRoot: opts.workspaceRoot,
-          run: opts.run,
-          onConfirmationRequired: opts.onConfirmationRequired,
-          onUserInput: opts.onUserInput,
-          ledger: ownedLedger,
-        });
-      },
-    );
+
+    let connection: DaemonConnection;
+    try {
+      connection = await DaemonConnection.connect(
+        {
+          url: opts.url,
+          credentials: opts.credentials,
+          clientInfo: opts.clientInfo,
+          capabilities: registry.descriptors(),
+        },
+        (ready) => {
+          attachStepRunner({
+            connection: ready,
+            registry,
+            workspaceRoot: opts.workspaceRoot,
+            run: opts.run,
+            onConfirmationRequired: opts.onConfirmationRequired,
+            onUserInput: opts.onUserInput,
+            ledger: ownedLedger,
+          });
+        },
+      );
+    } catch (error) {
+      // Do not leak the ledger we created when the handshake fails; a
+      // caller-supplied ledger stays theirs to close.
+      if (!opts.ledger) ownedLedger.close();
+      throw error;
+    }
+
     return new ClientDaemon(connection, registry, opts.ledger ? null : ownedLedger);
   }
 
