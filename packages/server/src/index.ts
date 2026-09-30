@@ -302,6 +302,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     users: new UserRepository(pool),
     store: workflowStore,
     records,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
     onResumed: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 

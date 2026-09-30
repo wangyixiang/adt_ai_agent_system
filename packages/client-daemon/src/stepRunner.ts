@@ -86,7 +86,7 @@ export interface StepRunnerDeps {
   ledger?: Ledger;
 }
 
-interface StepDispatchPayload {
+export interface StepDispatchPayload {
   workflow_id: string;
   step_id: string;
   capability: string;
@@ -95,7 +95,6 @@ interface StepDispatchPayload {
   requires_confirmation?: boolean;
   idempotency_key?: string | null;
 }
-
 /**
  * Turns `step.dispatch` into `step.status` (PROTOCOL_SPEC.md §8).
  *
@@ -106,14 +105,18 @@ interface StepDispatchPayload {
  *   a `human.manual_action` step is answered by the engineer;
  * * adapter failures become `FAILED` — evidence is never fabricated.
  */
-export function attachStepRunner(deps: StepRunnerDeps): void {
+export function attachStepRunner(
+  deps: StepRunnerDeps,
+): (dispatch: StepDispatchPayload) => Promise<void> {
   const run = deps.run ?? nodeCommandRunner();
+  const runner = (dispatch: StepDispatchPayload): Promise<void> => runStep(deps, run, dispatch);
   deps.connection.on("step.dispatch", (env) => {
-    void handleStep(deps, run, env.payload as StepDispatchPayload);
+    void runner(env.payload as StepDispatchPayload);
   });
+  return runner;
 }
 
-async function handleStep(
+async function runStep(
   deps: StepRunnerDeps,
   run: CommandRunner,
   dispatch: StepDispatchPayload,

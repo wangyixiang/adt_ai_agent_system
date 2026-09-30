@@ -220,6 +220,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     users,
     store: workflowStore,
     records,
+    heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
     onResumed: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 

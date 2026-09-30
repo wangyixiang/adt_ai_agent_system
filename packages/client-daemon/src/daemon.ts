@@ -1,13 +1,15 @@
 import { defaultRegistry } from "./capability/defaultRegistry";
 import type { CapabilityRegistry } from "./capability/registry";
 import type { CommandRunner } from "./capability/result";
-import { DaemonConnection } from "./connection";
+import { DaemonConnection, type StateSyncSnapshot } from "./connection";
 import { openLedger, type Ledger } from "./ledger";
+import { openSessionStore, type SessionStore } from "./sessionStore";
 import {
   attachStepRunner,
   type ConfirmationRequest,
   type ManualActionFeedback,
   type ResourceConflictRequest,
+  type StepDispatchPayload,
   type UserInputRequest,
 } from "./stepRunner";
 
@@ -34,23 +36,33 @@ export interface ClientDaemonOptions {
    * file-backed one (`openLedger(path)`) in production.
    */
   ledger?: Ledger;
+  /**
+   * Remembers the logical session so a reconnect can resume it instead of
+   * starting a new one (NFR-3). Same in-memory default, same advice: pass a
+   * file-backed `openSessionStore(path)` in production.
+   */
+  sessionStore?: SessionStore;
 }
 
 /**
  * A connected, step-executing client: it declares the registry's capabilities
- * to the Server and runs the read-only steps the Server dispatches.
+ * to the Server, runs the steps the Server dispatches, and resumes its logical
+ * session after a reconnect.
  */
 export class ClientDaemon {
   private constructor(
     readonly connection: DaemonConnection,
     readonly registry: CapabilityRegistry,
-    /** Set only when we created it; a caller-supplied ledger stays theirs. */
+    /** Set only when we created it; a caller-supplied store stays theirs. */
     private readonly ownedLedger: Ledger | null,
+    private readonly ownedSessionStore: SessionStore | null,
   ) {}
 
   static async connect(opts: ClientDaemonOptions): Promise<ClientDaemon> {
     const registry = opts.registry ?? defaultRegistry();
-    const ownedLedger = opts.ledger ?? openLedger(":memory:");
+    const ledger = opts.ledger ?? openLedger(":memory:");
+    const sessionStore = opts.sessionStore ?? openSessionStore(":memory:");
+    const remembered = sessionStore.load();
 
     let connection: DaemonConnection;
     try {
@@ -60,9 +72,10 @@ export class ClientDaemon {
           credentials: opts.credentials,
           clientInfo: opts.clientInfo,
           capabilities: registry.descriptors(),
+          session: remembered ? { sessionId: remembered.sessionId } : null,
         },
-        (ready) => {
-          attachStepRunner({
+        (ready, stateSync) => {
+          const runStep = attachStepRunner({
             connection: ready,
             registry,
             workspaceRoot: opts.workspaceRoot,
@@ -70,22 +83,47 @@ export class ClientDaemon {
             onConfirmationRequired: opts.onConfirmationRequired,
             onUserInput: opts.onUserInput,
             onResourceConflict: opts.onResourceConflict,
-            ledger: ownedLedger,
+            ledger,
           });
+
+          // Work the Server says is still ours. Sequential on purpose: two
+          // pending steps must not drive the same hardware at once.
+          if (stateSync) {
+            const pending = stateSync.workflows
+              .map((workflow) => workflow.pending_step)
+              .filter((step): step is StepDispatchPayload => step !== null);
+            if (pending.length > 0) {
+              console.warn(`[daemon] resuming ${pending.length} pending step(s)`);
+              void (async () => {
+                for (const step of pending) await runStep(step);
+              })();
+            }
+          }
         },
       );
     } catch (error) {
-      // Do not leak the ledger we created when the handshake fails; a
-      // caller-supplied ledger stays theirs to close.
-      if (!opts.ledger) ownedLedger.close();
+      // Do not leak what we created when the handshake fails; a caller-supplied
+      // store stays theirs to close.
+      if (!opts.ledger) ledger.close();
+      if (!opts.sessionStore) sessionStore.close();
       throw error;
     }
 
-    return new ClientDaemon(connection, registry, opts.ledger ? null : ownedLedger);
+    // Only after a successful handshake: whatever session we ended up with
+    // (resumed or brand new) is the one to try next time.
+    sessionStore.save({ sessionId: connection.sessionId, userId: connection.userId });
+
+    return new ClientDaemon(
+      connection,
+      registry,
+      opts.ledger ? null : ledger,
+      opts.sessionStore ? null : sessionStore,
+    );
   }
 
   async close(): Promise<void> {
     await this.connection.close();
     this.ownedLedger?.close();
+    this.ownedSessionStore?.close();
   }
 }

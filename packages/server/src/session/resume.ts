@@ -16,6 +16,8 @@ export interface SessionResumeDeps {
   users: UserRepository;
   store: WorkflowStore;
   records: RecordService;
+  /** Echoed on `workflow.state_sync` so a resumed client knows its cadence. */
+  heartbeatIntervalMs: number;
   /** A live session came back (reconnect): stop counting it down for reclamation. */
   onResumed?: (sessionId: string) => void;
 }
@@ -66,6 +68,7 @@ function sendStateSync(
   session: Session,
   inReplyTo: string,
   workflows: StateSyncWorkflow[],
+  heartbeatIntervalMs: number,
 ): void {
   conn.send({
     protocol_version: PROTOCOL_VERSION,
@@ -76,7 +79,10 @@ function sendStateSync(
     type: "workflow.state_sync",
     ts: nowUtcIso(),
     in_reply_to: inReplyTo,
-    payload: { resumed: true, workflows },
+    // A resumed connection needs the heartbeat cadence too: `session.welcome`
+    // is only sent on a fresh handshake, and without it the client cannot know
+    // how often to keep the session alive.
+    payload: { resumed: true, heartbeat_interval_ms: heartbeatIntervalMs, workflows },
   });
 }
 
@@ -86,7 +92,7 @@ function sendStateSync(
  * server's authoritative state. Resume never leaks another user's session.
  */
 export function registerSessionResume(deps: SessionResumeDeps): void {
-  const { router, sessions, users, store, records } = deps;
+  const { router, sessions, users, store, records, heartbeatIntervalMs } = deps;
 
   router.register("session.resume", async ({ conn }, env) => {
     const payload = asRecord(env.payload);
@@ -136,6 +142,6 @@ export function registerSessionResume(deps: SessionResumeDeps): void {
       workflows.push(await describeWorkflow(workflow, store, records, terminal));
     }
 
-    sendStateSync(conn, existing, env.message_id, workflows);
+    sendStateSync(conn, existing, env.message_id, workflows, heartbeatIntervalMs);
   });
 }

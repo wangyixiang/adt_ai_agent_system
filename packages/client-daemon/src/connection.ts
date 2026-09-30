@@ -9,12 +9,19 @@ import {
   type CapabilitySyncPayload,
   type Envelope,
 } from "@adt/shared";
+import type { StepDispatchPayload } from "./stepRunner";
 
 export interface ClientConfig {
   url: string;
   credentials: { username: string; secret: string };
   capabilities: CapabilityDescriptor[];
   clientInfo: { name: string; platform: string };
+  /**
+   * The logical session to resume, if this daemon had one. When resume is
+   * refused (expired session, server restart) the connection falls back to a
+   * fresh handshake — a new session — rather than failing (PROTOCOL_SPEC.md §5.2).
+   */
+  session?: { sessionId: string } | null;
 }
 
 interface WelcomePayload {
@@ -22,6 +29,17 @@ interface WelcomePayload {
   session_id: string;
   user_id: string;
   heartbeat_interval_ms: number;
+}
+
+/** The part of `workflow.state_sync` a client acts on (PROTOCOL_SPEC.md §5.2). */
+export interface StateSyncSnapshot {
+  resumed: boolean;
+  heartbeat_interval_ms?: number;
+  workflows: Array<{
+    workflow_id: string;
+    workflow_status: string;
+    pending_step: StepDispatchPayload | null;
+  }>;
 }
 
 export class DaemonConnection {
@@ -44,84 +62,159 @@ export class DaemonConnection {
 
   static connect(
     cfg: ClientConfig,
-    onReady?: (connection: DaemonConnection) => void,
+    onReady?: (connection: DaemonConnection, stateSync?: StateSyncSnapshot) => void,
   ): Promise<DaemonConnection> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(cfg.url);
-      const timer = setTimeout(
-        () => reject(new Error("handshake timed out")),
-        10000,
-      );
+    /**
+     * One handshake attempt. A refused resume is answered with a *fatal*
+     * `protocol.error` (the Server closes the socket), so falling back means a
+     * fresh connection — reusing this one would write into a closing socket.
+     */
+    const attempt = (session: { sessionId: string } | null): Promise<DaemonConnection> =>
+      new Promise((resolve, reject) => {
+        const ws = new WebSocket(cfg.url);
+        const resuming = session !== null;
+        const timer = setTimeout(() => {
+          teardown();
+          reject(new Error("handshake timed out"));
+        }, 10000);
 
-      const fail = (error: Error) => {
-        clearTimeout(timer);
-        // Do not leak the socket when the handshake is rejected.
-        try {
-          ws.close();
-        } catch {
-          // already closing/closed
-        }
-        reject(error);
-      };
-
-      ws.once("error", fail);
-      ws.once("open", () => {
-        ws.send(
-          encodeEnvelope({
-            protocol_version: PROTOCOL_VERSION,
-            message_id: newMessageId(),
-            session_id: null,
-            workflow_id: null,
-            user_id: null,
-            type: "session.hello",
-            ts: nowUtcIso(),
-            in_reply_to: null,
-            payload: {
-              supported_protocol_versions: [PROTOCOL_VERSION],
-              client_info: cfg.clientInfo,
-              auth: cfg.credentials,
-              capabilities: cfg.capabilities,
-            },
-          }),
-        );
-      });
-
-      const onMessage = (data: WebSocket.RawData) => {
-        const env = decodeEnvelope(data.toString());
-
-        if (env.type === "session.welcome") {
-          ws.off("message", onMessage);
+        const teardown = (): void => {
           clearTimeout(timer);
-          const payload = env.payload as WelcomePayload;
-          const connection = new DaemonConnection(
-            ws,
-            payload.session_id,
-            payload.user_id,
-            payload.heartbeat_interval_ms,
+          ws.off("message", onMessage);
+          ws.off("error", fail);
+        };
+
+        const fail = (error: Error): void => {
+          teardown();
+          // Do not leak the socket when the handshake is rejected.
+          try {
+            ws.close();
+          } catch {
+            // already closing/closed
+          }
+          reject(error);
+        };
+
+        const sendHello = (): void => {
+          ws.send(
+            encodeEnvelope({
+              protocol_version: PROTOCOL_VERSION,
+              message_id: newMessageId(),
+              session_id: null,
+              workflow_id: null,
+              user_id: null,
+              type: "session.hello",
+              ts: nowUtcIso(),
+              in_reply_to: null,
+              payload: {
+                supported_protocol_versions: [PROTOCOL_VERSION],
+                client_info: cfg.clientInfo,
+                auth: cfg.credentials,
+                capabilities: cfg.capabilities,
+              },
+            }),
           );
-          const sync: CapabilitySyncPayload = {
-            mode: "full",
-            revision: 0,
-            added: cfg.capabilities,
-            removed: [],
-          };
-          connection.send("capability.sync", sync);
+        };
+
+        const sendResume = (): void => {
+          ws.send(
+            encodeEnvelope({
+              protocol_version: PROTOCOL_VERSION,
+              message_id: newMessageId(),
+              session_id: session!.sessionId,
+              workflow_id: null,
+              user_id: null,
+              type: "session.resume",
+              ts: nowUtcIso(),
+              in_reply_to: null,
+              payload: {
+                session_id: session!.sessionId,
+                auth: cfg.credentials,
+                // Only terminal workflows are reconciled from this list; live
+                // ones (the ones with a `pending_step`) are always sent — so a
+                // daemon that tracks nothing still gets its unfinished work back.
+                known_workflows: [],
+              },
+            }),
+          );
+        };
+
+        const finish = (
+          sessionId: string,
+          userId: string,
+          heartbeatIntervalMs: number,
+          stateSync?: StateSyncSnapshot,
+        ): void => {
+          teardown();
+          const connection = new DaemonConnection(ws, sessionId, userId, heartbeatIntervalMs);
+
+          // A resumed session already holds the capabilities it declared, and
+          // the manifest is revision-guarded; re-sending a full sync at
+          // revision 0 would only be dropped as stale.
+          if (!stateSync) {
+            const sync: CapabilitySyncPayload = {
+              mode: "full",
+              revision: 0,
+              added: cfg.capabilities,
+              removed: [],
+            };
+            connection.send("capability.sync", sync);
+          }
+
           connection.startHeartbeat();
           // Attach listeners (e.g. the step runner) before resolving, so a
-          // dispatch arriving right after the welcome cannot be dropped.
-          onReady?.(connection);
+          // dispatch arriving right after the handshake cannot be dropped.
+          onReady?.(connection, stateSync);
           resolve(connection);
-          return;
-        }
+        };
 
-        if (env.type === "protocol.error") {
-          const payload = env.payload as { code: string; message: string };
-          fail(new Error(`${payload.code}: ${payload.message}`));
-        }
-      };
+        ws.once("error", fail);
+        ws.once("open", () => {
+          if (resuming) sendResume();
+          else sendHello();
+        });
 
-      ws.on("message", onMessage);
-    });
+        const onMessage = (data: WebSocket.RawData) => {
+          const env = decodeEnvelope(data.toString());
+
+          if (env.type === "session.welcome" && !resuming) {
+            const payload = env.payload as WelcomePayload;
+            finish(payload.session_id, payload.user_id, payload.heartbeat_interval_ms);
+            return;
+          }
+
+          if (env.type === "workflow.state_sync" && resuming) {
+            const payload = env.payload as StateSyncSnapshot;
+            finish(
+              env.session_id ?? session!.sessionId,
+              env.user_id ?? "",
+              payload.heartbeat_interval_ms ?? 15000,
+              payload,
+            );
+            return;
+          }
+
+          if (env.type === "protocol.error") {
+            const payload = env.payload as { code: string; message: string };
+            if (resuming) {
+              // Refused (expired, unknown, or the Server restarted): start over.
+              teardown();
+              try {
+                ws.close();
+              } catch {
+                // already closing/closed
+              }
+              resolve(attempt(null));
+              return;
+            }
+            fail(new Error(`${payload.code}: ${payload.message}`));
+          }
+        };
+
+        ws.on("message", onMessage);
+      });
+
+    return attempt(cfg.session ?? null);
   }
 
   private startHeartbeat(): void {
