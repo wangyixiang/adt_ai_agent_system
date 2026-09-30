@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { mkdtemp } from "node:fs/promises";
+import { createServer } from "node:net";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AddressInfo } from "node:net";
 import {
   createPool,
   DEFAULT_BLOB_CONFIG,
@@ -13,6 +16,33 @@ import {
 import { TestClient, TEST_DATABASE_URL } from "@adt/test-support";
 
 describe("production entry point (start)", () => {
+  /** A port nothing is listening on right now (racy, but only for a moment). */
+  async function freePort(): Promise<number> {
+    const probe = createServer();
+    probe.listen(0, "127.0.0.1");
+    await once(probe, "listening");
+    const { port } = probe.address() as AddressInfo;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+    return port;
+  }
+
+  it("honours PORT from the environment", async () => {
+    // Nothing else proves the production entry point consults PORT at all: every
+    // other case passes an explicit `port`.
+    const port = await freePort();
+    const previous = process.env.PORT;
+    try {
+      process.env.PORT = String(port);
+      const server = await start({ databaseUrl: TEST_DATABASE_URL });
+
+      expect(server.url).toContain(`:${port}/ws`);
+      await server.close();
+    } finally {
+      if (previous === undefined) delete process.env.PORT;
+      else process.env.PORT = previous;
+    }
+  });
+
   it("serves an authenticated handshake and capability sync", async () => {
     const pool = createPool(TEST_DATABASE_URL);
     await migrate(pool);

@@ -79,7 +79,26 @@ describe("resolvePort", () => {
       expect(resolvePort(undefined, { PORT: "abc" })).toBe(8080);
       expect(resolvePort(undefined, { PORT: "0" })).toBe(8080);
       expect(resolvePort(undefined, { PORT: "70000" })).toBe(8080);
-      expect(String(warn.mock.calls[0]![0])).toContain("PORT");
+      // Three rejections, each naming the variable (not just the first call).
+      expect(warn).toHaveBeenCalledTimes(3);
+      for (const call of warn.mock.calls) {
+        expect(String(call[0])).toContain("PORT");
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("sanitises an explicit port too, instead of handing Node a NaN", () => {
+    // `StartOptions.port` is a public API, so the explicit value can be garbage
+    // as well — the guarantee must not depend on which path was taken.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(resolvePort(NaN, {})).toBe(8080);
+      expect(resolvePort(2.5, {})).toBe(8080);
+      expect(resolvePort(-1, {})).toBe(8080);
+      expect(resolvePort(70_000, {})).toBe(8080);
+      expect(warn).toHaveBeenCalledTimes(4);
     } finally {
       warn.mockRestore();
     }

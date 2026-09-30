@@ -1,14 +1,17 @@
 /**
- * A missing or unusable environment value falls back to `fallback` rather than
- * silently becoming something else: `Number("")` is `0`, which would read as
- * "disabled" for a retry count.
+ * Environment parsing for the Server's tunables.
  *
- * An out-of-range value also falls back instead of being clamped, so the value
- * actually applied is always one the operator could have written themselves.
- * That is only acceptable if the operator can *see* that their value was
- * discarded — pass `name` and a rejected value is reported on stderr. Omitting
- * `max` leaves the value uncapped (see `KB_TIMEOUT_MS`: silently shrinking a
- * legitimately slow value to the default would be a worse surprise).
+ * `parseBoundedInt` is the single parser: a missing or unusable value falls back
+ * rather than silently becoming something else (`Number("")` is `0`, which would
+ * read as "disabled" for a retry count), and an out-of-range value falls back
+ * rather than being clamped, so the value applied is always one the operator
+ * could have written themselves. That is only acceptable if the operator can
+ * *see* their value was discarded — pass `name` and a rejected value is
+ * reported. Omitting `max` leaves the value uncapped (see `KB_TIMEOUT_MS`:
+ * silently shrinking a legitimately slow value would be a worse surprise).
+ *
+ * `resolvePort` lives here because the listen port is the same kind of value; it
+ * sanitises the explicit option and `PORT` alike.
  */
 export function parseBoundedInt(
   value: string | undefined,
@@ -41,14 +44,22 @@ const MAX_PORT = 65_535;
 /**
  * The listen port: an explicit option wins (including `0`, "any free port").
  *
- * A missing or unusable `PORT` degrades to the default and says so, instead of
- * handing Node a `NaN` that fails at listen time with `ERR_SOCKET_BAD_PORT`.
+ * **Both** paths are sanitised, so Node never receives a `NaN` or an
+ * out-of-range port and fails at listen time with a confusing
+ * `ERR_SOCKET_BAD_PORT` — `StartOptions.port` is a public API, so the explicit
+ * value can be garbage too.
  */
 export function resolvePort(
   explicit: number | undefined,
   env: Record<string, string | undefined>,
 ): number {
-  if (explicit !== undefined) return explicit;
+  if (explicit !== undefined) {
+    if (Number.isInteger(explicit) && explicit >= 0 && explicit <= MAX_PORT) return explicit;
+    console.warn(
+      `[config] port=${explicit} is not usable (expected an integer in [0, ${MAX_PORT}]); using ${DEFAULT_PORT}.`,
+    );
+    return DEFAULT_PORT;
+  }
   return parseBoundedInt(env.PORT, {
     fallback: DEFAULT_PORT,
     min: 1,
