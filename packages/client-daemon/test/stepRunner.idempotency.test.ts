@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { attachStepRunner } from "../src/stepRunner";
 import { CapabilityRegistry } from "../src/capability/registry";
+import type { ExecutionResult } from "../src/capability/result";
 import { openLedger, type Ledger } from "../src/ledger";
 
-function harness(ledger: Ledger = openLedger(":memory:")) {
+function harness({
+  ledger = openLedger(":memory:"),
+  execute,
+}: { ledger?: Ledger; execute?: () => Promise<ExecutionResult> } = {}) {
   const sent: Array<{ payload: Record<string, unknown> }> = [];
   const handlers = new Map<string, (env: { payload: unknown }) => void>();
   let runs = 0;
@@ -14,6 +18,7 @@ function harness(ledger: Ledger = openLedger(":memory:")) {
     spec: { name: "sim_rig.trigger_reset", side_effect: true, interruptible: false },
     execute: async () => {
       runs++;
+      if (execute) return execute();
       return { status: "completed", type: "reset_ack", result: { reset_ack: true } };
     },
   });
@@ -128,6 +133,52 @@ describe("idempotency ledger", () => {
     expect(runs).toBe(1);
     // The action may or may not have taken effect; remembering "failed" as an
     // outcome would suppress the retry that reconciliation may ask for.
+    expect(ledger.get("idem_1")).toBeUndefined();
+  });
+
+  it("reports UNKNOWN for a step it had already begun, instead of running it twice", async () => {
+    const ledger = openLedger(":memory:");
+    ledger.markInFlight("idem_1");
+
+    const h = harness({ ledger });
+    h.dispatch(payload);
+    await h.settle();
+
+    // WORKFLOW_SPEC.md §4.3: a client that cannot confirm the ledger must not
+    // re-execute a physical action — it reports the outcome as unknown.
+    expect(h.runs).toBe(0);
+    expect(h.confirmations).toBe(0);
+    expect(h.sent.at(-1)!.payload).toMatchObject({ status: "UNKNOWN" });
+  });
+
+  it("replays a finished result without executing anything", async () => {
+    const ledger = openLedger(":memory:");
+    ledger.markDone("idem_1", "reset_ack", { reset_ack: true });
+
+    const h = harness({ ledger });
+    h.dispatch(payload);
+    await h.settle();
+
+    expect(h.runs).toBe(0);
+    expect(h.sent.at(-1)!.payload).toMatchObject({
+      status: "COMPLETED",
+      evidence: { source: "capability", type: "reset_ack", result: { reset_ack: true } },
+    });
+  });
+
+  it("marks a step in flight before running it, and clears it when it did not happen", async () => {
+    const ledger = openLedger(":memory:");
+    const h = harness({
+      ledger,
+      execute: async () => ({ status: "failed", code: "capability_error", message: "boom" }),
+    });
+
+    h.dispatch(payload);
+    await h.settle();
+
+    expect(h.runs).toBe(1);
+    // A failure is not "unknown": the marker is cleared so a later attempt is
+    // allowed to run.
     expect(ledger.get("idem_1")).toBeUndefined();
   });
 });

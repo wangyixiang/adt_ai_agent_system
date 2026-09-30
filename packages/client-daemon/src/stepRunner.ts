@@ -198,7 +198,21 @@ async function handleStep(
       });
       return;
     }
+    if (recorded?.state === "in_flight") {
+      // WORKFLOW_SPEC.md §4.3: we began this action and never learned how it
+      // ended (the ack was lost, or the process died mid-way). Running it again
+      // would duplicate a physical action, so the honest answer is "unknown" —
+      // the Server reconciles it. Never ask for confirmation either: there is
+      // nothing to confirm.
+      send("UNKNOWN");
+      return;
+    }
   }
+
+  /** The action did not happen, so it is not "unknown" — forget the marker. */
+  const forget = (): void => {
+    if (key !== null) deps.ledger?.clear(key);
+  };
 
   if (dispatch.requires_confirmation === true) {
     send("WAITING", { wait_reason: { code: "user_confirmation" } });
@@ -217,6 +231,10 @@ async function handleStep(
     }
   }
 
+  // Committed to running it: say so in the ledger BEFORE the action starts, so
+  // a reconnect (or a crash) leaves a trace we can honestly report as unknown.
+  if (key !== null) deps.ledger?.markInFlight(key);
+
   send("RUNNING");
 
   // Executing, and asking the engineer when the resource is busy. A provider
@@ -229,6 +247,7 @@ async function handleStep(
     try {
       result = await adapter.execute(input, { workspaceRoot: deps.workspaceRoot, run });
     } catch (error) {
+      forget();
       send("FAILED", {
         fail_reason: { code: "capability_error", message: (error as Error).message },
       });
@@ -250,6 +269,7 @@ async function handleStep(
         send("RUNNING");
         continue;
       }
+      forget();
       send("REJECTED", {
         reject_reason: {
           code: RESOURCE_CONFLICT,
@@ -260,9 +280,8 @@ async function handleStep(
     }
 
     if (result.status === "completed") {
-      // Remember only a real outcome: an action that failed may have taken
-      // (partial) effect, and suppressing a later reconciliation-driven retry
-      // would hide that.
+      // The only outcome worth remembering: it is what a later re-dispatch (a
+      // resume) replays instead of repeating the action.
       if (key !== null) deps.ledger?.markDone(key, result.type, result.result);
       send("COMPLETED", {
         evidence: { source: "capability", type: result.type, result: result.result },
@@ -271,6 +290,7 @@ async function handleStep(
     }
 
     if (result.status === "failed") {
+      forget();
       send("FAILED", {
         fail_reason: {
           code: result.code,
@@ -280,6 +300,7 @@ async function handleStep(
       return;
     }
 
+    forget();
     send("REJECTED", {
       reject_reason: {
         code: result.code,
