@@ -1,5 +1,12 @@
 import type { CapabilitySpec } from "./spec";
 
+/** The canonical declaration of one MVP capability, by name. */
+export function mvpSpec(name: string): CapabilitySpec {
+  const spec = mvpDescriptors().find((candidate) => candidate.name === name);
+  if (!spec) throw new Error(`unknown MVP capability: ${name}`);
+  return spec;
+}
+
 /**
  * The MVP capability surface (CAPABILITY_SPEC.md §5.3). All are read-only.
  * Placeholder capabilities are declared without a schema — the Server then
