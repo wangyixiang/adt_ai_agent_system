@@ -62,8 +62,15 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
         ...(failReason === undefined ? {} : { failReason }),
       };
     }
-    case "REJECTED":
-      return { state: "REJECTED" };
+    case "REJECTED": {
+      const reason = asRecord(payload.reject_reason);
+      const code = reason.code ?? payload.reject_reason;
+      const rejectReason =
+        typeof code === "string"
+          ? { code, ...(typeof reason.message === "string" ? { message: reason.message } : {}) }
+          : undefined;
+      return rejectReason === undefined ? { state: "REJECTED" } : { state: "REJECTED", rejectReason };
+    }
     case "UNKNOWN":
       return { state: "UNKNOWN" };
     default:

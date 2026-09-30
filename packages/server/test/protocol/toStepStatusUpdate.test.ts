@@ -19,4 +19,11 @@ describe("toStepStatusUpdate fail_reason", () => {
     });
     expect(toStepStatusUpdate({ status: "FAILED" })).toEqual({ state: "FAILED" });
   });
+
+  it("carries a structured client reject_reason", () => {
+    expect(
+      toStepStatusUpdate({ status: "REJECTED", reject_reason: { code: "capability_unavailable" } }),
+    ).toEqual({ state: "REJECTED", rejectReason: { code: "capability_unavailable" } });
+    expect(toStepStatusUpdate({ status: "REJECTED" })).toEqual({ state: "REJECTED" });
+  });
 });

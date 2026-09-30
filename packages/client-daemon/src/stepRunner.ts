@@ -1,3 +1,4 @@
+import { validateJsonSchema, type JsonSchema } from "@adt/shared";
 import { nodeCommandRunner } from "./capability/exec";
 import type { CapabilityRegistry } from "./capability/registry";
 import type { CommandRunner, ExecutionResult } from "./capability/result";
@@ -56,6 +57,20 @@ async function handleStep(
     return;
   }
 
+  // CAPABILITY_SPEC.md §5.2: input that violates the declared input schema is
+  // REJECTED (do not try the same thing again), not a failure.
+  const input = dispatch.input ?? {};
+  const schema = adapter.spec.input_schema as JsonSchema | undefined;
+  if (schema) {
+    const validation = validateJsonSchema(schema, input);
+    if (!validation.valid) {
+      send("REJECTED", {
+        reject_reason: { code: "invalid_input", message: validation.errors.join("; ") },
+      });
+      return;
+    }
+  }
+
   if (dispatch.requires_confirmation === true) {
     send("REJECTED", { reject_reason: { code: "user_declined" } });
     return;
@@ -65,7 +80,7 @@ async function handleStep(
 
   let result: ExecutionResult;
   try {
-    result = await adapter.execute(dispatch.input ?? {}, { workspaceRoot: deps.workspaceRoot, run });
+    result = await adapter.execute(input, { workspaceRoot: deps.workspaceRoot, run });
   } catch (error) {
     send("FAILED", {
       fail_reason: { code: "capability_error", message: (error as Error).message },
@@ -85,6 +100,11 @@ async function handleStep(
       },
     });
   } else {
-    send("REJECTED", { reject_reason: { code: result.code } });
+    send("REJECTED", {
+      reject_reason: {
+        code: result.code,
+        ...(result.message === undefined ? {} : { message: result.message }),
+      },
+    });
   }
 }

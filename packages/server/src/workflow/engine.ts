@@ -71,7 +71,7 @@ export type StepStatusUpdate =
   | { state: "WAITING"; waitClass: "human" | "execution" }
   | { state: "COMPLETED"; evidence?: unknown }
   | { state: "FAILED"; evidence?: unknown; failReason?: { code: string; message?: string } }
-  | { state: "REJECTED" }
+  | { state: "REJECTED"; rejectReason?: { code: string; message?: string } }
   | { state: "UNKNOWN" };
 
 export interface EngineDeps {
@@ -299,6 +299,7 @@ export class WorkflowEngine {
           ? update.evidence
           : undefined;
       const failReason = update.state === "FAILED" ? update.failReason : undefined;
+      const rejectReason = update.state === "REJECTED" ? update.rejectReason : undefined;
       const stepEvent = this.event(workflowId, "step_status", {
         stepId,
         state: next.state,
@@ -306,6 +307,7 @@ export class WorkflowEngine {
         // the Capability output schema and records `invalid_output` upstream.
         ...(evidence === undefined ? {} : { evidence }),
         ...(failReason === undefined ? {} : { failReason }),
+        ...(rejectReason === undefined ? {} : { rejectReason }),
       });
 
       // A queued cancel converges the moment its non-interruptible step ends —

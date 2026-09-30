@@ -197,6 +197,26 @@ describe("record builder", () => {
     expect(record.entries[1]!.ref).toEqual({ step_id: "step_7", decision: "declined" });
   });
 
+  it("does not record a non-human rejection as a user confirmation", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "RUNNING" },
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics", input: {} }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "REJECTED",
+          rejectReason: { code: "capability_unavailable" },
+        }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_rej",
+    });
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "step_rejected"]);
+    expect(record.entries[1]!.ref.reject_reason).toEqual({ code: "capability_unavailable" });
+  });
+
   it("ignores a null evidence payload", () => {
     const record = buildRecord({
       workflow: { ...workflow, state: "RUNNING" },

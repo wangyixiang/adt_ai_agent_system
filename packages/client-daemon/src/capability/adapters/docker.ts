@@ -16,7 +16,7 @@ export function dockerInspectContainer(spec: CapabilitySpec): CapabilityAdapter 
     async execute(input, ctx): Promise<ExecutionResult> {
       const container = typeof input.container === "string" ? input.container : "";
       if (container === "") {
-        return { status: "failed", code: "invalid_input", message: "container is required" };
+        return { status: "rejected", code: "invalid_input", message: "container is required" };
       }
 
       const result = await ctx.run("docker", ["inspect", container], {

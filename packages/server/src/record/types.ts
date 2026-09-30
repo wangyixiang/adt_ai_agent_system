@@ -5,6 +5,7 @@ export type RecordEntryKind =
   | "step_dispatched"
   | "evidence_received"
   | "user_confirmation"
+  | "step_rejected"
   | "user_input"
   | "completion_candidate"
   | "completion_response"

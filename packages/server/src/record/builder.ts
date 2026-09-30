@@ -36,6 +36,10 @@ export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unkno
     }
     case "user_confirmation":
       return `工程师${ref.decision === "confirmed" ? "确认" : "拒绝"}了副作用动作。`;
+    case "step_rejected": {
+      const reason = ref.reject_reason as { code?: unknown } | null | undefined;
+      return `未执行 ${String(ref.capability)}（原因 ${String(reason?.code ?? "unknown")}）。`;
+    }
     case "user_input":
       return "工程师补充了信息。";
     case "completion_candidate":
@@ -99,10 +103,22 @@ function toEntry(
         return { ...base, kind: "step_outcome_unknown", ref, narrative: renderNarrative("step_outcome_unknown", ref) };
       }
 
-      // A rejection IS a human decision that happened, so it must appear.
+      // A rejection is a decision that happened. Only `user_declined` is a
+      // human decision; other reject reasons get their own, non-human entry.
       if (payload.state === "REJECTED") {
-        const ref = { step_id: stepId, decision: "declined" };
-        return { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
+        const rejectReason = payload.rejectReason as { code?: unknown } | undefined;
+        const code = typeof rejectReason?.code === "string" ? rejectReason.code : "user_declined";
+        if (code === "user_declined") {
+          const ref = { step_id: stepId, decision: "declined" };
+          return { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
+        }
+        const step = stepsById.get(stepId);
+        const ref = {
+          step_id: stepId,
+          capability: step?.capability ?? null,
+          reject_reason: payload.rejectReason ?? null,
+        };
+        return { ...base, kind: "step_rejected", ref, narrative: renderNarrative("step_rejected", ref) };
       }
 
       if (

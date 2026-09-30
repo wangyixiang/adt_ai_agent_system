@@ -1,6 +1,6 @@
 # WORKFLOW_SPEC.md
 
-- **Version:** v0.5（系统失败原因补充：§2 的 `FAILED` 增 `invalid_input` / `invalid_output` / `planner_error`，对应 P3a 的 Planner/校验路径；对齐 `PROTOCOL_SPEC.md` v0.7、`CAPABILITY_SPEC.md` v0.7、`RECORD_SPEC.md` v0.6，取代 v0.4）
+- **Version:** v0.5（系统失败原因补充：§2 的 `FAILED` 增 `invalid_input` / `invalid_output` / `planner_error`，对应 P3a 的 Planner/校验路径；对齐 `PROTOCOL_SPEC.md` v0.7、`CAPABILITY_SPEC.md` v0.7、`RECORD_SPEC.md` v0.7，取代 v0.4）
 - **层级:** Specification — Client 与 Server 共享的行为契约
 - **拆分说明:** 原 v0.2 的 `CLIENT_SPEC.md` 和 `SERVER_SPEC.md` 里，Step 状态机、Evidence 结构、Completion 判定流程被各自定义了一遍，且已经出现细节漂移（例如 Evidence 两种不同的示例结构、Execution Loop 图里 "Done Candidate" 与其余各处 "Completion Candidate" 不一致）。本文件把这些内容整合为唯一权威定义，`architecture/CLIENT_SPEC.md` 与 `architecture/SERVER_SPEC.md` 均应引用本文件，不再各自维护副本。
 

@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.6（`step_dispatched` 的 `ref` 增 `input`（对应 FR-12"全部 Step（目的、所用能力、输入）"）；`completion_criteria` 的修订历史落为 `criteria_revisions` 字段；与实现和 `PROTOCOL_SPEC.md` v0.7 对齐，取代 v0.5）
+- **Version:** v0.7（新增 `step_rejected` entry kind：非工程师决定的拒绝（如 `capability_unavailable`）不再被记成 `user_confirmation`；`step_dispatched` 的 `ref` 增 `input`（FR-12）；`completion_criteria` 的修订历史落为 `criteria_revisions` 字段；与 `PROTOCOL_SPEC.md` v0.7 对齐，取代 v0.6）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -119,6 +119,7 @@ Entry
 | `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增） |
 | `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构）, `fail_reason`（v0.6，仅当该证据被校验拒绝时，见 `WORKFLOW_SPEC.md` §2 的 `invalid_output`） |
 | `user_confirmation` | 工程师对一个有副作用的动作做了确认/拒绝（对齐 `WORKFLOW_SPEC.md` §4.2） | `step_id`, `decision`（confirmed \| declined） |
+| `step_rejected`（v0.7 新增） | 某个 Step 未被执行，但**不是**工程师的决定（例如引用了未声明能力 `capability_unavailable`） | `step_id`, `capability`, `reject_reason` |
 | `user_input` | 工程师补充信息或反馈"建议"的执行结果（包括 `human.manual_action` 的反馈，见 `WORKFLOW_SPEC.md` §6.1） | `step_id`（如适用）, `content` |
 | `completion_candidate` | Server 提出"可能已解决" | `summary`, `evidence_refs` |
 | `completion_response` | 工程师对 Completion Candidate 的回应 | `resolution`（solved \| not_solved）, `feedback` |

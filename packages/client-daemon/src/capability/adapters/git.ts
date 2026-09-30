@@ -1,6 +1,6 @@
 import type { CapabilityAdapter, ExecutionResult } from "../result";
 import type { CapabilitySpec } from "../spec";
-import { resolveWithinWorkspace } from "../workspace";
+import { resolveRealWithinWorkspace } from "../workspace";
 
 interface GitStatus {
   branch: string;
@@ -43,9 +43,9 @@ export function gitCollectDiagnostics(spec: CapabilitySpec): CapabilityAdapter {
     spec,
     async execute(input, ctx): Promise<ExecutionResult> {
       const projectPath = typeof input.project_path === "string" ? input.project_path : ".";
-      const abs = resolveWithinWorkspace(ctx.workspaceRoot, projectPath);
+      const abs = await resolveRealWithinWorkspace(ctx.workspaceRoot, projectPath);
       if (!abs) {
-        return { status: "failed", code: "invalid_input", message: "project_path escapes the workspace" };
+        return { status: "rejected", code: "invalid_input", message: "project_path escapes the workspace" };
       }
 
       const result = await ctx.run(

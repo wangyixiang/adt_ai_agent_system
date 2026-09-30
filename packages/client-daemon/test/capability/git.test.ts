@@ -35,7 +35,7 @@ describe("git.collect_diagnostics", () => {
       return { code: 0, stdout: "", stderr: "" };
     };
     const result = await adapter().execute({ project_path: "../elsewhere" }, ctxWith(run));
-    expect(result.status).toBe("failed");
+    expect(result.status).toBe("rejected");
     expect(called).toBe(false);
   });
 });

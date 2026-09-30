@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import type { CapabilityAdapter, ExecutionResult } from "../result";
 import type { CapabilitySpec } from "../spec";
-import { resolveWithinWorkspace } from "../workspace";
+import { resolveRealWithinWorkspace } from "../workspace";
 
 const MAX_BYTES = 256 * 1024;
 
@@ -16,12 +16,12 @@ export function filesystemReadFile(spec: CapabilitySpec): CapabilityAdapter {
     async execute(input, ctx): Promise<ExecutionResult> {
       const target = typeof input.path === "string" ? input.path : "";
       if (target === "") {
-        return { status: "failed", code: "invalid_input", message: "path is required" };
+        return { status: "rejected", code: "invalid_input", message: "path is required" };
       }
 
-      const abs = resolveWithinWorkspace(ctx.workspaceRoot, target);
+      const abs = await resolveRealWithinWorkspace(ctx.workspaceRoot, target);
       if (!abs) {
-        return { status: "failed", code: "invalid_input", message: "path escapes the workspace" };
+        return { status: "rejected", code: "invalid_input", message: "path escapes the workspace" };
       }
 
       let size: number;

@@ -31,7 +31,7 @@ describe("docker.inspect_container", () => {
   it("requires a container name", async () => {
     const run: CommandRunner = async () => ({ code: 0, stdout: "[]", stderr: "" });
     const result = await adapter().execute({}, ctxWith(run));
-    expect(result.status).toBe("failed");
+    expect(result.status).toBe("rejected");
     expect((result as { code: string }).code).toBe("invalid_input");
   });
 });

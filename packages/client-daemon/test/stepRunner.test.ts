@@ -98,4 +98,30 @@ describe("attachStepRunner", () => {
     });
     expect((sent[1] as { payload: { evidence?: unknown } }).payload.evidence).toBeUndefined();
   });
+
+  it("rejects input that violates the declared schema without executing", async () => {
+    let executed = false;
+    const { sent, dispatch } = harness({
+      spec: {
+        name: "filesystem.read_file",
+        side_effect: false,
+        interruptible: true,
+        input_schema: {
+          type: "object",
+          required: ["path"],
+          properties: { path: { type: "string" } },
+        },
+      },
+      execute: async () => {
+        executed = true;
+        return { status: "completed", type: "file_content", result: {} };
+      },
+    });
+    dispatch(dispatchPayload({ input: { path: 7 } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(executed).toBe(false);
+    expect(sent[0]).toMatchObject({
+      payload: { status: "REJECTED", reject_reason: { code: "invalid_input" } },
+    });
+  });
 });

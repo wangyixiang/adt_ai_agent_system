@@ -20,7 +20,7 @@ export type CommandRunner = (
 export type ExecutionResult =
   | { status: "completed"; type: string; result: unknown }
   | { status: "failed"; code: string; message?: string }
-  | { status: "rejected"; code: string };
+  | { status: "rejected"; code: string; message?: string };
 
 export interface ExecutionContext {
   /** Filesystem access is confined to this root. */
