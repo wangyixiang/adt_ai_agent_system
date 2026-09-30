@@ -52,25 +52,27 @@ export function createPromptQueue(prompter: Prompter): PromptQueue {
     while (deferred.length > 0) prompter.print(deferred.shift()!);
   };
 
+  /** Serialize one question. `skip` is re-checked once it is this one's turn. */
+  const enqueue = <T>(work: () => Promise<T>): Promise<T> => {
+    pending++;
+    const next = chain.then(work, work);
+    chain = next.then(
+      () => {
+        pending--;
+        flush();
+      },
+      () => {
+        pending--;
+        flush();
+      },
+    );
+    return next;
+  };
+
   return {
-    ask(question: string): Promise<string> {
-      pending++;
-      const next = chain.then(
-        () => prompter.ask(question),
-        () => prompter.ask(question),
-      );
-      chain = next.then(
-        () => {
-          pending--;
-          flush();
-        },
-        () => {
-          pending--;
-          flush();
-        },
-      );
-      return next;
-    },
+    ask: (question: string): Promise<string> => enqueue(() => prompter.ask(question)),
+    askUnless: (skip: () => boolean, question: string): Promise<string | null> =>
+      enqueue(() => (skip() ? Promise.resolve(null) : prompter.ask(question))),
     print(line: string): void {
       if (pending > 0) deferred.push(line);
       else prompter.print(line);
@@ -78,16 +80,22 @@ export function createPromptQueue(prompter: Prompter): PromptQueue {
   };
 }
 
-/** The queue's two halves: ask a question, or say something between questions. */
+/** The queue's halves: ask a question, or say something between questions. */
 export interface PromptQueue {
   ask(question: string): Promise<string>;
+  /**
+   * Ask, unless `skip` has become true by the time this question's turn comes —
+   * so quitting is not held up by a question that was queued behind the quit.
+   * Resolves `null` when skipped.
+   */
+  askUnless(skip: () => boolean, question: string): Promise<string | null>;
   print(line: string): void;
 }
 
 export function renderConfirmationPrompt(request: ConfirmationRequest): string {
   return [
     `⚠ 需要你确认的副作用动作（Step ${request.stepId}）`,
-    `  目标：${request.objective}`,
+    `  目标：${request.objective ?? "（未给出目标）"}`,
     `  能力：${request.capability}`,
     `  输入：${stableJson(request.input)}`,
     "执行吗？[y/N] ",
@@ -97,7 +105,7 @@ export function renderConfirmationPrompt(request: ConfirmationRequest): string {
 export function renderUserInputPrompt(request: UserInputRequest): string {
   return [
     `✋ 建议你手动执行（Step ${request.stepId}）`,
-    `  目标：${request.objective}`,
+    `  目标：${request.objective ?? "（未给出目标）"}`,
     `  能力：${request.capability}`,
     `  输入：${stableJson(request.input)}`,
     "做完后回报：succeeded | failed | partially | unknown（可跟 \": 观察\"）；直接回车表示不回报。",
@@ -283,6 +291,7 @@ export async function runCli(io: CliIo): Promise<void> {
   const print = (line: string): void => prompts.print(line);
   const connection = daemon.connection;
   const inFlight = createInFlight();
+  let quitting = false;
 
   connection.on("step.dispatch", (env) => print(renderDispatch(env.payload as StepDispatchPayload)));
   connection.on("workflow.terminated", (env) =>
@@ -298,17 +307,20 @@ export async function runCli(io: CliIo): Promise<void> {
     inFlight.track(
       (async () => {
         print(`◇ 系统认为可能已完成：${payload.summary ?? "（未给出说明）"}`);
-        let solved = false;
+        let line: string | null;
         try {
-          solved = parseConfirmation(await prompts.ask("接受这个结论吗？[y/N] ")) === true;
+          // Skipped if the human quits before this question's turn: a quit must
+          // not be held up by a question that was queued behind it.
+          line = await prompts.askUnless(() => quitting, "接受这个结论吗？[y/N] ");
         } catch {
-          solved = false;
+          line = ""; // EOF: nobody is there to answer, which is not a "solved".
         }
+        if (line === null) return; // quitting: the Server reclaims the workflow
         connection.send("workflow.completion_response", {
           workflow_id: workflowId,
-          resolution: solved ? "solved" : "not_solved",
+          resolution: parseConfirmation(line) === true ? "solved" : "not_solved",
         });
-        print(solved ? "已确认完成。" : "已反馈：尚未解决。");
+        print(parseConfirmation(line) === true ? "已确认完成。" : "已反馈：尚未解决。");
       })(),
     );
   });
@@ -326,6 +338,7 @@ export async function runCli(io: CliIo): Promise<void> {
       line = await prompts.ask("> ");
     } catch {
       print("（输入结束，退出）");
+      quitting = true;
       await inFlight.drain();
       return;
     }
@@ -338,6 +351,7 @@ export async function runCli(io: CliIo): Promise<void> {
     }
     if (command.kind === "quit") {
       print("再见。");
+      quitting = true;
       await inFlight.drain();
       return;
     }

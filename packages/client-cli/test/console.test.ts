@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
+import type { ClientDaemon } from "@adt/client-daemon";
 import {
   buildHostCallbacks,
   createInFlight,
   createPromptQueue,
   parseArgs,
   readlinePrompter,
+  renderConfirmationPrompt,
+  runCli,
 } from "../src/console";
 
 function scripted(lines: string[]) {
@@ -135,6 +138,42 @@ describe("buildHostCallbacks", () => {
     });
 
     expect(asked[0]).toContain('{"alpha":2,"zeta":1}');
+
+    // Nested objects and arrays of objects are ordered too, not just the top level.
+    const nestedAsked: string[] = [];
+    const nested = buildHostCallbacks(
+      createPromptQueue({
+        ask: async (question: string) => {
+          nestedAsked.push(question);
+          return "y";
+        },
+        print: () => {},
+      }),
+      () => {},
+    );
+
+    await nested.onConfirmationRequired!({
+      workflowId: "wf_1",
+      stepId: "st_1",
+      capability: "sim_rig.trigger_reset",
+      objective: "复位",
+      input: { zeta: { b: 1, a: 2 }, alpha: [{ y: 1, x: 2 }] },
+    });
+
+    expect(nestedAsked[0]).toContain('{"alpha":[{"x":2,"y":1}],"zeta":{"a":2,"b":1}}');
+  });
+
+  it("never renders `undefined` for a missing objective in a prompt either", () => {
+    // `buildHostCallbacks` is a public seam: a caller without an objective must
+    // not see the word `undefined` in the question.
+    const prompt = renderConfirmationPrompt({
+      workflowId: "wf_1",
+      stepId: "st_1",
+      capability: "sim_rig.trigger_reset",
+      input: {},
+    } as unknown as Parameters<typeof renderConfirmationPrompt>[0]);
+
+    expect(prompt).not.toContain("undefined");
   });
 
   it("passes manual feedback through, and gives none when the human says nothing", async () => {
@@ -265,6 +304,95 @@ describe("createInFlight", () => {
     inFlight.track(Promise.reject(new Error("boom")));
 
     await expect(inFlight.drain()).resolves.toBeUndefined();
+  });
+});
+
+describe("runCli", () => {
+  it("does not ask a fresh question once the human has quit", async () => {
+    // Quitting must not be held up by a new question: only work already in
+    // flight is drained, and a candidate that arrives after the quit is not
+    // answered (the session is ending; the Server reclaims the workflow).
+    const asked: string[] = [];
+    const sent: string[] = [];
+    const handlers = new Map<string, Array<(env: unknown) => void>>();
+
+    const daemon = {
+      connection: {
+        sessionId: "sess_1",
+        userId: "usr_1",
+        on: (type: string, handler: (env: unknown) => void) => {
+          handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+        },
+        send: (type: string, payload: unknown) => {
+          sent.push(`${type} ${JSON.stringify(payload)}`);
+        },
+        request: async () => ({}),
+      },
+    } as unknown as ClientDaemon;
+
+    await runCli({
+      daemon,
+      prompts: createPromptQueue({
+        ask: async (question: string) => {
+          asked.push(question);
+          return ":quit";
+        },
+        print: () => {},
+      }),
+      workspaceRoot: process.cwd(),
+    });
+
+    for (const handler of handlers.get("workflow.completion_candidate") ?? []) {
+      handler({ payload: { summary: "看起来好了" }, workflow_id: "wf_1" });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(asked.some((question) => question.includes("接受这个结论"))).toBe(false);
+    expect(sent.some((line) => line.startsWith("workflow.completion_response"))).toBe(false);
+  });
+
+  it("skips a completion question that was queued behind the quit", async () => {
+    // The reviewer's repro: the Server proposes completion while the human is
+    // typing, so the question is queued — but the human then quits.
+    const asked: string[] = [];
+    const sent: string[] = [];
+    const handlers = new Map<string, Array<(env: unknown) => void>>();
+
+    const daemon = {
+      connection: {
+        sessionId: "sess_1",
+        userId: "usr_1",
+        on: (type: string, handler: (env: unknown) => void) => {
+          handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+        },
+        send: (type: string, payload: unknown) => {
+          sent.push(`${type} ${JSON.stringify(payload)}`);
+        },
+        request: async () => ({}),
+      },
+    } as unknown as ClientDaemon;
+
+    const fireCandidate = (): void => {
+      for (const handler of handlers.get("workflow.completion_candidate") ?? []) {
+        handler({ payload: { summary: "看起来好了" }, workflow_id: "wf_1" });
+      }
+    };
+
+    await runCli({
+      daemon,
+      prompts: createPromptQueue({
+        ask: async (question: string) => {
+          asked.push(question);
+          if (asked.length === 1) fireCandidate(); // proposes while we are answering
+          return ":quit";
+        },
+        print: () => {},
+      }),
+      workspaceRoot: process.cwd(),
+    });
+
+    expect(asked.some((question) => question.includes("接受这个结论"))).toBe(false);
+    expect(sent.some((line) => line.startsWith("workflow.completion_response"))).toBe(false);
   });
 });
 

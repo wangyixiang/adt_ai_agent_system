@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     process.stderr.write(`未知参数（已忽略）：${args.unknownFlags.join(" ")}\n`);
   }
   if (args.valuelessFlags.length > 0) {
-    process.stderr.write(`缺少值的参数（已用默认值）：${args.valuelessFlags.join(" ")}\n`);
+    process.stderr.write(`缺少值的参数（已忽略）：${args.valuelessFlags.join(" ")}\n`);
   }
   if (args.username === "") {
     process.stderr.write("用法：client-cli --user <用户名> [--url ws://host:port/ws] ...\n");
