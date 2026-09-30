@@ -108,6 +108,26 @@ describe("engine.timeoutStep", () => {
       .at(-1)!;
     expect(event.payload).toMatchObject({ state: "RUNNING", progress: { ratio: 0.5 } });
   });
+
+  it("keeps an execution-class WAITING step alive too", async () => {
+    const wf = await create();
+    const step = await engine.dispatchStep(wf.id, {
+      objective: "wait",
+      capability: "sim_rig.query_state",
+      sideEffect: false,
+      interruptible: true,
+      timeoutMs: 1000,
+    });
+    await engine.applyStepStatus(wf.id, step.id, { state: "WAITING", waitClass: "execution" });
+    expect((await store.getStep(step.id))!.updatedAt).toBe(1000);
+
+    t = 4000;
+    await engine.applyStepStatus(wf.id, step.id, { state: "WAITING", waitClass: "execution" });
+
+    const after = (await store.getStep(step.id))!;
+    expect(after.state).toBe("WAITING");
+    expect(after.updatedAt).toBe(4000);
+  });
 });
 
 describe("side-effect blocking (WORKFLOW_SPEC.md §4.3)", () => {

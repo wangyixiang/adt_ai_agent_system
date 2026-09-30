@@ -60,4 +60,20 @@ describe("step timing and idempotency", () => {
     await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
     expect((await store.getStep(step.id))!.updatedAt).toBe(2000);
   });
+
+  it("stamps deadlines with the wall clock, not the ordering clock", async () => {
+    // The deadline is persisted and read back after a restart, so it must come
+    // from a clock that survives the process. If this regressed to `this.now()`
+    // (production: performance.now), the timeout monitor would compare against
+    // a meaningless base.
+    const ordered = new WorkflowEngine({ store, now: () => 1000, wallClock: () => 5000 });
+    const wf = await ordered.create("usr_1", "sess_1", { text: "x" }, { mode: "open", revision: 0 });
+    const step = await ordered.dispatchStep(wf.id, {
+      objective: "read",
+      capability: "git.collect_diagnostics",
+      sideEffect: false,
+      interruptible: true,
+    });
+    expect(step.updatedAt).toBe(5000);
+  });
 });

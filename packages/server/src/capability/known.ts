@@ -1,6 +1,9 @@
+import { HUMAN_MANUAL_ACTION } from "@adt/shared";
+
 /**
- * Names registered in CAPABILITY_SPEC.md §2 / §6.
- * `sim_rig.trigger_reset` is the MVP simulated side-effect capability (CAPABILITY_SPEC.md v0.7).
+ * Names registered in CAPABILITY_SPEC.md §2 / §6, used to sanity-check what a
+ * client declares. `sim_rig.*` are the MVP simulated capabilities; the reserved
+ * names come from the spec, not from a declaration (hence the allowlist).
  */
 export const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
   "filesystem.read_file",
@@ -14,5 +17,6 @@ export const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
   "test_rig.read_fault_code",
   "test_rig.trigger_reset",
   "sim_rig.trigger_reset",
-  "human.manual_action",
+  "sim_rig.query_state",
+  HUMAN_MANUAL_ACTION,
 ]);

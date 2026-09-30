@@ -391,16 +391,26 @@ export class WorkflowEngine {
       // Terminal steps are immutable; UNKNOWN is reconciled separately.
       if (isTerminalStep(step.state)) return workflow;
 
-      // A repeated RUNNING (with or without `progress`) is a keep-alive:
+      // A repeated status on an executing step is a keep-alive:
       // PROTOCOL_SPEC.md §9 resets the deadline on ANY step.status, and the
-      // state does not change, so there is no transition to apply.
-      if (update.state === "RUNNING" && step.state === "RUNNING") {
+      // state does not change, so there is no transition to apply. (A human
+      // wait never reaches here — the client only reports it once, and it is
+      // exempt from the deadline anyway.)
+      const keepAlive =
+        (update.state === "RUNNING" && step.state === "RUNNING") ||
+        (update.state === "WAITING" &&
+          step.state === "WAITING" &&
+          update.waitClass === step.waitClass);
+      if (keepAlive) {
         await this.store.saveStep(
           { ...step, updatedAt: this.wallClock() },
           this.event(workflowId, "step_status", {
             stepId,
-            state: "RUNNING",
-            ...(update.progress === undefined ? {} : { progress: update.progress }),
+            state: step.state,
+            ...(step.state === "WAITING" ? { waitClass: step.waitClass } : {}),
+            ...(update.state === "RUNNING" && update.progress !== undefined
+              ? { progress: update.progress }
+              : {}),
           }),
         );
         return workflow;

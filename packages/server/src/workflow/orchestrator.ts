@@ -135,9 +135,14 @@ export class WorkflowOrchestrator {
         // A planner that proposes a side effect while one is unresolved is a
         // planner error, not a reason to hang: fail deterministically (the
         // existing contract for unusable planner output) rather than stall.
+        //
+        // The UNKNOWN can also appear WHILE the planner is deciding (the step
+        // timeout monitor runs concurrently), in which case the proposal was
+        // legitimate and the advance that created the UNKNOWN owns the next
+        // move — failing the workflow there would be wrong.
         if (error instanceof WorkflowBlockedError) {
           console.warn(`[orchestrator] ${error.message} (workflow ${workflowId})`);
-          await this.deps.engine.fail(workflowId, "planner_error");
+          if (unresolved) await this.deps.engine.fail(workflowId, "planner_error");
           return {};
         }
         throw error;
@@ -153,6 +158,11 @@ export class WorkflowOrchestrator {
     // message). Recursion is bounded: each reconcile consumes one UNKNOWN step,
     // and reconciling a step that is not UNKNOWN throws.
     if (decision.kind === "reconcile") {
+      // Whether the planner was entitled to settle this step at all is decided
+      // from the snapshot it was given, not from the state at throw time.
+      const askedForUnknown = steps.some(
+        (step) => step.id === decision.stepId && step.state === "UNKNOWN",
+      );
       try {
         await this.deps.engine.reconcileUnknown(
           workflowId,
@@ -161,10 +171,19 @@ export class WorkflowOrchestrator {
           decision.evidenceRefs,
         );
       } catch (error) {
-        // An unsupported verdict (not UNKNOWN, or no evidence cited) is a
-        // planner error; failing beats hanging on a workflow nobody advances.
-        console.warn(`[orchestrator] ${(error as Error).message} (workflow ${workflowId})`);
-        await this.deps.engine.fail(workflowId, "planner_error");
+        if (!askedForUnknown) {
+          // The verdict targets a step that was never UNKNOWN: a planner error.
+          console.warn(`[orchestrator] ${(error as Error).message} (workflow ${workflowId})`);
+          await this.deps.engine.fail(workflowId, "planner_error");
+          return {};
+        }
+        // The planner was entitled to settle it, so the only way this throws is
+        // a concurrent advance getting there first (the timeout monitor and a
+        // client message can both drive one workflow). The winner already
+        // carried the workflow on; the loser must not terminate it.
+        console.warn(
+          `[orchestrator] reconciliation raced with a concurrent advance for ${workflowId}; already settled`,
+        );
         return {};
       }
       return this.advance(workflowId);

@@ -980,3 +980,20 @@ P4a 验收通过后写 **P4b（blob 通道）**，再写 **P4c（KB 导出）**�
 * **真实确认 UI**：宿主回调即本阶段交付面，交互界面归 client-ui。
 
 **关于 §4.3 的一句话补充：** 规格写"优先由 Server 生成只读对账 Step…证据不足时退回工程师确认"。本实现的两块拼图正好落在既有原语上——"生成只读对账 Step"由规划器提议（只读能力在 `UNKNOWN` 期间仍然可见），"退回工程师确认"即规划器提议 `human.manual_action`（v0.8 起 Client/Server 两端都支持）。Engine 侧只保留"只有 UNKNOWN 能被裁定、且必须给出证据"这两条确定性约束。
+
+### 修复轮的验证（第二次 review）
+
+对 B1/N1–N7 的修复做了**定向复核**（只看修复提交），结论：B1 已真正闭合（规划器能力裁剪 + Engine 守卫两层；resume 的 `pending_step` 路径不可能重发副作用，因为 `isActiveStep` 不含 `UNKNOWN`），分支可合并。复核同时指出**修复自身引入的一个回归**，已在本轮修掉：
+
+* **并发 `advance` 会被误判为 `planner_error`**：`reconcileUnknown` 的 `try/catch` 过宽。`advance` 没有锁，且同时被"连接上的客户端消息"和"`StepTimeoutMonitor.onStepEnded`"两条路径驱动；两个 `advance` 同时对同一个 `UNKNOWN` 出裁定，后到者会抛 `step is not UNKNOWN`，被我原来的 catch 当成规划器错误 → 把一个健康 Workflow 判死（修复前这个异常只是被日志吞掉，所以这是我的新引入风险）。现在按**决策时拿到的快照**区分：快照里该 Step 是 `UNKNOWN` → 属于"并发抢占"，记警告后让位（赢家已经推进过 Workflow）；快照里本来就不是 `UNKNOWN` → 规划器错误，仍然确定性失败。
+* 同一处理也用于派发路径：被 §4.3 拦住时，只有"决策时快照里确实存在 `UNKNOWN`"才判 `planner_error`；若是规划器决策期间并发产生的 `UNKNOWN`，则不判死（那次派发本就合法）。
+
+复核提出的其余小项也一并收掉：
+* `WAITING(execution)` 的重复上报同样是保活（此前只处理了 `RUNNING`，§9 说"任意 `step.status`"）。
+* `known.ts` 不再重复字面量 `"human.manual_action"`，改为引用 `@adt/shared` 的常量（注释里的 v0.7 一并更新），并补上 `sim_rig.query_state`。
+* 两处测试 fixture 里硬编码的 `capability_spec: "0.7"` 更正为 `"0.8"`。
+* 补了一条**能区分两个时钟**的测试（`now` 与 `wallClock` 取不同值），此前所有测试都把两者设成同一个值，把 `updatedAt` 改回单调钟不会有测试失败。
+
+复核指出但**明确保留**的两项（记录在此，避免以后重复讨论）：
+* **Workflow 时间预算护栏与 Record 的 `duration_ms`** 仍基于单调钟（P2a 起既有）：跨进程重启后 `elapsedMs` 会失真。与本次 N1 同类，但影响面是"预算护栏在跨部署时不生效"，不是安全语义，留给后续统一处理。
+* **客户端命令超时与服务端 Step 超时同值（均来自 `timeout_hint`）**，因此 `terminal.execute_command` 卡死时通常先被客户端判 `FAILED(timeout)`，而不是走 `UNKNOWN` 对账。这比修复前的 `COMPLETED(exit_code:-1)` 更诚实，但要真正走对账，需要客户端超时明显小于服务端超时（或客户端在本地超时后回报 `UNKNOWN`）——属于 P4b 的执行时序议题。

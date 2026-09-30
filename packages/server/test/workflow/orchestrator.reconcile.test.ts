@@ -84,8 +84,44 @@ describe("reconciliation", () => {
       interruptible: false,
     });
 
-    await expect(engine.reconcileUnknown(wf.id, step.id, "COMPLETED")).rejects.toThrow(
+    await expect(engine.reconcileUnknown(wf.id, step.id, "COMPLETED", [step.id])).rejects.toThrow(
       "step is not UNKNOWN",
     );
+  });
+
+  it("does not terminate the workflow when a concurrent advance already settled the step", async () => {    const store = new PostgresWorkflowStore(pool);
+    const engine = new WorkflowEngine({ store, now: () => 1000 });
+    const wf = await engine.create("usr_1", "sess_1", { text: "x" }, { mode: "open", revision: 0 });
+    const step = await engine.dispatchStep(wf.id, {
+      objective: "reset",
+      capability: "sim_rig.trigger_reset",
+      sideEffect: true,
+      interruptible: false,
+    });
+    await engine.applyStepStatus(wf.id, step.id, { state: "RUNNING" });
+    await engine.applyStepStatus(wf.id, step.id, { state: "UNKNOWN" });
+
+    // The planner settles the step itself while deciding, which is exactly what
+    // a second concurrent `advance` (the step timeout monitor) would do; the
+    // loser of that race must bow out, not fail the workflow.
+    const planner: Planner = {
+      initialCriteria: async () => ({ mode: "open", revision: 0 }),
+      proposeNext: async ({ steps }): Promise<PlannerDecision> => {
+        const unknown = steps.find((candidate) => candidate.state === "UNKNOWN")!;
+        await engine.reconcileUnknown(wf.id, unknown.id, "COMPLETED", [unknown.id]);
+        return {
+          kind: "reconcile",
+          stepId: unknown.id,
+          outcome: "COMPLETED",
+          evidenceRefs: [unknown.id],
+        };
+      },
+    };
+    const orchestrator = new WorkflowOrchestrator({ engine, store, planner, capabilitiesOf: () => [] });
+
+    expect(await orchestrator.advance(wf.id)).toEqual({});
+    const after = (await engine.get(wf.id))!;
+    expect(after.state).not.toBe("FAILED");
+    expect((await store.getStep(step.id))!.state).toBe("COMPLETED");
   });
 });
