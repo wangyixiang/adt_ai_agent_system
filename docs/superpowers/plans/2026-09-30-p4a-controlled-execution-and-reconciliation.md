@@ -929,3 +929,27 @@ git commit -m "docs: register side-effect capabilities and P4a status"
 ## 后续
 
 P4a 验收通过后写 **P4b（blob 通道）**，再写 **P4c（KB 导出）**。
+
+---
+
+## 执行偏差（Execution deviations）
+
+计划在执行中暴露了若干**必须补上才能成立**的点，逐条记录，供 review 与后续计划参考：
+
+1. **`engine.applyStepStatus` 的主体抽成私有 `applyStatus`。** `timeoutStep` 必须在 workflow 锁内复用同一套「写 Step + 发事件 + `CANCELLING` 收敛」，而 `withWorkflowLock` 是 per-workflow 串行链——在锁内再调 `applyStepStatus` 会**重入死锁**。
+2. **Engine 与 `StepTimeoutMonitor` 必须共用同一个时钟。** test-support 的 engine 用 `Date.now()`，monitor 默认 `performance.now()`，两者相减会得到巨大的负数/正数，超时永不触发（或立刻触发）。现在 `index.ts` / `test-support` 显式把同一个 `now` 传给两者；这个 bug 是 Task 3 的集成测试抓到的。
+3. **新增 `StepTimeoutMonitor.deps.onStepEnded` + `registerWorkflowProtocol` 返回 `WorkflowProtocolHandle.advance(workflowId)`。** 超时是**服务端计时器**触发的，不经过任何客户端消息；没有这条推进路径，超时后的 Step 永远到不了对账。`advance` 在会话无活连接时仍会推进（对账与终态是服务端职责）。
+4. **`orchestrator.advance` 处理 `reconcile` 后递归推进。** 对账只把一个 UNKNOWN Step 收敛掉，本身不是"下一个 Step"；不继续推进的话 Workflow 会停在"无活跃 Step"的状态直到下一条客户端消息。递归有界：每轮消耗一个 UNKNOWN，对非 UNKNOWN 的 Step 对账会抛错。
+5. **State 机补齐两条 spec 边（P2a 遗漏）：`WAITING → REJECTED` 与 `PENDING → UNKNOWN`。** `WORKFLOW_SPEC.md` §4.2 明确写 `PENDING → WAITING(user_confirmation) → REJECTED(user_declined)`，§4.3 明确写 `PENDING / RUNNING → UNKNOWN`；没有第一条边，工程师拒绝确认时状态更新会被静默忽略，Workflow 卡死（这正是 Task 9 E2E 第一次跑超时的原因）。
+6. **LLM planner 增加 `action=reconcile` 工具（计划未写）。** 计划把裁定权放在 `Planner` 接缝（正确），但只加了 `PlannerDecision` 变体；真实生产用的是 `LlmPlanner`，没有对应工具的话 `UNKNOWN` 在生产路径上**永远无人收敛**。现在 prompt、工具 schema、上下文里的 UNKNOWN 清单与「只能对账 UNKNOWN」校验都补齐了。
+7. **`confirmCompletion` 的护栏触发路径补发 `guardrail_triggered` 事件。** 原先只有 dispatch 路径发事件，于是"工程师一直说未解决"触顶导致的 FAILED 在 Record 里看不到护栏条目，`threshold` 也就无从谈起。
+8. **`node:sqlite` 用 `createRequire` 运行时加载。** Vite 5 从 `module.builtinModules` 里过滤掉任何含 `:` 的项（Node 只在 `node:sqlite` 前缀下暴露该模块），静态 `import` 会让 **测试 runner 直接挂掉**；`ssr.external` / 自定义 resolve 插件都无效。运行时 `require` 绕开静态解析，且生产环境（tsc 产物）同样成立。
+9. **`terminal.execute_command` 的非零退出码记 `COMPLETED`。** 命令确实跑了，`exit_code` 正是 schema 承诺要报告的观察；只有"没能运行"才是 `FAILED`。已在 `CAPABILITY_SPEC.md` §5.3 澄清。
+10. **`@adt/client-daemon` 增加 `@adt/server` 作为 devDependency。** E2E 直接引用 Server 的 `Planner` / `PlannerDecision` 类型；此前只有 vitest 的 alias 能解析，`tsc --noEmit` 通不过。
+11. **两处既有测试随语义更新**：`stepRunner.test.ts` 的"需确认 Step"现在断言 `WAITING → REJECTED`（原断言只看第一条消息）；`descriptors.test.ts` / `defaultRegistry.test.ts` 的"全部只读"断言改为**列出副作用能力集合**（原来断言 `every(side_effect === false)`，与新增副作用能力天然冲突）。
+
+## 复核结论（Self-check，执行后）
+
+- `pnpm -r --if-present test`：shared 13 · server 193（+1 skipped real-LLM）· client-daemon 54 → **260 passed / 1 skipped**。
+- `pnpm -r --if-present typecheck`：干净。
+- Review Focus 五条均有对应测试：T6 / T2+T3 / T4 / T8（含跨进程重开）/ T5；另有 Task 9 的四条端到端（确认执行、拒绝重规划、超时对账、resume 同键重发）。
