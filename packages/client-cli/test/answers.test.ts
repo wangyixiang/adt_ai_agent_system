@@ -98,4 +98,13 @@ describe("parseCommand", () => {
   it("does not treat an ordinary line as a command", () => {
     expect(parseCommand("hello")).toBeNull();
   });
+
+  it("parses :ask with its free-text request, and rejects it empty", () => {
+    expect(parseCommand(":ask 项目起不来了")).toEqual({ kind: "ask", text: "项目起不来了" });
+    expect(parseCommand(":ask   camera 掉线了  ")).toEqual({
+      kind: "ask",
+      text: "camera 掉线了",
+    });
+    expect(parseCommand(":ask")).toBeNull();
+  });
 });

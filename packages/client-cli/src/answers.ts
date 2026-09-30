@@ -54,6 +54,7 @@ export function parseManualFeedback(line: string): ManualActionFeedback | null {
 }
 
 export type Command =
+  | { kind: "ask"; text: string }
   | { kind: "records" }
   | { kind: "show"; recordId: string }
   | { kind: "report"; recordId: string; detailLevel: "summary" | "full" }
@@ -73,6 +74,11 @@ export function parseCommand(line: string): Command | null {
   const [name, ...args] = trimmed.slice(1).split(/\s+/);
 
   switch (name) {
+    case "ask": {
+      // Free text: the rest of the line, whitespace collapsed.
+      const text = args.join(" ").trim();
+      return text === "" ? null : { kind: "ask", text };
+    }
     case "records":
       return args.length === 0 ? { kind: "records" } : null;
     case "help":

@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -178,6 +179,7 @@ export function parseArgs(
 
 export const CLI_HELP = [
   "命令：",
+  "  :ask <文本>                          提交一次诊断请求（开始一个 Workflow）",
   "  :records                             列出自己的 Record",
   "  :show <record_id>                    看一条 Record 的完整内容",
   "  :report <record_id> [summary|full]   生成 Report（默认 full）",
@@ -203,8 +205,25 @@ export async function runCli(io: CliIo): Promise<void> {
     print(renderTerminated(env.payload as Parameters<typeof renderTerminated>[0])),
   );
   connection.on("workflow.completion_candidate", (env) => {
+    // `workflow_id` is on the envelope, not in this payload (§7.2).
     const payload = env.payload as { summary?: string };
-    print(`◇ 系统认为可能已完成：${payload.summary ?? "（未给出说明）"}（在 Server 侧确认）`);
+    const workflowId = env.workflow_id;
+    // The Server proposes; only the human disposes (§7.2). Nothing here may
+    // assume "solved" — an unanswered candidate is not a solved one.
+    void (async () => {
+      print(`◇ 系统认为可能已完成：${payload.summary ?? "（未给出说明）"}`);
+      let solved = false;
+      try {
+        solved = parseConfirmation(await prompts.ask("接受这个结论吗？[y/N] ")) === true;
+      } catch {
+        solved = false;
+      }
+      connection.send("workflow.completion_response", {
+        workflow_id: workflowId,
+        resolution: solved ? "solved" : "not_solved",
+      });
+      print(solved ? "已确认完成。" : "已反馈：尚未解决。");
+    })();
   });
   connection.on("protocol.error", (env) => {
     const payload = env.payload as { code?: string; message?: string };
@@ -248,6 +267,19 @@ async function runCommand(
       case "help":
         print(CLI_HELP);
         return;
+
+      case "ask": {
+        const payload = await connection.request(
+          "workflow.request",
+          {
+            client_request_id: randomUUID(),
+            user_request: { text: command.text, attachments: [], context: {} },
+          },
+          "workflow.created",
+        );
+        print(`已提交：Workflow ${String(payload.workflow_id)}`);
+        return;
+      }
 
       case "records": {
         const payload = await connection.request(
