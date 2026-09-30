@@ -17,6 +17,9 @@ importers:
         specifier: ^8.18.0
         version: 8.22.0
     devDependencies:
+      '@adt/server':
+        specifier: workspace:*
+        version: link:../server
       '@adt/test-support':
         specifier: workspace:*
         version: link:../test-support

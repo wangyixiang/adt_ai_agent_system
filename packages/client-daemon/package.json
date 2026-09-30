@@ -16,6 +16,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@adt/server": "workspace:*",
     "@adt/test-support": "workspace:*",
     "@types/node": "^22.7.0",
     "@types/ws": "^8.5.13",

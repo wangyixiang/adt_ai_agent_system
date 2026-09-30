@@ -27,7 +27,7 @@ export interface ConfirmationRequest {
 
 /** What the engineer reports after performing a suggested action. */
 export interface ManualActionFeedback {
-  outcome: "succeeded" | "failed" | "unknown";
+  outcome: "succeeded" | "failed" | "partially" | "unknown";
   observation: string;
   details?: unknown;
 }

@@ -139,7 +139,7 @@
 
 | 文档 | 需要的变化 | 来源需求 |
 |---|---|---|
-| `CAPABILITY_SPEC.md`（已建成，v0.7） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1）；登记 MVP 模拟能力 `sim_rig.trigger_reset` 与 I/O schema（v0.6）；`docker.inspect_container` schema、输出命名与 MVP 占位能力说明（v0.7） | FR-21、FR-22 |
+| `CAPABILITY_SPEC.md`（已建成，v0.8） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1）；登记 MVP 模拟能力 `sim_rig.trigger_reset` 与 I/O schema（v0.6）；`docker.inspect_container` schema、输出命名与 MVP 占位能力说明（v0.7）；`terminal.execute_command` schema、`sim_rig.query_state`、`human.manual_action` 建议路径已实现（v0.8） | FR-21、FR-22 |
 | `WORKFLOW_SPEC.md`（已建成，v0.5） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`、会话级副作用串行（v0.4）；系统失败原因 `planner_error` / `invalid_input` / `invalid_output`（v0.5） | FR-7~FR-11 |
 | `PROTOCOL_SPEC.md`（已建成，v0.7） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6）；`session.resume` 认证、会话 TTL、`workflow.state_sync` 扩展（v0.7） | FR-4、FR-7、FR-11、FR-14、FR-17 |
 | `SERVER_SPEC.md`（已建成，v0.9） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7）；断线会话保留与 `session.resume`/`workflow.state_sync`（v0.9） | FR-12、FR-17~FR-19、FR-23、NFR-3 |

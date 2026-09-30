@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.7（登记 `docker.inspect_container` 的 I/O schema；给 `filesystem.read_file` / `git.collect_diagnostics` 的输出命名 `file_content` / `git_status`；注明 MVP 占位能力 `local-agent.diagnose_project` / `browser.open_page` 只声明不实现；取代 v0.6）
+- **Version:** v0.8（登记 `terminal.execute_command` 的 I/O schema；新增 MVP 模拟能力 `sim_rig.query_state` 作为副作用对账的只读伴随能力；`human.manual_action` 的建议路径已由 `@adt/client-daemon` 实现，§7-6 关闭；取代 v0.7）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -190,9 +190,26 @@ test_rig.trigger_reset:
 
 sim_rig.trigger_reset:            # MVP 模拟项
   input:  { type: object, properties: { reason: {type: string} } }
-  output: { type: object, required: [reset_ack],
+  output: reset_ack
+          { type: object, required: [reset_ack],
             properties: { reset_ack: {type: boolean} } }
+
+terminal.execute_command:         # v0.8 新增
+  input:  { type: object, required: [command],
+            properties: { command: {type: string},
+                          args: {type: array, items: {type: string}} } }
+  output: command_result
+          { type: object, required: [exit_code],
+            properties: { exit_code: {type: integer}, stdout: {type: string} } }
+
+sim_rig.query_state:              # v0.8 新增，MVP 模拟项
+  input:  { type: object, properties: {} }
+  output: reset_state
+          { type: object, required: [reset_applied],
+            properties: { reset_applied: {type: boolean} } }
 ```
+
+> **副作用的"真实结果"是观察，不是失败（v0.8 澄清）：** `terminal.execute_command` 的非零退出码属于 `command_result` 的一部分（命令确实跑了，`exit_code` 就是要报告的事实），Client 记 `COMPLETED` 而非 `FAILED`。只有**没能运行**（输入不合法、无法启动）才是 `FAILED`。
 
 > 上表给出格式示例，不代表完整清单。新增 Capability 时，**input/output schema 与 `side_effect` 一样是登记的必要项**（见 §2、§3）。
 
@@ -238,4 +255,4 @@ output: manual_action_result
 3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
 4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
 5. **`evidence.type` 与声明的输出名称暂不校验（v0.7）**：Manifest 目前只携带 `output_schema`、没有输出名称字段，因此 Server 无法核对 `evidence.type` 是否等于该 Capability 登记的 output 名称（§5.2 的这一条尚未落地）；`result` 仍按 schema 校验。需要时再给 Manifest 增一个 output 名称字段。
-6. **`human.manual_action` 的 Client 执行（建议路径）尚未实现（v0.7）**：§6 约定该保留能力由所有 Client 隐式支持，但 MVP 的 client-daemon 只实现了只读数据能力；规划器若下发 `human.manual_action`，当前以 `REJECTED(capability_unavailable)` 收场。完整建议路径（展示 `instruction`、等待工程师反馈）见 `WORKFLOW_SPEC.md` §6.1，留待后续版本。
+6. ~~**`human.manual_action` 的 Client 执行（建议路径）尚未实现**~~ **已实现（v0.8）**：`@adt/client-daemon` 拦截该保留名称（不查注册表），发 `WAITING(wait_reason.code = user_input)`，把 `input.instruction` 交给宿主展示，再把工程师的反馈包成 `evidence = {source: "user_input", type: "manual_action_result", result: {outcome, observation, details?}}`；没有宿主接应时以 `REJECTED(user_declined)` 收场。流程见 `WORKFLOW_SPEC.md` §6.1。
