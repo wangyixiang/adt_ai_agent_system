@@ -652,6 +652,8 @@ P4b 验收通过后写 **P4c（blob 通道）**，再写 **P4d（KB 导出）**�
 
 **评审确认无遗漏**：没有其它规范性文档仍在声称 Server 排队/串行副作用（`grep` 过 串行/排队/最多一个副作用/活跃状态）；"等待后成功不留痕"与"停驻的 Step 不会被转成 `UNKNOWN`"两条主张在真实代码路径上成立。
 
+**延后项清点：本轮评审项（2 条阻塞 + 7 条非阻塞 + 5 行规格漂移）全部当轮修完，无延后项。** 唯一带有"先记录、后处理"性质的是设计层面的选择——"能解决就不留痕"（Record 不记过程磕碰）与"由提供方判断资源占用"——它们不是待办，而是本阶段确立的行为，已写进 `WORKFLOW_SPEC.md` §4.4 与 `PROTOCOL_SPEC.md` §8.3。其中原 P4a 遗留的"§4.4 会话级副作用串行"这一条，在本阶段被设计决定**取代**（不再是开放项）。
+
 ### 一处工具性事故（已修）
 
 本次用脚本批量替换文案时，脚本在 Windows 上把 4 个文件的换行符从 LF 写成了 CRLF（`docs/REQUIREMENTS.md`、`docs/architecture/ARCHITECTURE.md`、`docs/architecture/SERVER_SPEC.md`、本计划）。仓库其余文件都是 LF，因此这几个提交在 `git diff` 里表现为整文件改动。已用 `fix(docs): restore LF line endings on files a script rewrote` 一次性改回 LF（内容未变，行数一致，全仓库 CRLF 文件数为 0）。**教训：改文案用 `edit` 工具，不要用会做换行转换的脚本写回文件。**

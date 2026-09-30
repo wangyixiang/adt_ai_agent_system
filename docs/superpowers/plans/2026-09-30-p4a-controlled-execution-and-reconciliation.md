@@ -996,4 +996,15 @@ P4a 验收通过后写 **P4b（blob 通道）**，再写 **P4c（KB 导出）**�
 
 复核指出但**明确保留**的两项（记录在此，避免以后重复讨论）：
 * **Workflow 时间预算护栏与 Record 的 `duration_ms`** 仍基于单调钟（P2a 起既有）：跨进程重启后 `elapsedMs` 会失真。与本次 N1 同类，但影响面是"预算护栏在跨部署时不生效"，不是安全语义，留给后续统一处理。
-* **客户端命令超时与服务端 Step 超时同值（均来自 `timeout_hint`）**，因此 `terminal.execute_command` 卡死时通常先被客户端判 `FAILED(timeout)`，而不是走 `UNKNOWN` 对账。这比修复前的 `COMPLETED(exit_code:-1)` 更诚实，但要真正走对账，需要客户端超时明显小于服务端超时（或客户端在本地超时后回报 `UNKNOWN`）——属于 P4b 的执行时序议题。
+* **客户端命令超时与服务端 Step 超时同值（均来自 `timeout_hint`）**，因此 `terminal.execute_command` 卡死时通常先被客户端判 `FAILED(timeout)`，而不是走 `UNKNOWN` 对账。这比修复前的 `COMPLETED(exit_code:-1)` 更诚实，但要真正走对账，需要客户端超时明显小于服务端超时（或客户端在本地超时后回报 `UNKNOWN`）——属于后续的执行时序议题（P4b 未处理，仍开放）。
+
+**复核的其余项（deferred minors 清点，逐条落定）**：
+
+| 复核项 | 裁决 | 落点 |
+|---|---|---|
+| "台账坏 JSON、`sweep` 在途保护、握手失败漏台账：代码正确、**没有测试**" | **本轮补测试**（三条） | `client-daemon/test/ledger.test.ts`（坏行当无记录、告警不抛）、`test/daemon.teardown.test.ts`（握手失败关闭自建台账，用 `vi.mock` 观测）、`server/test/workflow/stepTimeout.test.ts`（在途 sweep 不重复推进） |
+| "N3 的端到端不能证明 N3 修复（它用脚本规划器，绕过了服务端注入）" | **不改 e2e**（评估通过） | 该修复的落点是编排层，`orchestrator.capabilities.test.ts` 已直接断言"规划器能看到 `human.manual_action`"；e2e 用脚本规划器是为了让"建议路径"可确定性复现。等 client-ui 接入后，再由 UI 级测试覆盖"真实 LLM 会不会提它" |
+| N2 的保活对执行类 `WAITING` 也成立 | **已修** | 保活分支同时覆盖 `RUNNING` 与同 `waitClass` 的 `WAITING`（+ 测试） |
+| N1 时钟区分没有测试 | **已修** | `engine.idempotency.test.ts` 里 `now` 与 `wallClock` 取不同值 |
+
+**该阶段结束时仍开放的延后项（汇总）**：时间预算护栏/`duration_ms` 的单调钟、客户端与服务端超时同值、受控执行 UI、真实 Windows 产品适配器、`CANCELLING` 期间对账（P2a 已定"不对账"，实现按其行为）。

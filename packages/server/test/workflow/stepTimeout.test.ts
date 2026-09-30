@@ -40,8 +40,7 @@ describe("StepTimeoutMonitor", () => {
     expect(advanced).toEqual(["wf_1"]);
   });
 
-  it("keeps sweeping when one step fails", async () => {
-    const monitor = new StepTimeoutMonitor(
+  it("keeps sweeping when one step fails", async () => {    const monitor = new StepTimeoutMonitor(
       {
         clock: () => 1000,
         store: {
@@ -63,5 +62,44 @@ describe("StepTimeoutMonitor", () => {
     );
 
     expect(await monitor.sweep()).toEqual(["step_b"]);
+  });
+
+  it("does not start a second sweep while one is still running", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const timed: string[] = [];
+
+    const monitor = new StepTimeoutMonitor(
+      {
+        clock: () => 1000,
+        store: {
+          findActiveWorkflows: async () => [{ id: "wf_1" }] as never,
+          listSteps: async () =>
+            [
+              { id: "step_a", state: "RUNNING", updatedAt: 0, timeoutMs: 1, waitClass: null },
+            ] as never,
+        },
+        engine: {
+          timeoutStep: async (_workflowId: string, stepId: string) => {
+            timed.push(stepId);
+            await gate;
+            return {} as never;
+          },
+        },
+      },
+      { intervalMs: 10 },
+    );
+
+    const first = monitor.sweep();
+    // Let the first sweep get past the guard and block on the engine.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The next tick must not double-drive the same step.
+    expect(await monitor.sweep()).toEqual([]);
+
+    release();
+    expect(await first).toEqual(["step_a"]);
+    expect(timed).toEqual(["step_a"]);
   });
 });
