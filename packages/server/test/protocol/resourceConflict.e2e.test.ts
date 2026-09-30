@@ -5,6 +5,7 @@ describe("resource conflict end to end", () => {
   it("waits without timing out, then ends the workflow with the reason on record", async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
+      stepTimeoutGraceMs: 0,
       timeoutSweepIntervalMs: 20,
       planner: [
         {
@@ -88,6 +89,7 @@ describe("resource conflict end to end", () => {
   it("continues with no trace when the engineer frees the resource", async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
+      stepTimeoutGraceMs: 0,
       timeoutSweepIntervalMs: 20,
       planner: [
         {

@@ -5,6 +5,7 @@ describe("step timeout end to end", () => {
   it("fails a read-only step the client acknowledges but never completes", async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
+      stepTimeoutGraceMs: 0,
       timeoutSweepIntervalMs: 20,
       planner: [
         {

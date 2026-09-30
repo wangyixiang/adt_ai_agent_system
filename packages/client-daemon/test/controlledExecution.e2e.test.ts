@@ -199,6 +199,7 @@ describe("controlled execution end to end", () => {
   it("reconciles a side effect that timed out into an outcome", async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
+      stepTimeoutGraceMs: 0,
       timeoutSweepIntervalMs: 20,
       plannerImpl: reconcilingPlanner(),
     });
