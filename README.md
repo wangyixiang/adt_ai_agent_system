@@ -29,8 +29,9 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
   - **超时两端一套词**：副作用超时（服务端 `step_timeout` 到点，或客户端在本地掐掉）一律 `UNKNOWN`——它可能已部分生效；**只读**才是 `FAILED(timeout)`。服务端 `step_timeout` 在能力的 `timeout_hint` 之上叠 **2s 宽限**，让客户端的观察先到。
   - **LLM 有界重试**（`ADR-004` 修订 A2）：只对 429 / 5xx / 网络错误按 500ms→1000ms 退避重试（`LLM_MAX_RETRIES`，默认 2），**不重试**其它 4xx、自身超时与模型语义错误；终局仍是 `planner_error`。
 - **P4d KB 导出（`ADR-005` 出站）**：提交人显式把一条 Record（默认）或 Report 投递到**配置的 KB 端点**，同步拿到结论。投递包由纯函数生成（`deposit_version` / 稳定 `deposit_id = hash(record_id, object, content_sha256)` / `content_sha256` / 墙钟 `submitted_at` / `content`）；`object=report` 时**只投 Report、不夹带 Record**。出站是 `KnowledgeDepositor` 接缝 + HTTP 实现：`POST` + 配置的鉴权头 + 超时，**网络错误 / 超时 / 5xx 有限重试（默认 2 次，指数退避），4xx 不重试**；**未配置端点或凭据 → `export_unavailable`**（绝不假装成功）。导出**不改 Record**、**不影响 Workflow 状态**。**blob 引用不随导出解析**（KB 只拿到引用，见 `ADR-005` §7）。
+- **D7(b) `client-cli` 控制台客户端**：`client-daemon` 的人类前端——`:ask` 提交请求，确认 / 建议 / 资源冲突由人在终端回答，`:records` / `:show` / `:report` / `:export` / `:blob` 读与导出；**确认绝不默认同意**，`EOF` 一律落到安全默认。**它会真的执行本机能力**（见下文「控制台客户端」一节）。
 
-后续：**D7（b）`client-cli`** 控制台客户端（确认 / 建议 / 资源冲突询问 / Record·Report 阅读 / blob 取回 / 触发导出），它同时是手工验收的场所。正式 Client UI 尚未开始。
+后续：**D6（a）**（真实 Windows 适配器的调研简报）与**正式 Client UI**。控制台客户端见下文。
 
 ## 结构
 
@@ -39,6 +40,7 @@ packages/
 ├── shared          # 协议类型、信封编解码、错误处置矩阵、去重窗口、受限子集 JSON Schema 校验器、blob 协议类型
 ├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器、blob 通道、KB 导出出站
 ├── client-daemon   # 连接/握手/能力声明/心跳 + 可插拔 Capability 适配器（只读 + 受控副作用）、幂等台账、blob 收发
+├── client-cli      # 控制台客户端：client-daemon 的人类前端（确认 / 建议 / 资源冲突 / 读 Record·Report / 取 blob / 触发导出）
 └── test-support    # 测试用 Server 启动器、WS 测试客户端、脚本化 LLM provider
 ```
 
@@ -91,6 +93,31 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - `BLOB_MAX_BYTES`：单 blob 上限，默认 512 MiB，**上限 8 GiB**。
 
 数值类变量必须是**整数**；不可用或超上限的值会**告警**并回落默认——不截断，也不会静默接受 `2.5` 这类值。
+
+### 控制台客户端（`client-cli`）
+
+`packages/client-cli` 是 `client-daemon` 的**人类前端**：连着 Server 跑真实 Workflow——收到派发、被问确认 / 建议 / 资源冲突、读 Record·Report、取回 blob、触发 KB 导出。它是 P4 系列人工路径的**手工验收场所**，不是产品形态（正式 UI 另行立项）。
+
+```bash
+# 需要先有一个跑起来的 Server
+pnpm -C packages/client-cli start -- --user alice --url ws://127.0.0.1:8080/ws
+```
+
+密码优先取 `--secret` 或环境变量 `ADT_SECRET`；都没有时会**不回显**地提示输入——不要把密码写进命令行，`ps` 看得见。
+
+| 命令 | 作用 |
+|---|---|
+| `:ask <文本>` | 提交一次诊断请求（开始一个 Workflow） |
+| `:records` | 列出自己的 Record |
+| `:show <record_id>` | 看一条 Record 的完整内容 |
+| `:report <record_id> [summary\|full]` | 生成 Report（默认 `full`） |
+| `:export <record_id> [record\|report]` | 导出到 KB（默认 `record`） |
+| `:blob <content_ref> <path>` | 取回 blob 并写到本地文件（校验 sha256） |
+| `:help` / `:quit` | |
+
+**它会执行真实能力**：daemon 的默认注册表全开——`git` / `docker` / `filesystem` / `terminal.execute_command` / `sim_rig.*` 都会在本机真的跑起来（副作用能力仍会先问人）。工作区默认是当前目录，`--workspace` 覆盖。
+
+**安全语义**：确认**绝不默认同意**——解析不出的回答会**重问**，`EOF`（管道结束、没人在键盘前）一律落到**安全默认**（拒绝副作用、资源冲突停下、完成候选不算已解决）。幂等台账与会话默认落在 `.adt/client-cli/`（文件后端），这样断线才能 `resume` 而不重复执行物理动作。
 
 ### KB 导出（可选，`ADR-005`）
 
