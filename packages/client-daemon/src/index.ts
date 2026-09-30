@@ -9,8 +9,10 @@ export { resolveWithinWorkspace } from "./capability/workspace";
 export {
   attachStepRunner,
   HUMAN_MANUAL_ACTION,
+  RESOURCE_CONFLICT,
   type ConfirmationRequest,
   type ManualActionFeedback,
+  type ResourceConflictRequest,
   type StepDispatcher,
   type StepRunnerDeps,
   type UserInputRequest,

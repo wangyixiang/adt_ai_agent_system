@@ -7,6 +7,7 @@ import {
   attachStepRunner,
   type ConfirmationRequest,
   type ManualActionFeedback,
+  type ResourceConflictRequest,
   type UserInputRequest,
 } from "./stepRunner";
 
@@ -22,6 +23,11 @@ export interface ClientDaemonOptions {
   onConfirmationRequired?: (request: ConfirmationRequest) => Promise<boolean>;
   /** Collects the engineer's report for a suggested manual action. */
   onUserInput?: (request: UserInputRequest) => Promise<ManualActionFeedback | undefined>;
+  /**
+   * Asks the engineer what to do when a provider finds the resource busy
+   * (default: stop, which ends the workflow with `resource_conflict`).
+   */
+  onResourceConflict?: (request: ResourceConflictRequest) => Promise<"wait" | "stop">;
   /**
    * Persistent idempotency ledger (WORKFLOW_SPEC.md §4.3). Defaults to an
    * in-memory ledger, which only protects a single process lifetime — pass a
@@ -63,6 +69,7 @@ export class ClientDaemon {
             run: opts.run,
             onConfirmationRequired: opts.onConfirmationRequired,
             onUserInput: opts.onUserInput,
+            onResourceConflict: opts.onResourceConflict,
             ledger: ownedLedger,
           });
         },

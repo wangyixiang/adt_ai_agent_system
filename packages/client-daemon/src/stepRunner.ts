@@ -18,6 +18,13 @@ export interface StepDispatcher {
  */
 export { HUMAN_MANUAL_ACTION };
 
+/**
+ * A provider that cannot get the resource reports this code instead of
+ * executing (WORKFLOW_SPEC.md §4.4). The runner asks the engineer, and an
+ * unresolved conflict ends the workflow server-side.
+ */
+export const RESOURCE_CONFLICT = "resource_conflict";
+
 export interface ConfirmationRequest {
   workflowId: string;
   stepId: string;
@@ -41,6 +48,14 @@ export interface UserInputRequest {
   input: Record<string, unknown>;
 }
 
+export interface ResourceConflictRequest {
+  workflowId: string;
+  stepId: string;
+  capability: string;
+  objective: string;
+  message?: string;
+}
+
 export interface StepRunnerDeps {
   connection: StepDispatcher;
   registry: CapabilityRegistry;
@@ -58,6 +73,12 @@ export interface StepRunnerDeps {
    * step was declined.
    */
   onUserInput?: (request: UserInputRequest) => Promise<ManualActionFeedback | undefined>;
+  /**
+   * The provider found the resource busy. `"wait"` makes the runner retry once
+   * the engineer has freed it; anything else — or no handler at all — reports
+   * the conflict, which ends the workflow server-side.
+   */
+  onResourceConflict?: (request: ResourceConflictRequest) => Promise<"wait" | "stop">;
   /**
    * The persistent `idempotency_key → result` ledger (WORKFLOW_SPEC.md §4.3).
    * Without it a re-dispatched side effect runs again.
@@ -198,38 +219,74 @@ async function handleStep(
 
   send("RUNNING");
 
-  let result: ExecutionResult;
-  try {
-    result = await adapter.execute(input, { workspaceRoot: deps.workspaceRoot, run });
-  } catch (error) {
-    send("FAILED", {
-      fail_reason: { code: "capability_error", message: (error as Error).message },
-    });
-    return;
-  }
+  // Executing, and asking the engineer when the resource is busy. A provider
+  // that cannot get the resource reports `rejected(resource_conflict)` rather
+  // than pretending the action ran (WORKFLOW_SPEC.md §4.4): we park the step
+  // (a human wait has no deadline), ask, and either retry once the engineer has
+  // freed it, or report the conflict — which ends the workflow server-side.
+  for (;;) {
+    let result: ExecutionResult;
+    try {
+      result = await adapter.execute(input, { workspaceRoot: deps.workspaceRoot, run });
+    } catch (error) {
+      send("FAILED", {
+        fail_reason: { code: "capability_error", message: (error as Error).message },
+      });
+      return;
+    }
 
-  if (result.status === "completed") {
-    // Remember only a real outcome: an action that failed may have taken
-    // (partial) effect, and suppressing a later reconciliation-driven retry
-    // would hide that.
-    if (key !== null) deps.ledger?.set(key, { type: result.type, result: result.result });
-    send("COMPLETED", {
-      evidence: { source: "capability", type: result.type, result: result.result },
-    });
-  } else if (result.status === "failed") {
-    send("FAILED", {
-      fail_reason: {
-        code: result.code,
-        ...(result.message === undefined ? {} : { message: result.message }),
-      },
-    });
-  } else {
+    if (result.status === "rejected" && result.code === RESOURCE_CONFLICT) {
+      send("WAITING", { wait_reason: { code: RESOURCE_CONFLICT } });
+      const decision = await ask(() =>
+        deps.onResourceConflict?.({
+          workflowId: dispatch.workflow_id,
+          stepId: dispatch.step_id,
+          capability: dispatch.capability,
+          objective: dispatch.objective ?? "",
+          ...(result.message === undefined ? {} : { message: result.message }),
+        }),
+      );
+      if (decision === "wait") {
+        send("RUNNING");
+        continue;
+      }
+      send("REJECTED", {
+        reject_reason: {
+          code: RESOURCE_CONFLICT,
+          ...(result.message === undefined ? {} : { message: result.message }),
+        },
+      });
+      return;
+    }
+
+    if (result.status === "completed") {
+      // Remember only a real outcome: an action that failed may have taken
+      // (partial) effect, and suppressing a later reconciliation-driven retry
+      // would hide that.
+      if (key !== null) deps.ledger?.set(key, { type: result.type, result: result.result });
+      send("COMPLETED", {
+        evidence: { source: "capability", type: result.type, result: result.result },
+      });
+      return;
+    }
+
+    if (result.status === "failed") {
+      send("FAILED", {
+        fail_reason: {
+          code: result.code,
+          ...(result.message === undefined ? {} : { message: result.message }),
+        },
+      });
+      return;
+    }
+
     send("REJECTED", {
       reject_reason: {
         code: result.code,
         ...(result.message === undefined ? {} : { message: result.message }),
       },
     });
+    return;
   }
 }
 
