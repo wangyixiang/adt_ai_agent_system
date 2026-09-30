@@ -72,7 +72,7 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - `LLM_API_KEY`：设置后才启用；未设置时回退为 no-op 规划器（Workflow 不会产生 Step，直接给完成候选）。
 - `LLM_BASE_URL`：默认 `https://api.deepseek.com/v1`。
 - `LLM_MODEL`：默认 `deepseek-v4.1-flash`。
-- `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。最坏耗时 = `timeoutMs` + 退避总和（默认 1.5s）。
+- `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
 
 真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
 

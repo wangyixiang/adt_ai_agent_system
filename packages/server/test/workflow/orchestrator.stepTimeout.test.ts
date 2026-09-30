@@ -82,4 +82,11 @@ describe("step timeout grace", () => {
     const timeoutMs = await dispatchedTimeout([readCap()], { defaultStepTimeoutMs: 7000 });
     expect(timeoutMs).toBe(7000 + DEFAULT_STEP_TIMEOUT_GRACE_MS);
   });
+
+  it("keeps the 0 sentinel meaning 'no timeout'", async () => {
+    // A planner may pin `timeoutMs: 0` to say "do not bound this step"; the
+    // grace must not turn that into a real deadline.
+    const timeoutMs = await dispatchedTimeout([readCap()], { defaultStepTimeoutMs: 0 });
+    expect(timeoutMs).toBe(0);
+  });
 });

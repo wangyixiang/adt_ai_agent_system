@@ -7,9 +7,12 @@ export interface OpenAiCompatibleOptions {
   /** Request timeout in ms (default 30s); a hung provider must not wedge a session. */
   timeoutMs?: number;
   /**
-   * Retries for *transient* failures (429, 5xx, network/timeout). Default 2,
-   * so a blip costs one extra round trip instead of a dead workflow. Note the
-   * worst case is `timeoutMs × (maxRetries + 1)`.
+   * Retries for *transient* failures (429, 5xx, network). Default 2, so a blip
+   * costs one extra round trip instead of a dead workflow.
+   *
+   * Worst case is `timeoutMs × (maxRetries + 1)` plus the backoff sum: each
+   * attempt gets its own timeout window. Our *own* timeout is not retried, so a
+   * hung provider costs a single window.
    */
   maxRetries?: number;
   /** Backoff base in ms (default 500), doubled per attempt. */
@@ -51,7 +54,8 @@ interface ToolCallsBody {
  */
 export class OpenAiCompatibleProvider implements LlmProvider {
   private readonly fetchImpl: typeof fetch;
-  private readonly maxRetries: number;
+  /** Exposed for tests and diagnostics; see `OpenAiCompatibleOptions.maxRetries`. */
+  readonly maxRetries: number;
   private readonly retryBaseMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -157,14 +161,23 @@ export function llmProviderFromEnv(
 
   const model = env.LLM_MODEL ?? "deepseek-v4.1-flash";
   const baseUrl = env.LLM_BASE_URL ?? "https://api.deepseek.com/v1";
-  const maxRetries = Number(env.LLM_MAX_RETRIES ?? DEFAULT_MAX_RETRIES);
   return {
     provider: new OpenAiCompatibleProvider({
       baseUrl,
       apiKey,
       model,
-      maxRetries: Number.isFinite(maxRetries) ? maxRetries : DEFAULT_MAX_RETRIES,
+      maxRetries: parseRetries(env.LLM_MAX_RETRIES),
     }),
     model,
   };
+}
+
+/**
+ * A missing or unusable value falls back to the default rather than silently
+ * disabling retries: `Number("")` is `0`, which would read as "retry nothing".
+ */
+function parseRetries(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return DEFAULT_MAX_RETRIES;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_RETRIES;
 }

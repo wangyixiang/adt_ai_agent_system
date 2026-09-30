@@ -46,6 +46,11 @@ const DEFAULT_STEP_TIMEOUT_MS = 60_000;
  */
 export const DEFAULT_STEP_TIMEOUT_GRACE_MS = 2_000;
 
+/** `0` means "no timeout", so it is passed through instead of gaining a grace. */
+export function stepTimeoutWithGrace(derivedMs: number, graceMs: number): number {
+  return derivedMs <= 0 ? derivedMs : derivedMs + graceMs;
+}
+
 /**
  * Validates a planner-produced step input against the Capability's input
  * schema. Returns an error string, or null when the input is acceptable.
@@ -172,12 +177,15 @@ export class WorkflowOrchestrator {
         expectedOutput: capability?.output_type ?? null,
           // Same reasoning for the deadline: the monitor must not consult the
           // live registry while a step is in flight (PROTOCOL_SPEC.md §9).
-          timeoutMs:
-            (decision.step.timeoutMs ??
+          // `0` still means "no timeout" (CAPABILITY_SPEC.md §2.4): it is a
+          // sentinel, not a duration, so it must not collect a grace.
+          timeoutMs: stepTimeoutWithGrace(
+            decision.step.timeoutMs ??
               capability?.timeout_hint ??
               this.deps.defaultStepTimeoutMs ??
-              DEFAULT_STEP_TIMEOUT_MS) +
-            (this.deps.stepTimeoutGraceMs ?? DEFAULT_STEP_TIMEOUT_GRACE_MS),
+              DEFAULT_STEP_TIMEOUT_MS,
+            this.deps.stepTimeoutGraceMs ?? DEFAULT_STEP_TIMEOUT_GRACE_MS,
+          ),
         });
       } catch (error) {
         // A planner that proposes a side effect while one is unresolved is a

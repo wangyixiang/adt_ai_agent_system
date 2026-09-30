@@ -18,7 +18,7 @@
 - **客户端造成的副作用超时同样保留台账标记**：`UNKNOWN` 与"执行中"是同一件事的两种说法，标记**不得**清除（`forget()` 只在 `failed`/`rejected` 这类"确实没发生"的终态上调用）。
 - **服务端宽限**：`step_timeout = 依据值 + 宽限`，依据值 = 显式 `timeoutMs` ?? 能力 `timeout_hint` ?? 全局默认；宽限默认 **2000ms**，可通过编排层依赖覆盖（测试用 0）。理由写进 `PROTOCOL_SPEC.md` §9：让客户端自己的本地超时先到，客户端的观察优先于服务端推断。
 - **重试只针对可重试失败**：HTTP `429` 与 `5xx`、以及**网络错误**（fetch 抛出）。**不重试**其它 `4xx`、**不重试我们自己的超时**（`TimeoutError`/`AbortError`：请求已经等满 `timeoutMs`，重试只会把最坏耗时放大三倍）、也**不重试**响应体解析失败与工具调用形状错误（`name` 缺失 / `arguments` 非 JSON / 非对象）——那是模型语义问题，重试只会重复犯错。最终失败仍抛错 → 编排层 `FAILED(planner_error)`（既有规则不变）。
-- **重试参数**：`maxRetries` 默认 **2**（最多 3 次尝试）、`retryBaseMs` 默认 **500**（指数：500ms、1000ms）；`sleep` 可注入以便测试不真等。最坏耗时 = `timeoutMs`（一次超时即止）+ 退避总和（默认 1.5s），而不是 `timeoutMs × 3`；生产可用 `LLM_MAX_RETRIES=0` 关闭。
+- **重试参数**：`maxRetries` 默认 **2**（最多 3 次尝试）、`retryBaseMs` 默认 **500**（指数：500ms、1000ms）；`sleep` 可注入以便测试不真等。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（每次尝试各有独立的 `timeoutMs` 窗口）；**我们自己的超时不重试**，所以"挂死"只花一个窗口。生产可用 `LLM_MAX_RETRIES=0` 关闭重试，或调小 provider 的 `timeoutMs`。
 - **一次 `proposeNext` 内重试，绝不重复派发**：重试不得触发第二次 `dispatchStep`；本阶段不引入任何"重试 Step"的行为。
 - **不 push**；合并用本地 `ff-merge`（`docs/superpowers/WORKFLOW.md`）。
 - **文档纪律**：`PROTOCOL_SPEC.md` v0.10 → **v0.11**（§9 宽限与客户端本地超时的分流）、`CAPABILITY_SPEC.md` v0.10 → **v0.11**（§2.4 说明 `timeout_hint` 是客户端本地上限、服务端在其上叠宽限）、`WORKFLOW_SPEC.md` v0.6 → **v0.7**（§4.3 补"副作用超时两端一致走 `UNKNOWN`"）、`docs/REQUIREMENTS.md` §7 三行同步、README 当前状态。
@@ -388,4 +388,22 @@ git commit -m "docs: one timeout vocabulary on both sides, and bounded LLM retri
 1. **P4d（KB 导出）**：ADR-005 出站 —— 本阶段之后的下一份计划。
 2. **D6（a）**：真实 Windows 适配器的**调研简报**（问题清单 + 结论要落成什么 ADR），不写代码。
 3. **D7（b）**：`client-cli`（控制台客户端），在 P4d 之后、正式 UI 之前。
-4. 其余延后项见 `docs/superpowers/plans/2026-09-30-p4-gap-closure.md` 与 `2026-09-30-p4c-blob-channel.md` 的裁决表。
+4. **幂等键的"同一意图"语义**：本阶段只在 `WORKFLOW_SPEC.md` §4.3 记下实现口径（按 Step 稳定）；跨重试的意图级稳定键需要 Planner 表达意图，列为后续项。
+5. 其余延后项见 `docs/superpowers/plans/2026-09-30-p4-gap-closure.md` 与 `2026-09-30-p4c-blob-channel.md` 的裁决表。
+
+---
+
+## Review 修复轮（Review fix pass）
+
+整体评审：**无代码阻塞项**；分支的四项修复各自都有"回退即失败"的测试（评审用变异测试逐条验证，并纠正了自己的夹具错误后才得出结论）；重连/超时/重试的每条边角都被实际跑过。**一条文档阻塞项**（我写错的最坏耗时）已修。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **B1（阻塞）** 三份文档把最坏耗时写成"`timeoutMs` + 退避总和"，但**被重试的失败每次尝试都有独立的 `timeoutMs` 窗口**——只在"我们自己的超时（不重试）"这条路径上成立 | **已修（改文档，代码不动）** | `ADR-004` A2、`README`、本计划统一改为 `timeoutMs × (maxRetries + 1)` + 退避总和（默认 ≈93s），并说明"要逼近上界需网关每次都拖到接近超时才回 429/5xx"、以及对延迟敏感时的两个旋钮（`LLM_MAX_RETRIES=0` / 调小 `timeoutMs`）；`openaiCompatible.ts` 的 docblock 同步 |
+| **N1** `LLM_MAX_RETRIES=""` 会被 `Number("")` 解析成 0，**静默关闭重试**；且该解析没有测试 | **已修** | `parseRetries()`：空串/非整数/负数一律回落默认值；新增 `test/llm/providerFromEnv.test.ts`（4 例，含空串与 `-1`、`2.5`）；`maxRetries` 改为公开只读字段以便断言 |
+| **N2** `timeoutMs: 0`（= "不超时"哨兵）被宽限无条件加成 2s，哨兵失效 | **已修** | `stepTimeoutWithGrace()`：`<= 0` 原样透传；新增测试（`defaultStepTimeoutMs: 0` → 0） |
+| **N3** 客户端本地掐掉这条路只有单元测试、没有端到端 | **延后（理由）** | 该分支是纯客户端逻辑（`(side_effect, code)` 分支），单元测试直接命中；`terminal` 适配器 → `code:"timeout"` 的映射也有测试。端到端目前覆盖的是"服务端到点"那条（`controlledExecution.e2e` 的挂住适配器）。等有真实长命令场景再补 |
+| **N4** `resourceConflict` e2e 的"人类等待不被超时"断言被防御层掩盖（单去掉 monitor 的豁免仍会通过） | **评估通过，不改** | 该豁免另有直接测试（`stepTimeout.test.ts` 断言只对 `step_running` 触发）；评审确认两层都拆掉时该 e2e 会失败。属防御纵深的重叠，不是空测试 |
+| **既存漂移**（评审顺带发现）`WORKFLOW_SPEC` §4.3 说幂等键"同一意图稳定"，而实现按 **Step** 稳定 | **已修（补注）** | §4.3 增"MVP 实现口径"引用块：键按 Step 稳定（重连重发复用），**意图级**稳定键需要 Planner 表达意图，列为后续项 |
+
+**本阶段刻意不做**：`Retry-After` 头解析、按模型/端点区分重试策略、重试指标（等有可观测性再说）。
