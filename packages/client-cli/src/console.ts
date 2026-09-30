@@ -24,6 +24,7 @@ import {
   renderReport,
   renderProtocolError,
   renderTerminated,
+  stableJson,
 } from "./render";
 
 /** The only thing this program needs from a terminal. */
@@ -88,7 +89,7 @@ export function renderConfirmationPrompt(request: ConfirmationRequest): string {
     `⚠ 需要你确认的副作用动作（Step ${request.stepId}）`,
     `  目标：${request.objective}`,
     `  能力：${request.capability}`,
-    `  输入：${JSON.stringify(request.input)}`,
+    `  输入：${stableJson(request.input)}`,
     "执行吗？[y/N] ",
   ].join("\n");
 }
@@ -98,7 +99,7 @@ export function renderUserInputPrompt(request: UserInputRequest): string {
     `✋ 建议你手动执行（Step ${request.stepId}）`,
     `  目标：${request.objective}`,
     `  能力：${request.capability}`,
-    `  输入：${JSON.stringify(request.input)}`,
+    `  输入：${stableJson(request.input)}`,
     "做完后回报：succeeded | failed | partially | unknown（可跟 \": 观察\"）；直接回车表示不回报。",
     "> ",
   ].join("\n");
@@ -178,17 +179,25 @@ export interface CliArgs {
   workspaceRoot: string;
   ledgerPath: string;
   sessionPath: string;
+  /** Flags we did not recognise — a typo should be visible, not silent. */
+  unknownFlags: string[];
+  /** Recognised flags that carried no value (e.g. `--url` at the end of argv). */
+  valuelessFlags: string[];
 }
 
 const DEFAULT_URL = "ws://127.0.0.1:8080/ws";
 const DEFAULT_LEDGER = ".adt/client-cli/ledger.db";
 const DEFAULT_SESSION = ".adt/client-cli/session.json";
+const KNOWN_FLAGS = new Set(["url", "user", "secret", "workspace", "ledger", "session"]);
 
 export function parseArgs(
   argv: string[],
   env: Record<string, string | undefined> = process.env,
 ): CliArgs {
   const flags = new Map<string, string>();
+  const unknownFlags: string[] = [];
+  const valuelessFlags: string[] = [];
+
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]!;
     if (!arg.startsWith("--")) continue;
@@ -196,8 +205,16 @@ export function parseArgs(
     // A bare `--` (what `pnpm start -- …` passes through) has no name: skip it
     // without consuming the next argument, which is a real flag.
     if (!name) continue;
+    if (!KNOWN_FLAGS.has(name)) {
+      unknownFlags.push(`--${name}`);
+      continue;
+    }
     const value = inline ?? argv[++index];
-    if (value !== undefined) flags.set(name, value);
+    if (value === undefined) {
+      valuelessFlags.push(`--${name}`);
+      continue;
+    }
+    flags.set(name, value);
   }
 
   return {
@@ -209,11 +226,41 @@ export function parseArgs(
     workspaceRoot: resolve(flags.get("workspace") ?? process.cwd()),
     ledgerPath: flags.get("ledger") ?? DEFAULT_LEDGER,
     sessionPath: flags.get("session") ?? DEFAULT_SESSION,
+    unknownFlags,
+    valuelessFlags,
   };
 }
 
-export const CLI_HELP = [
-  "命令：",
+/**
+ * Work started by a push handler that must not outlive the CLI.
+ *
+ * The completion answer is sent from a handler, not from the command loop, so
+ * nothing would otherwise wait for it: a fast `:quit` could close the daemon
+ * mid-send and lose the answer. `runCli` drains before it returns.
+ */
+export function createInFlight(): { track(work: Promise<unknown>): void; drain(): Promise<void> } {
+  const pending = new Set<Promise<unknown>>();
+
+  return {
+    track(work: Promise<unknown>): void {
+      // Swallowed here so a failing handler never becomes an unhandled rejection.
+      const settled = work.then(
+        () => undefined,
+        () => undefined,
+      );
+      pending.add(settled);
+      void settled.finally(() => pending.delete(settled));
+    },
+    async drain(): Promise<void> {
+      // Handlers may track more work while we wait, so keep going until quiet.
+      while (pending.size > 0) {
+        await Promise.allSettled([...pending]);
+      }
+    },
+  };
+}
+
+export const CLI_HELP = [  "命令：",
   "  :ask <文本>                          提交一次诊断请求（开始一个 Workflow）",
   "  :records                             列出自己的 Record",
   "  :show <record_id>                    看一条 Record 的完整内容",
@@ -235,6 +282,7 @@ export async function runCli(io: CliIo): Promise<void> {
   const { daemon, prompts, workspaceRoot } = io;
   const print = (line: string): void => prompts.print(line);
   const connection = daemon.connection;
+  const inFlight = createInFlight();
 
   connection.on("step.dispatch", (env) => print(renderDispatch(env.payload as StepDispatchPayload)));
   connection.on("workflow.terminated", (env) =>
@@ -245,21 +293,24 @@ export async function runCli(io: CliIo): Promise<void> {
     const payload = env.payload as { summary?: string };
     const workflowId = env.workflow_id;
     // The Server proposes; only the human disposes (§7.2). Nothing here may
-    // assume "solved" — an unanswered candidate is not a solved one.
-    void (async () => {
-      print(`◇ 系统认为可能已完成：${payload.summary ?? "（未给出说明）"}`);
-      let solved = false;
-      try {
-        solved = parseConfirmation(await prompts.ask("接受这个结论吗？[y/N] ")) === true;
-      } catch {
-        solved = false;
-      }
-      connection.send("workflow.completion_response", {
-        workflow_id: workflowId,
-        resolution: solved ? "solved" : "not_solved",
-      });
-      print(solved ? "已确认完成。" : "已反馈：尚未解决。");
-    })();
+    // assume "solved" — an unanswered candidate is not a solved one. Tracked so
+    // `runCli` waits for the answer before the caller closes the connection.
+    inFlight.track(
+      (async () => {
+        print(`◇ 系统认为可能已完成：${payload.summary ?? "（未给出说明）"}`);
+        let solved = false;
+        try {
+          solved = parseConfirmation(await prompts.ask("接受这个结论吗？[y/N] ")) === true;
+        } catch {
+          solved = false;
+        }
+        connection.send("workflow.completion_response", {
+          workflow_id: workflowId,
+          resolution: solved ? "solved" : "not_solved",
+        });
+        print(solved ? "已确认完成。" : "已反馈：尚未解决。");
+      })(),
+    );
   });
   connection.on("protocol.error", (env) => {
     const payload = env.payload as { code?: string; message?: string };
@@ -275,6 +326,7 @@ export async function runCli(io: CliIo): Promise<void> {
       line = await prompts.ask("> ");
     } catch {
       print("（输入结束，退出）");
+      await inFlight.drain();
       return;
     }
     if (line.trim() === "") continue;
@@ -286,6 +338,7 @@ export async function runCli(io: CliIo): Promise<void> {
     }
     if (command.kind === "quit") {
       print("再见。");
+      await inFlight.drain();
       return;
     }
     await runCommand(command, { connection, print, workspaceRoot });

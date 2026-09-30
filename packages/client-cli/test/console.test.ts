@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
-import { createPromptQueue, buildHostCallbacks, parseArgs, readlinePrompter } from "../src/console";
+import {
+  buildHostCallbacks,
+  createInFlight,
+  createPromptQueue,
+  parseArgs,
+  readlinePrompter,
+} from "../src/console";
 
 function scripted(lines: string[]) {
   const asked: string[] = [];
@@ -115,6 +121,22 @@ describe("buildHostCallbacks", () => {
     expect(asked[0]).toContain("A");
   });
 
+  it("prints a capability's input with a stable key order, like the dispatch does", async () => {
+    // The same step is rendered twice (dispatch and prompt); they must read alike.
+    const { prompter, asked } = scripted(["y"]);
+    const callbacks = buildHostCallbacks(createPromptQueue(prompter), () => {});
+
+    await callbacks.onConfirmationRequired!({
+      workflowId: "wf_1",
+      stepId: "st_1",
+      capability: "sim_rig.trigger_reset",
+      objective: "复位",
+      input: { zeta: 1, alpha: 2 },
+    });
+
+    expect(asked[0]).toContain('{"alpha":2,"zeta":1}');
+  });
+
   it("passes manual feedback through, and gives none when the human says nothing", async () => {
     const { prompter } = scripted(["succeeded: 灯变绿"]);
     const callbacks = buildHostCallbacks(createPromptQueue(prompter), () => {});
@@ -207,6 +229,42 @@ describe("parseArgs", () => {
   it("ignores a bare -- separator instead of eating the next flag", () => {
     // `pnpm -C packages/client-cli start -- --user x` hands tsx a literal "--".
     expect(parseArgs(["--", "--user", "alice"], {}).username).toBe("alice");
+  });
+
+  it("reports the flags it could not use, instead of dropping them silently", () => {
+    const args = parseArgs(["--user", "alice", "--usr", "bob", "--url"], {});
+
+    // A typo should say so, rather than only producing the usage line.
+    expect(args.unknownFlags).toEqual(["--usr"]);
+    expect(args.valuelessFlags).toEqual(["--url"]);
+    expect(args.username).toBe("alice");
+    expect(args.url).toBe("ws://127.0.0.1:8080/ws");
+  });
+});
+
+describe("createInFlight", () => {
+  it("waits for tracked work to settle before draining", async () => {
+    const inFlight = createInFlight();
+    let settled = false;
+    inFlight.track(
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          settled = true;
+          resolve();
+        }, 20);
+      }),
+    );
+
+    expect(settled).toBe(false);
+    await inFlight.drain();
+    expect(settled).toBe(true);
+  });
+
+  it("does not reject when the tracked work fails", async () => {
+    const inFlight = createInFlight();
+    inFlight.track(Promise.reject(new Error("boom")));
+
+    await expect(inFlight.drain()).resolves.toBeUndefined();
   });
 });
 

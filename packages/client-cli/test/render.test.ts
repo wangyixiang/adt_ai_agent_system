@@ -18,6 +18,22 @@ describe("renderDispatch", () => {
     expect(text).toContain("sim_rig.trigger_reset");
     expect(text).toContain("rig");
   });
+
+  it("does not print `undefined` when the objective is missing", () => {
+    // The wire type requires it, but a listener must never render `undefined`.
+    const text = renderDispatch({
+      workflow_id: "wf_1",
+      step_id: "st_1",
+      capability: "git.collect_diagnostics",
+      input: {},
+      expected_output: null,
+      requires_confirmation: false,
+      idempotency_key: null,
+    } as unknown as Parameters<typeof renderDispatch>[0]);
+
+    expect(text).not.toContain("undefined");
+    expect(text).toContain("（未给出目标）");
+  });
 });
 
 describe("renderExport", () => {

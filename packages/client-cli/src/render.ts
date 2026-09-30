@@ -7,7 +7,7 @@ import type { RecordDocument, StepDispatchPayload } from "@adt/server";
  */
 
 /** Stable key order, so the same input always reads the same way. */
-function stableJson(value: unknown): string {
+export function stableJson(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) => {
     if (v === null || typeof v !== "object" || Array.isArray(v)) return v;
     const source = v as Record<string, unknown>;
@@ -20,7 +20,9 @@ function stableJson(value: unknown): string {
 export function renderDispatch(step: StepDispatchPayload): string {
   const lines = [
     `▸ Step ${step.step_id}（Workflow ${step.workflow_id}）`,
-    `  目标：${step.objective}`,
+    // The wire type requires an objective, but a listener must never render
+    // `undefined` — say the field is absent instead.
+    `  目标：${step.objective ?? "（未给出目标）"}`,
     `  能力：${step.capability}`,
     `  输入：${stableJson(step.input)}`,
     `  期望证据类型：${step.expected_output ?? "（未声明）"}`,
