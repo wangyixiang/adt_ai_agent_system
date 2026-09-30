@@ -746,6 +746,30 @@ P4c 验收通过后写 **P4d（KB 导出）**。
 
 **规格漂移（已修）**：`blob.allocate_response` 实际回显 `media_type`/`size`/`sha256`，而 §7.5 与 `shared` 类型只写了三个字段——两者都已补齐（并注明"回显"的用途）。
 
-**明确留作后续（评审提出、本轮不做）**：令牌放在查询串里（会进代理/访问日志；15 分钟 TTL 限定影响面）；`sharesBytes` 也会被"未提交/被放弃"的行挡住，导致共享文件多留一会儿（安全，只是延迟）；客户端 helper 的下载仍整体缓冲（调用方要拿字节来校验/查看，服务端与通道都是流式的）。
+**逐条裁决（含 deferred minors 的清点）**：评审的非阻塞项 12 条 + 规格漂移逐条落定，避免"讨论过但没裁决"：
+
+| 评审项 | 裁决 | 落点 / 理由 |
+|---|---|---|
+| B1 生产入口未接 | **已修** | `start()` 构造 blob 依赖 + 直接对 `start()` 的测试 |
+| N1 `commit` 静默 no-op → 假 201 | **已修** | `commit` 返回布尔；未提交成功回 `409 allocation_gone` 并回收字节 |
+| N2 只有已落盘 Record 保护 blob | **已记录（规格）** | `PROTOCOL_SPEC.md` §7.5：保护以"Record 已落盘"为准，在跑的 Workflow 靠保留期兜着，故保留期必须远大于一次诊断的时长 |
+| N3 `isReferenced` 子串搜索的方向性 | **评估通过，不改** | 评审确认"宁可多留"是安全方向；两条边角分别由 N2 的文档与 N1 的修复覆盖 |
+| N4 同字节重写无测试 / `rename` 漏文件 | **已修** | 存储层"相同内容两次写入"测试 + `rename` 失败清理暂存 |
+| N5 上传端不校验 `Content-Type` | **已修** | 不符回 `400 media_type_mismatch`；**并已写入 §7.5**（见下"本轮自查"） |
+| N6 空密钥可签 | **已修** | `createBlobTokenSigner("")` 抛错 + 测试 |
+| N7 base URL 硬编码 8080 | **已修** | 改用实际监听端口（含 `port: 0`） |
+| N8 令牌放在查询串 | **延后** | 规格 §7.5 **即如此设计**；令牌绑定 direction/ref/user 且 15 分钟过期，影响面有限。改 header/cookie 是契约变更，等服务端有真实消费方（UI）时一并做 |
+| N9 客户端下载整体缓冲 | **延后** | 调用方（未来的 UI/查看器）要拿字节来校验与展示；**服务端与通道都是流式的**。等出现"大文件流式落盘"的真实需求再加 `downloadBlobToFile` |
+| N10 `downloadBlob` 不校验 sha 头 | **已修** | 校验 `X-Blob-Sha256` + 客户端 helper 单测 |
+| N11 遍历监听器时自我摘除 | **已修** | 遍历副本 |
+| N12 测试盲区（6 项） | **5 项已修、1 项本轮补** | 已修：Review Focus 5 端到端、正向 download 申请、换 ref 的令牌被拒、`blob_rejected` 不关连接、客户端 helper 两项；**本轮补**：`blobConfigFromEnv` 的测试（评审提过，我第一轮**漏了裁决**——它现在在生产路径上） |
+| 规格漂移：响应多出的回显字段、base URL 默认值 | **已修** | `shared` 类型 + §7.5 补齐 |
+| 附带发现：`startTestServer` 不清理 `blobs` | **已修** | 补进 TRUNCATE（这是让第一版 e2e 断言变脆的原因） |
+
+**本轮自查（deferred minors 之后又抓到的两处）**：① 我新加的 `Content-Type` 校验**没写进 §7.5**——等于修复轮自己制造了规格漂移，已补（并一并写明"未提交的引用一律当作不存在"）；② `blobConfigFromEnv` 无测试，已补 3 条（未配置密钥 → 随机 + 告警；各项 env 覆盖；非法数字回落默认值）。
+
+**移交 P4d 的延后项**：N8（令牌进 header/cookie）、N9（客户端流式下载）、内联阈值强制（超阈值内联判 `invalid_output`）、能力层"大输出自动外置"（属能力语义）、反向代理下的 `baseUrl` 策略、`sharesBytes` 也会被未提交/被放弃的行挡住（共享文件多留一会儿，安全）。
 
 **验证状态（已恢复并验证）**：`pnpm -r --if-present test` → shared 14 · server 253（+1 skipped 真实 LLM）· client-daemon 67 = **334 passed / 1 skipped**；`pnpm -r --if-present typecheck` 四个包干净。（中途 Docker Desktop 曾挂掉一次，Postgres 引擎无响应；重启后重跑通过。）
+
+**deferred-minors 轮之后**：server 增 `test/blob/config.test.ts`（3 条）+ §7.5 的 `Content-Type` 契约，server 测试数 253 → **256**。
