@@ -126,6 +126,55 @@ export class WorkflowEngine {
     return { id: newEventId(), workflowId, kind, ts: this.now(), payload };
   }
 
+  /**
+   * The state-change body shared by `applyStepStatus` and `timeoutStep`. Callers
+   * must already hold the workflow lock (they call it from inside one, and
+   * re-entering here would deadlock on the per-workflow chain).
+   */
+  private async applyStatus(
+    workflow: WorkflowSnapshot,
+    step: StepSnapshot,
+    update: StepStatusUpdate,
+  ): Promise<WorkflowSnapshot> {
+    const next: StepSnapshot = {
+      ...step,
+      state: update.state,
+      // waitClass describes only the CURRENT wait; clear it on resume.
+      waitClass: update.state === "WAITING" ? update.waitClass : null,
+      updatedAt: this.now(),
+    };
+    const evidence =
+      update.state === "COMPLETED" || update.state === "FAILED"
+        ? update.evidence
+        : undefined;
+    const failReason = update.state === "FAILED" ? update.failReason : undefined;
+    const rejectReason = update.state === "REJECTED" ? update.rejectReason : undefined;
+    const stepEvent = this.event(workflow.id, "step_status", {
+      stepId: step.id,
+      state: next.state,
+      // Stored verbatim here; the protocol layer validates `result` against
+      // the Capability output schema and records `invalid_output` upstream.
+      ...(evidence === undefined ? {} : { evidence }),
+      ...(failReason === undefined ? {} : { failReason }),
+      ...(rejectReason === undefined ? {} : { rejectReason }),
+    });
+
+    // A queued cancel converges the moment its non-interruptible step ends —
+    // on ANY terminal outcome, including UNKNOWN (WORKFLOW_SPEC.md §2.1).
+    if (workflow.state === "CANCELLING" && convergesCancelling(next.state)) {
+      return this.terminate(
+        workflow,
+        "CANCELLED",
+        workflow.terminalReason,
+        [stepEvent],
+        next,
+      );
+    }
+
+    await this.store.saveStep(next, stepEvent);
+    return (await this.store.getWorkflow(workflow.id))!;
+  }
+
   private async requireWorkflow(workflowId: string): Promise<WorkflowSnapshot> {
     const workflow = await this.store.getWorkflow(workflowId);
     if (!workflow) throw new Error(`unknown workflow ${workflowId}`);
@@ -298,43 +347,38 @@ export class WorkflowEngine {
       // Ignore illegal and duplicate transitions: no state change, no event.
       if (!canTransitionStep(step.state, update.state)) return workflow;
 
-      const next: StepSnapshot = {
-        ...step,
-        state: update.state,
-        // waitClass describes only the CURRENT wait; clear it on resume.
-        waitClass: update.state === "WAITING" ? update.waitClass : null,
-        updatedAt: this.now(),
-      };
-      const evidence =
-        update.state === "COMPLETED" || update.state === "FAILED"
-          ? update.evidence
-          : undefined;
-      const failReason = update.state === "FAILED" ? update.failReason : undefined;
-      const rejectReason = update.state === "REJECTED" ? update.rejectReason : undefined;
-      const stepEvent = this.event(workflowId, "step_status", {
-        stepId,
-        state: next.state,
-        // Stored verbatim here; the protocol layer validates `result` against
-        // the Capability output schema and records `invalid_output` upstream.
-        ...(evidence === undefined ? {} : { evidence }),
-        ...(failReason === undefined ? {} : { failReason }),
-        ...(rejectReason === undefined ? {} : { rejectReason }),
-      });
+      return this.applyStatus(workflow, step, update);
+    });
+  }
 
-      // A queued cancel converges the moment its non-interruptible step ends —
-      // on ANY terminal outcome, including UNKNOWN (WORKFLOW_SPEC.md §2.1).
-      if (workflow.state === "CANCELLING" && convergesCancelling(next.state)) {
-        return this.terminate(
-          workflow,
-          "CANCELLED",
-          workflow.terminalReason,
-          [stepEvent],
-          next,
-        );
+  /**
+   * step_timeout (PROTOCOL_SPEC.md §9). A read-only step that never reports back
+   * fails; a side-effect step may already have taken effect, so it becomes
+   * UNKNOWN and is reconciled later. A human wait is unbounded by design.
+   */
+  async timeoutStep(workflowId: string, stepId: string): Promise<WorkflowSnapshot> {
+    return this.withWorkflowLock(workflowId, async () => {
+      const workflow = await this.requireWorkflow(workflowId);
+      if (isTerminalWorkflow(workflow.state)) return workflow;
+
+      const step = await this.store.getStep(stepId);
+      if (!step || step.workflowId !== workflowId) {
+        throw new Error(`unknown step ${stepId}`);
       }
 
-      await this.store.saveStep(next, stepEvent);
-      return (await this.store.getWorkflow(workflowId))!;
+      // Only a step that is executing can time out: PENDING means the client
+      // has not acknowledged yet, and a human wait has no deadline.
+      const executing =
+        step.state === "RUNNING" ||
+        (step.state === "WAITING" && step.waitClass !== "human");
+      if (!executing) return workflow;
+
+      const update: StepStatusUpdate = step.sideEffect
+        ? { state: "UNKNOWN" }
+        : { state: "FAILED", failReason: { code: "timeout" } };
+      if (!canTransitionStep(step.state, update.state)) return workflow;
+
+      return this.applyStatus(workflow, step, update);
     });
   }
 
