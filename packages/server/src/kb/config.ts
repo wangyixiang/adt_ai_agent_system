@@ -45,8 +45,18 @@ export function kbConfigFromEnv(env: Record<string, string | undefined>): KbConf
     authHeader: authHeader.trim() === "" ? DEFAULT_AUTH_HEADER : authHeader,
     authScheme: env.KB_AUTH_SCHEME ?? DEFAULT_AUTH_SCHEME,
     token,
-    timeoutMs: parseBoundedInt(env.KB_TIMEOUT_MS, { fallback: DEFAULT_TIMEOUT_MS }),
-    maxRetries: parseBoundedInt(env.KB_MAX_RETRIES, { fallback: DEFAULT_MAX_RETRIES, max: MAX_RETRIES }),
+    // Deliberately uncapped: an over-large timeout is a deliberate choice (and
+    // the startup check warns when it makes the worst case unsafe), whereas
+    // silently shrinking it to the default would be a worse surprise.
+    timeoutMs: parseBoundedInt(env.KB_TIMEOUT_MS, {
+      fallback: DEFAULT_TIMEOUT_MS,
+      name: "KB_TIMEOUT_MS",
+    }),
+    maxRetries: parseBoundedInt(env.KB_MAX_RETRIES, {
+      fallback: DEFAULT_MAX_RETRIES,
+      max: MAX_RETRIES,
+      name: "KB_MAX_RETRIES",
+    }),
     retryBaseMs: DEFAULT_RETRY_BASE_MS,
   };
 }

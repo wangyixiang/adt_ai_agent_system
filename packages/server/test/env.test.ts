@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseBoundedInt } from "../src/env";
 
 describe("parseBoundedInt", () => {
@@ -31,5 +31,33 @@ describe("parseBoundedInt", () => {
     // legitimately slow KB to the default, which is a worse surprise than a
     // large timeout.
     expect(parseBoundedInt("1000000000", { fallback: 2 })).toBe(1_000_000_000);
+  });
+
+  it("warns when a value the operator wrote is thrown away", () => {
+    // Falling back rather than clamping is only acceptable if the operator can
+    // see that their value was discarded.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(parseBoundedInt("20", { fallback: 2, max: 10, name: "LLM_MAX_RETRIES" })).toBe(2);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain("LLM_MAX_RETRIES");
+      expect(String(warn.mock.calls[0]![0])).toContain("20");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("stays quiet when the value is absent, usable, or unnamed", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(parseBoundedInt(undefined, { fallback: 2, max: 10, name: "LLM_MAX_RETRIES" })).toBe(2);
+      expect(parseBoundedInt("", { fallback: 2, max: 10, name: "LLM_MAX_RETRIES" })).toBe(2);
+      expect(parseBoundedInt("5", { fallback: 2, max: 10, name: "LLM_MAX_RETRIES" })).toBe(5);
+      // No name, no voice: a caller that did not ask for a warning gets none.
+      expect(parseBoundedInt("20", { fallback: 2, max: 10 })).toBe(2);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

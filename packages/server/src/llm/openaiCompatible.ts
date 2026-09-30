@@ -172,7 +172,11 @@ export function llmProviderFromEnv(
       baseUrl,
       apiKey,
       model,
-      maxRetries: parseBoundedInt(env.LLM_MAX_RETRIES, { fallback: DEFAULT_MAX_RETRIES, max: MAX_RETRIES }),
+      maxRetries: parseBoundedInt(env.LLM_MAX_RETRIES, {
+        fallback: DEFAULT_MAX_RETRIES,
+        max: MAX_RETRIES,
+        name: "LLM_MAX_RETRIES",
+      }),
     }),
     model,
   };
