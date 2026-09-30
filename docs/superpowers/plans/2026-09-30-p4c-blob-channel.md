@@ -748,4 +748,4 @@ P4c 验收通过后写 **P4d（KB 导出）**。
 
 **明确留作后续（评审提出、本轮不做）**：令牌放在查询串里（会进代理/访问日志；15 分钟 TTL 限定影响面）；`sharesBytes` 也会被"未提交/被放弃"的行挡住，导致共享文件多留一会儿（安全，只是延迟）；客户端 helper 的下载仍整体缓冲（调用方要拿字节来校验/查看，服务端与通道都是流式的）。
 
-**验证状态**：代码修复与文档已完成；最终全量测试在一次 Docker Desktop 挂掉时被中断（Postgres 端口仍在但引擎无响应），恢复后需重跑 `pnpm -r --if-present test` 与 `typecheck` 才能宣称"绿"。
+**验证状态（已恢复并验证）**：`pnpm -r --if-present test` → shared 14 · server 253（+1 skipped 真实 LLM）· client-daemon 67 = **334 passed / 1 skipped**；`pnpm -r --if-present typecheck` 四个包干净。（中途 Docker Desktop 曾挂掉一次，Postgres 引擎无响应；重启后重跑通过。）
