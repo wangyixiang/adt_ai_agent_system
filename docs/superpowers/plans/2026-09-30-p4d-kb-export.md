@@ -460,3 +460,24 @@ git commit -m "docs: the export half is implemented, and what it still does not 
 3. **blob 与导出**：投递包里的 `content_ref` 需要按 KB 的存储接口决定"上传字节 / 内联小文件 / 只给引用"。
 4. **FR-23 KB 检索**：`KnowledgeProvider` 接口预留（ADR-005 §6），等目标 KB 确定。
 5. 其余延后项见前几份计划的裁决表。
+
+---
+
+## Review 修复轮（Review fix pass）
+
+整体评审：`opencode-go/deepseek-v4.1-flash`，整分支 `7a06fa4..deab35e`。**无 Critical**；实现忠实落地 `ADR-005` §2–§5，五条 Review Focus 全部有真测试（含真 HTTP 端点与真实挂死 socket）。评审先纠正了自己的一处夹具假设（按 socket 数断言 → 按请求数）才下结论。修复后 **412 passed / 1 skipped**，typecheck 干净。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **B1** 失败信息可能泄漏凭据：`KB_ENDPOINT_URL` 带 userinfo 时 Node 的 fetch 会把整个 URL（含密码）写进 `TypeError.message`；KB 响应体若回显 token 也会被原样转发给客户端（违反 Review Focus #4 的"**任何**失败信息"） | **已修** | `depositor.ts` 增 `redact()`：抹掉 token 子串与 URL 里的 `user:pass@`；新增两例（端点回显 token、URL 带 userinfo）RED→GREEN |
+| **B2** 代码与 `ADR-005` §5 冲突：`isRetryableStatus` 把 **429** 当可重试，而 §5 的表格只列"网络错误 / 超时 / 5xx"，且 429 属 4xx（"不重试"行）；README 又把 429 说成 ADR 的规定 | **已修（改代码，不改 ADR）** | `isRetryableStatus` 收窄为 `>= 500`；新增"不重试 429"测试 RED→GREEN（尝试 3→1）；README 更正措辞并注明"与 `ADR-004` A2 **故意不同**" |
+| **B3** 同步投递的最坏耗时无上界、且与心跳判死阈值无关联：`KB_TIMEOUT_MS=15000`（≈46.5s）即超过 45s（15s×3），导出期间该连接的心跳被排队 → 会话被判失联、用户看不到导出结论 | **已修** | 新增纯函数 `kbWorstCaseMs()`（2 例 RED→GREEN）；`index.ts` 启动时若最坏耗时 ≥ 判死阈值则**告警**；README 写明 45s 阈值与告警行为 |
+| **N1** `KB_MAX_RETRIES` 无上界（`1000000000` 会算出天文退避、挂住连接） | **延后（理由）** | 与既有 `LLM_MAX_RETRIES` 解析同款，属既存口径；运维故意填荒谬值不在威胁模型内。等统一做配置校验时一起收 |
+| **N2** `object=report` 固定 `detail_level="full"`，无法请求 `summary` | **延后（理由）** | `REPORT_SPEC` §3 的默认就是 `full`；`PROTOCOL_SPEC` §10.3 的导出请求**没有 options 字段**，要支持就得改协议面。列为后续项 |
+| **N3** 导出路径里 `generateReport` 的失败分支当前不可达（`generateReport` 恒返回 ok） | **延后（保留为护栏）** | 防御性代码、无害；**不计入已覆盖行为**（计划 Task 3 把它列为行为，实际无法测试） |
+| **N4** `buildDeposit` 允许 `object:"report"` 却不给 `report`，会投递 `content:null` | **延后（理由）** | 协议层永远同时给 `report`，当前不可达；纯函数契约收紧留待将来（`report!` 或显式抛错） |
+| **N5** 协议测试没有断言 `object=record` 时 `spec_versions` 存在 | **延后（理由）** | 属测试补强、非缺陷；`deposit.test.ts` 已直接断言该字段 |
+
+**评审"Declined to judge"各行**：均**维持执行者的原裁决**（`target` 不校验；缺失 `object` 默认 `record`；`submitted_at` 用墙钟；可用性检查先于生成报告；test-support 不读 `process.env`；T4 自身无 RED；按请求数而非 socket 数断言）——理由见本分支 SDD 台账的 Rulings。
+
+**本阶段刻意不做**：blob 引用解析、FR-23 检索、审核状态回读、多 KB 路由、异步投递（均见 `ADR-005` §7）。
