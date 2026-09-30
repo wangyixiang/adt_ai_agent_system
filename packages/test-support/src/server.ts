@@ -1,9 +1,17 @@
 import type { AddressInfo } from "node:net";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createPool,
+  createLocalBlobStore,
+  createBlobTokenSigner,
   createServer,
+  BlobLifecycle,
+  DEFAULT_BLOB_CONFIG,
   migrate,
   OrphanReclaimer,
+  PostgresBlobRepository,
   PostgresRecordStore,
   PostgresWorkflowStore,
   RecordService,
@@ -15,6 +23,9 @@ import {
   UserRepository,
   WorkflowEngine,
   WorkflowOrchestrator,
+  type BlobConfig,
+  type BlobRepository,
+  type BlobStore,
   type GuardrailConfig,
   type LlmProvider,
   type NormalizedCapability,
@@ -53,6 +64,11 @@ export interface TestServerOptions {
   /** Makes `RecordService.finalize` throw (as if a DB read failed). */
   throwOnFinalize?: boolean;
   guardrails?: GuardrailConfig;
+  /** Where blob bytes land; defaults to a fresh temp directory per server. */
+  blobDataDir?: string;
+  /** Blob retention for tests that want expiry to happen now. */
+  blobRetentionMs?: number;
+  blobLifecycleIntervalMs?: number;
 }
 
 export interface TestServer {
@@ -60,6 +76,8 @@ export interface TestServer {
   deadSessions: string[];
   sessions: SessionManager;
   engine: WorkflowEngineType;
+  /** The blob channel's server-side pieces, for assertions and forced sweeps. */
+  blobs: { repository: BlobRepository; store: BlobStore; lifecycle: BlobLifecycle | null };
   capabilities(sessionId: string): Map<string, NormalizedCapability>;
   warnings(sessionId: string): string[];
   workflows(sessionId: string): Promise<WorkflowSnapshot[]>;
@@ -135,11 +153,32 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   });
 
   const deadSessions: string[] = [];
+
+  // The blob channel runs in every test server: the base URL can only be known
+  // after `listen`, so it is resolved lazily through this holder.
+  const blobDataDir = opts.blobDataDir ?? (await mkdtemp(join(tmpdir(), "adt-blob-")));
+  const blobStore = createLocalBlobStore(blobDataDir);
+  const blobRepository = new PostgresBlobRepository(pool);
+  let blobBaseUrl = "";
+  const blobConfig: BlobConfig = {
+    ...DEFAULT_BLOB_CONFIG,
+    secret: "test-blob-secret",
+    baseUrl: () => blobBaseUrl,
+    ...(opts.blobRetentionMs === undefined ? {} : { retentionMs: opts.blobRetentionMs }),
+  };
+
   const server = await createServer({
     pool,
     heartbeatIntervalMs: opts.heartbeatIntervalMs ?? 15000,
     maxMissed: opts.maxMissed ?? 3,
     sessionTtlMs,
+    blobs: {
+      repository: blobRepository,
+      store: blobStore,
+      signer: createBlobTokenSigner(blobConfig.secret),
+      config: blobConfig,
+      lifecycleIntervalMs: opts.blobLifecycleIntervalMs,
+    },
     onSessionDead: (sessionId) => {
       if (!deadSessions.includes(sessionId)) deadSessions.push(sessionId);
       reclaimer.onSessionDead(sessionId);
@@ -203,12 +242,19 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
 
   await server.app.listen({ port: 0, host: "127.0.0.1" });
   const port = (server.app.server.address() as AddressInfo).port;
+  // Blob URLs must point at the port this server actually got.
+  blobBaseUrl = `http://127.0.0.1:${port}`;
 
   return {
     url: `ws://127.0.0.1:${port}/ws`,
     deadSessions,
     sessions: server.sessions,
     engine,
+    blobs: {
+      repository: blobRepository,
+      store: blobStore,
+      lifecycle: server.blobLifecycle,
+    },
     capabilities: (sessionId: string) => server.sessions.capabilitiesOf(sessionId),
     warnings: (sessionId: string) => server.sessions.get(sessionId)?.connection?.warnings ?? [],
     workflows: (sessionId: string) => workflowStore.listWorkflowsBySession(sessionId),

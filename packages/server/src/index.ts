@@ -60,6 +60,21 @@ export {
   type StepTimeoutDeps,
   type StepTimeoutOptions,
 } from "./workflow/stepTimeout";
+export { createLocalBlobStore, BlobIntegrityError, type BlobStore } from "./blob/store";
+export {
+  PostgresBlobRepository,
+  type BlobRecord,
+  type BlobRepository,
+} from "./blob/repository";
+export { createBlobTokenSigner, type BlobTokenClaims, type BlobTokenSigner } from "./blob/token";
+export {
+  blobConfigFromEnv,
+  DEFAULT_ALLOWED_MEDIA_TYPES,
+  DEFAULT_BLOB_CONFIG,
+  type BlobConfig,
+} from "./blob/config";
+export { DEFAULT_BLOB_LIFECYCLE_MS, BlobLifecycle, type BlobLifecycleDeps } from "./blob/lifecycle";
+export type { BlobDeps } from "./blob/deps";
 export {
   canTransitionStep,
   isActiveStep,

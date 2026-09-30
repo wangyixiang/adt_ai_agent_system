@@ -10,6 +10,7 @@ import { HeartbeatMonitor, registerHeartbeat } from "./ws/heartbeat";
 import { MessageRouter } from "./ws/messageRouter";
 import type { BlobDeps } from "./blob/deps";
 import { registerBlobProtocol } from "./blob/protocol";
+import { BlobLifecycle, DEFAULT_BLOB_LIFECYCLE_MS } from "./blob/lifecycle";
 
 export interface CreateServerOptions {
   pool: Pool;
@@ -30,6 +31,8 @@ export interface CreatedServer {
   router: MessageRouter;
   sessions: SessionManager;
   monitor: HeartbeatMonitor;
+  /** Present only when the blob channel was configured. */
+  blobLifecycle: BlobLifecycle | null;
   close(): Promise<void>;
 }
 
@@ -66,6 +69,14 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
     });
   }
 
+  const blobLifecycle = opts.blobs
+    ? new BlobLifecycle(
+        { repository: opts.blobs.repository, store: opts.blobs.store },
+        { intervalMs: opts.blobs.lifecycleIntervalMs ?? DEFAULT_BLOB_LIFECYCLE_MS },
+      )
+    : null;
+  blobLifecycle?.start();
+
   const monitor = new HeartbeatMonitor(sessions, {
     intervalMs: heartbeatIntervalMs,
     maxMissed,
@@ -91,7 +102,9 @@ export async function createServer(opts: CreateServerOptions): Promise<CreatedSe
     router,
     sessions,
     monitor,
+    blobLifecycle,
     close: async () => {
+      blobLifecycle?.stop();
       monitor.stop();
       await app.close();
     },
