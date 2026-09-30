@@ -192,7 +192,7 @@ async function handleStep(
   const key = dispatch.idempotency_key ?? null;
   if (key !== null) {
     const recorded = deps.ledger?.get(key);
-    if (recorded) {
+    if (recorded?.state === "done") {
       send("COMPLETED", {
         evidence: { source: "capability", type: recorded.type, result: recorded.result },
       });
@@ -263,7 +263,7 @@ async function handleStep(
       // Remember only a real outcome: an action that failed may have taken
       // (partial) effect, and suppressing a later reconciliation-driven retry
       // would hide that.
-      if (key !== null) deps.ledger?.set(key, { type: result.type, result: result.result });
+      if (key !== null) deps.ledger?.markDone(key, result.type, result.result);
       send("COMPLETED", {
         evidence: { source: "capability", type: result.type, result: result.result },
       });

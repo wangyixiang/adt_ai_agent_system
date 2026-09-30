@@ -135,6 +135,7 @@ describe("controlled execution end to end", () => {
     // re-dispatch of this step cannot repeat the reset.
     expect(step.idempotencyKey).toMatch(/^idem_/);
     expect(ledger.get(step.idempotencyKey!)).toEqual({
+      state: "done",
       type: "reset_ack",
       result: { reset_ack: true },
     });

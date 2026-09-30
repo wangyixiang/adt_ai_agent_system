@@ -4,7 +4,8 @@ export { CapabilityRegistry } from "./capability/registry";
 export { defaultRegistry } from "./capability/defaultRegistry";
 export { mvpDescriptors, mvpSpec } from "./capability/descriptors";
 export { nodeCommandRunner } from "./capability/exec";
-export { openLedger, type Ledger, type LedgerEntry } from "./ledger";
+export { openLedger, type Ledger, type LedgerEntry, type LedgerState } from "./ledger";
+export { openSessionStore, type RememberedSession, type SessionStore } from "./sessionStore";
 export { downloadBlob, uploadBlob, type BlobClientDeps } from "./blob";
 export { resolveWithinWorkspace } from "./capability/workspace";
 export {

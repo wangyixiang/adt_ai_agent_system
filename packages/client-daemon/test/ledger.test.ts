@@ -5,40 +5,69 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { openLedger } from "../src/ledger";
 
+const sqlite = (): { DatabaseSync: new (location: string) => { exec(sql: string): void; close(): void } } =>
+  createRequire(import.meta.url)("node:sqlite") as never;
+
 describe("openLedger", () => {
   it("persists entries across a reopen", () => {
     const path = join(mkdtempSync(join(tmpdir(), "adt-ledger-")), "ledger.db");
 
     const first = openLedger(path);
-    first.set("idem_1", { type: "reset_ack", result: { reset_ack: true } });
+    first.markDone("idem_1", "reset_ack", { reset_ack: true });
     first.close();
 
     // A new process would do exactly this; the key must still be remembered.
     const second = openLedger(path);
-    expect(second.get("idem_1")).toEqual({ type: "reset_ack", result: { reset_ack: true } });
+    expect(second.get("idem_1")).toEqual({
+      state: "done",
+      type: "reset_ack",
+      result: { reset_ack: true },
+    });
     expect(second.get("missing")).toBeUndefined();
     second.close();
   });
 
-  it("overwrites an existing key instead of failing", () => {
+  it("distinguishes 'never seen', 'in flight' and 'done'", () => {
     const ledger = openLedger(":memory:");
-    ledger.set("idem_1", { type: "reset_ack", result: { reset_ack: true } });
-    ledger.set("idem_1", { type: "reset_ack", result: { reset_ack: false } });
-    expect(ledger.get("idem_1")).toEqual({ type: "reset_ack", result: { reset_ack: false } });
+    const key = "idem_1";
+
+    expect(ledger.get(key)).toBeUndefined();
+
+    // Before executing a side effect the runner says so; that is what makes a
+    // re-dispatch after a reconnect report UNKNOWN instead of re-running it.
+    ledger.markInFlight(key);
+    expect(ledger.get(key)).toEqual({ state: "in_flight" });
+
+    ledger.markDone(key, "reset_ack", { reset_ack: true });
+    expect(ledger.get(key)).toEqual({
+      state: "done",
+      type: "reset_ack",
+      result: { reset_ack: true },
+    });
+
+    // A failure clears the marker: the action is not "unknown", it did not happen.
+    ledger.clear(key);
+    expect(ledger.get(key)).toBeUndefined();
+    ledger.close();
+  });
+
+  it("lets a later result replace an in-flight marker", () => {
+    const ledger = openLedger(":memory:");
+    ledger.markInFlight("idem_1");
+    ledger.markDone("idem_1", "reset_ack", { reset_ack: true });
+    expect(ledger.get("idem_1")!.state).toBe("done");
     ledger.close();
   });
 
   it("treats an unreadable entry as no record instead of throwing at the step runner", () => {
     const path = join(mkdtempSync(join(tmpdir(), "adt-ledger-")), "ledger.db");
     const first = openLedger(path);
-    first.set("idem_1", { type: "reset_ack", result: { reset_ack: true } });
+    first.markDone("idem_1", "reset_ack", { reset_ack: true });
     first.close();
 
     // Simulate a corrupted / schema-drifted row (the runner must not be the one
     // that discovers it by crashing).
-    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
-      DatabaseSync: new (location: string) => { exec(sql: string): void; close(): void };
-    };
+    const { DatabaseSync } = sqlite();
     const raw = new DatabaseSync(path);
     raw.exec("UPDATE ledger SET result = 'not json' WHERE key = 'idem_1'");
     raw.close();
@@ -49,5 +78,27 @@ describe("openLedger", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
     reopened.close();
+  });
+
+  it("reads a row written by the older two-column ledger as done", () => {
+    // The daemon may already have a ledger from before the three-state change.
+    const path = join(mkdtempSync(join(tmpdir(), "adt-ledger-")), "ledger.db");
+    const { DatabaseSync } = sqlite();
+    const raw = new DatabaseSync(path);
+    raw.exec(
+      "CREATE TABLE ledger (key text PRIMARY KEY, type text NOT NULL, result text NOT NULL)",
+    );
+    raw.exec(
+      `INSERT INTO ledger (key, type, result) VALUES ('idem_old', 'reset_ack', '{"reset_ack":true}')`,
+    );
+    raw.close();
+
+    const ledger = openLedger(path);
+    expect(ledger.get("idem_old")).toEqual({
+      state: "done",
+      type: "reset_ack",
+      result: { reset_ack: true },
+    });
+    ledger.close();
   });
 });
