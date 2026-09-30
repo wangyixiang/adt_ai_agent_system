@@ -121,6 +121,17 @@ function toEntry(
         return { ...base, kind: "step_rejected", ref, narrative: renderNarrative("step_rejected", ref) };
       }
 
+      // Engineer-supplied evidence is a `user_input`, not a Capability result
+      // (RECORD_SPEC.md §4; WORKFLOW_SPEC.md §6.1 advisory path).
+      const evidence = payload.evidence as { source?: unknown; result?: unknown } | undefined;
+      if (
+        (payload.state === "COMPLETED" || payload.state === "FAILED") &&
+        evidence?.source === "user_input"
+      ) {
+        const ref = { step_id: stepId, content: evidence.result ?? null };
+        return { ...base, kind: "user_input", ref, narrative: renderNarrative("user_input", ref) };
+      }
+
       if (
         (payload.state === "COMPLETED" || payload.state === "FAILED") &&
         payload.evidence !== undefined &&
@@ -152,7 +163,7 @@ function toEntry(
       return { ...base, kind: "completion_candidate", ref, narrative: renderNarrative("completion_candidate", ref) };
     }
     case "guardrail_triggered": {
-      const ref = { guardrail: payload.reason, threshold: null };
+      const ref = { guardrail: payload.reason, threshold: payload.threshold ?? null };
       return { ...base, kind: "guardrail_triggered", ref, narrative: renderNarrative("guardrail_triggered", ref) };
     }
     default:

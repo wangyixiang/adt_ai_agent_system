@@ -299,4 +299,51 @@ describe("record builder", () => {
       result: { branch: 7 },
     });
   });
+
+  it("records the guardrail threshold and the engineer's input", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "COMPLETED",
+          evidence: {
+            source: "user_input",
+            type: "manual_action_result",
+            result: { outcome: "succeeded", observation: "换了电源线" },
+          },
+        }),
+        ev("guardrail_triggered", { reason: "step_limit", threshold: 50 }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_ui",
+    });
+
+    expect(record.entries.map((e) => e.kind)).toEqual(["user_input", "guardrail_triggered"]);
+    expect(record.entries[0]!.ref).toEqual({
+      step_id: "step_1",
+      content: { outcome: "succeeded", observation: "换了电源线" },
+    });
+    expect(record.entries[1]!.ref.threshold).toBe(50);
+  });
+
+  it("keeps capability evidence as evidence_received", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_status", {
+          stepId: "step_1",
+          state: "COMPLETED",
+          evidence: { source: "capability", type: "git_status", result: { branch: "main" } },
+        }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_cap",
+    });
+    expect(record.entries.map((e) => e.kind)).toEqual(["evidence_received"]);
+  });
 });

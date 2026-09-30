@@ -19,6 +19,23 @@ export type GuardrailReason =
   | "user_round_limit"
   | "time_budget";
 
+/** The configured limit behind a breach, for the Record (RECORD_SPEC.md §4). */
+export function guardrailThreshold(
+  config: GuardrailConfig,
+  reason: GuardrailReason,
+): number | null {
+  switch (reason) {
+    case "step_limit":
+      return config.maxStepsPerWorkflow;
+    case "retry_limit":
+      return config.maxConsecutiveRetriesPerCapability;
+    case "user_round_limit":
+      return config.maxNotSolvedRounds;
+    case "time_budget":
+      return config.timeBudgetMs;
+  }
+}
+
 export interface GuardrailInput {
   stepCount: number;
   consecutiveRetries: number;

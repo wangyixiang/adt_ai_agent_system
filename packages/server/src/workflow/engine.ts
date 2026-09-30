@@ -9,6 +9,7 @@ import { convergesCancelling, decideCancel } from "./cancel";
 import {
   breachedGuardrail,
   DEFAULT_GUARDRAILS,
+  guardrailThreshold,
   type GuardrailConfig,
   type GuardrailReason,
 } from "./guardrails";
@@ -124,6 +125,11 @@ export class WorkflowEngine {
 
   private event(workflowId: string, kind: WorkflowEventKind, payload: unknown): WorkflowEvent {
     return { id: newEventId(), workflowId, kind, ts: this.now(), payload };
+  }
+
+  /** The configured limit travels with the breach, so the Record can state it. */
+  private guardrailPayload(reason: GuardrailReason): { reason: GuardrailReason; threshold: number | null } {
+    return { reason, threshold: guardrailThreshold(this.guardrails, reason) };
   }
 
   /**
@@ -284,7 +290,7 @@ export class WorkflowEngine {
 
       if (breach) {
         await this.terminate(workflow, "FAILED", breach, [
-          this.event(workflowId, "guardrail_triggered", { reason: breach }),
+          this.event(workflowId, "guardrail_triggered", this.guardrailPayload(breach)),
         ]);
         throw new GuardrailError(breach);
       }
@@ -516,7 +522,14 @@ export class WorkflowEngine {
         { stepCount: 0, consecutiveRetries: 0, notSolvedRounds: rounds, elapsedMs: 0 },
         this.guardrails,
       );
-      if (breach) return this.terminate(updated, "FAILED", breach, [response]);
+      // The breach terminates the workflow, so it belongs in the Record just
+      // like a dispatch-time breach does.
+      if (breach) {
+        return this.terminate(updated, "FAILED", breach, [
+          response,
+          this.event(workflowId, "guardrail_triggered", this.guardrailPayload(breach)),
+        ]);
+      }
 
       await this.store.saveWorkflowWithEvents(updated, [response]);
       return updated;
