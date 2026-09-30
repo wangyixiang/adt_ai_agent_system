@@ -49,6 +49,9 @@ describe("OpenAiCompatibleProvider", () => {
       baseUrl: "https://api.example/v1",
       apiKey: "k",
       model: "m",
+      // The retry policy has its own tests; here we only care that a 5xx ends in
+      // an error, not how long the backoff takes.
+      sleep: async () => undefined,
       fetch: (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch,
     });
     await expect(provider.complete({ messages: [], tools: [], toolChoice: "t" })).rejects.toThrow();
@@ -57,7 +60,12 @@ describe("OpenAiCompatibleProvider", () => {
   it("aborts a hanging request via the configured timeout", async () => {
     const hangingFetch = ((_url: string, init: RequestInit) =>
       new Promise((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        init.signal?.addEventListener("abort", () => {
+          // What `AbortSignal.timeout` produces in real life.
+          reject(Object.assign(new Error("The operation was aborted due to timeout"), {
+            name: "TimeoutError",
+          }));
+        });
       })) as unknown as typeof fetch;
 
     const provider = new OpenAiCompatibleProvider({

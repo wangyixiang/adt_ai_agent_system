@@ -17,8 +17,8 @@
 - **副作用超时 → `UNKNOWN`，两端一致**（本阶段确立）：`FAILED(timeout)` 只用于**只读**步骤；副作用被"到点掐掉"意味着可能已部分生效，那是"结果未知"，不是"确定失败"。
 - **客户端造成的副作用超时同样保留台账标记**：`UNKNOWN` 与"执行中"是同一件事的两种说法，标记**不得**清除（`forget()` 只在 `failed`/`rejected` 这类"确实没发生"的终态上调用）。
 - **服务端宽限**：`step_timeout = 依据值 + 宽限`，依据值 = 显式 `timeoutMs` ?? 能力 `timeout_hint` ?? 全局默认；宽限默认 **2000ms**，可通过编排层依赖覆盖（测试用 0）。理由写进 `PROTOCOL_SPEC.md` §9：让客户端自己的本地超时先到，客户端的观察优先于服务端推断。
-- **重试只针对可重试失败**：HTTP `429` 与 `5xx`、以及网络/超时（fetch 抛出）。**不重试**其它 `4xx`，**不重试**响应体解析失败与工具调用形状错误（`name` 缺失 / `arguments` 非 JSON / 非对象）——那是模型语义问题，重试只会重复犯错。最终失败仍抛错 → 编排层 `FAILED(planner_error)`（既有规则不变）。
-- **重试参数**：`maxRetries` 默认 **2**（最多 3 次尝试）、`retryBaseMs` 默认 **500**（指数：500ms、1000ms）；`sleep` 可注入以便测试不真等。最坏耗时 = `timeoutMs × (maxRetries + 1)`，写进文档（30s × 3 = 90s），生产可用 `LLM_MAX_RETRIES=0` 关闭。
+- **重试只针对可重试失败**：HTTP `429` 与 `5xx`、以及**网络错误**（fetch 抛出）。**不重试**其它 `4xx`、**不重试我们自己的超时**（`TimeoutError`/`AbortError`：请求已经等满 `timeoutMs`，重试只会把最坏耗时放大三倍）、也**不重试**响应体解析失败与工具调用形状错误（`name` 缺失 / `arguments` 非 JSON / 非对象）——那是模型语义问题，重试只会重复犯错。最终失败仍抛错 → 编排层 `FAILED(planner_error)`（既有规则不变）。
+- **重试参数**：`maxRetries` 默认 **2**（最多 3 次尝试）、`retryBaseMs` 默认 **500**（指数：500ms、1000ms）；`sleep` 可注入以便测试不真等。最坏耗时 = `timeoutMs`（一次超时即止）+ 退避总和（默认 1.5s），而不是 `timeoutMs × 3`；生产可用 `LLM_MAX_RETRIES=0` 关闭。
 - **一次 `proposeNext` 内重试，绝不重复派发**：重试不得触发第二次 `dispatchStep`；本阶段不引入任何"重试 Step"的行为。
 - **不 push**；合并用本地 `ff-merge`（`docs/superpowers/WORKFLOW.md`）。
 - **文档纪律**：`PROTOCOL_SPEC.md` v0.10 → **v0.11**（§9 宽限与客户端本地超时的分流）、`CAPABILITY_SPEC.md` v0.10 → **v0.11**（§2.4 说明 `timeout_hint` 是客户端本地上限、服务端在其上叠宽限）、`WORKFLOW_SPEC.md` v0.6 → **v0.7**（§4.3 补"副作用超时两端一致走 `UNKNOWN`"）、`docs/REQUIREMENTS.md` §7 三行同步、README 当前状态。
@@ -209,8 +209,8 @@ git commit -m "feat(workflow): let the client's own timeout speak first"
 **Interfaces:**
 - Produces:
   - `OpenAiCompatibleOptions` 增 `maxRetries?: number`（默认 2）、`retryBaseMs?: number`（默认 500）、`sleep?: (ms: number) => Promise<void>`
-  - 可重试判定：`status === 429 || status >= 500`，或网络/超时（`fetchImpl` 抛出）
-  - 不可重试：其它 `4xx`；响应体解析失败；工具调用形状错误（`name` 缺失 / `arguments` 非 JSON / 非对象）
+  - 可重试判定：`status === 429 || status >= 500`，或网络错误（`fetchImpl` 抛出且不是我们自己的超时）
+  - 不可重试：其它 `4xx`；**我们自己的超时**（`TimeoutError`/`AbortError`）；响应体解析失败；工具调用形状错误（`name` 缺失 / `arguments` 非 JSON / 非对象）
   - `llmProviderFromEnv` 读 `LLM_MAX_RETRIES`（缺省 2）
 
 - [ ] **Step 1: 写失败测试**
@@ -300,6 +300,19 @@ describe("LlmProvider retry", () => {
     const h = providerWith([new Response("boom", { status: 500 })], { maxRetries: 2 });
     await expect(h.provider.complete(request)).rejects.toThrow(/LLM HTTP 500/);
     expect(h.attempts()).toBe(3);
+  });
+
+  it("does not retry its own timeout", async () => {
+    // An aborted request already waited the full timeout; retrying would triple
+    // the worst case for a request that is hanging rather than blipping.
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    const h = providerWith([timeout, ok()]);
+
+    await expect(h.provider.complete(request)).rejects.toThrow(/timeout/);
+    expect(h.attempts()).toBe(1);
+    expect(h.sleeps).toEqual([]);
   });
 });
 ```
