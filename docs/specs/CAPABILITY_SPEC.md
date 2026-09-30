@@ -237,3 +237,5 @@ output: manual_action_result
 2. ~~**Capability 声明的真实性**~~ **已解决（v0.5）**：schema 落地后，声明与实际不符会在运行时被 schema 校验与 `REJECTED` / `FAILED(invalid_output)` 捕获，不再静默（见 §5.2、`PROTOCOL_SPEC.md` §8）。认证授权部分仍留待 Security Spec。
 3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
 4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
+5. **`evidence.type` 与声明的输出名称暂不校验（v0.7）**：Manifest 目前只携带 `output_schema`、没有输出名称字段，因此 Server 无法核对 `evidence.type` 是否等于该 Capability 登记的 output 名称（§5.2 的这一条尚未落地）；`result` 仍按 schema 校验。需要时再给 Manifest 增一个 output 名称字段。
+6. **`human.manual_action` 的 Client 执行（建议路径）尚未实现（v0.7）**：§6 约定该保留能力由所有 Client 隐式支持，但 MVP 的 client-daemon 只实现了只读数据能力；规划器若下发 `human.manual_action`，当前以 `REJECTED(capability_unavailable)` 收场。完整建议路径（展示 `instruction`、等待工程师反馈）见 `WORKFLOW_SPEC.md` §6.1，留待后续版本。

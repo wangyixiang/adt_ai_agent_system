@@ -22,8 +22,8 @@ const truncate = (text: string, max = 60): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
 /**
- * Deterministic, template-only narratives (P2b). LLM polish and the
- * consistency check are P3 (RECORD_SPEC.md §4). The text must never go
+ * Deterministic, template-only narratives. LLM polish and the consistency
+ * check (RECORD_SPEC.md §4) remain a later refinement; the text must never go
  * beyond the structured `ref`.
  */
 export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unknown>): string {
