@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import { parseBoundedInt } from "../env";
+
 export interface BlobConfig {
   /** Where the signed URLs point; a function so it can be resolved after listen. */
   baseUrl: () => string;
@@ -45,6 +47,17 @@ export const DEFAULT_BLOB_CONFIG: BlobConfig = {
 };
 
 /**
+ * Ceilings for the tunable numbers. Each exists because the unbounded value
+ * silently defeats a control: a signed URL that outlives a day stops being a
+ * meaningful signature, "never collect" makes `BlobLifecycle` a no-op and grows
+ * the disk, and an unbounded blob size lets a client stream until the disk is
+ * full. An over-ceiling value falls back to the default and warns.
+ */
+const MAX_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // a day
+const MAX_RETENTION_MS = 365 * 24 * 60 * 60 * 1000; // a year
+const MAX_BLOB_BYTES = 8 * 1024 * 1024 * 1024; // 8 GiB, 16× the default
+
+/**
  * Reads the BLOB_* environment. A missing secret is generated per boot and
  * warned about: a hard-coded default would be worse (it would make every
  * deployment's URLs forgeable), and the only cost is that URLs do not survive a
@@ -59,18 +72,29 @@ export function blobConfigFromEnv(env: NodeJS.ProcessEnv = process.env): BlobCon
   }
 
   const base = env.BLOB_BASE_URL ?? DEFAULT_BLOB_CONFIG.baseUrl();
-  const int = (value: string | undefined, fallback: number): number => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  };
 
   return {
     ...DEFAULT_BLOB_CONFIG,
     baseUrl: () => base,
     dataDir: env.BLOB_DATA_DIR ?? DEFAULT_BLOB_CONFIG.dataDir,
     secret: env.BLOB_SECRET ?? generated!,
-    tokenTtlMs: int(env.BLOB_TOKEN_TTL_MS, DEFAULT_BLOB_CONFIG.tokenTtlMs),
-    retentionMs: int(env.BLOB_RETENTION_MS, DEFAULT_BLOB_CONFIG.retentionMs),
-    maxBlobBytes: int(env.BLOB_MAX_BYTES, DEFAULT_BLOB_CONFIG.maxBlobBytes),
+    tokenTtlMs: parseBoundedInt(env.BLOB_TOKEN_TTL_MS, {
+      fallback: DEFAULT_BLOB_CONFIG.tokenTtlMs,
+      min: 1,
+      max: MAX_TOKEN_TTL_MS,
+      name: "BLOB_TOKEN_TTL_MS",
+    }),
+    retentionMs: parseBoundedInt(env.BLOB_RETENTION_MS, {
+      fallback: DEFAULT_BLOB_CONFIG.retentionMs,
+      min: 1,
+      max: MAX_RETENTION_MS,
+      name: "BLOB_RETENTION_MS",
+    }),
+    maxBlobBytes: parseBoundedInt(env.BLOB_MAX_BYTES, {
+      fallback: DEFAULT_BLOB_CONFIG.maxBlobBytes,
+      min: 1,
+      max: MAX_BLOB_BYTES,
+      name: "BLOB_MAX_BYTES",
+    }),
   };
 }

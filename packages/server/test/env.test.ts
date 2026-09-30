@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseBoundedInt } from "../src/env";
+import { parseBoundedInt, resolvePort } from "../src/env";
 
 describe("parseBoundedInt", () => {
   it("uses the value when it is a usable integer", () => {
@@ -56,6 +56,30 @@ describe("parseBoundedInt", () => {
       // No name, no voice: a caller that did not ask for a warning gets none.
       expect(parseBoundedInt("20", { fallback: 2, max: 10 })).toBe(2);
       expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("resolvePort", () => {
+  it("prefers an explicit option, including port 0", () => {
+    // `port: 0` means "any free port" and is how the integration tests listen.
+    expect(resolvePort(0, { PORT: "9999" })).toBe(0);
+    expect(resolvePort(3000, {})).toBe(3000);
+  });
+
+  it("falls back for a missing or unusable PORT instead of crashing", () => {
+    // `Number("abc")` is NaN, which Node rejects at listen time with a confusing
+    // ERR_SOCKET_BAD_PORT; a bad PORT should degrade to the default and say so.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(resolvePort(undefined, {})).toBe(8080);
+      expect(resolvePort(undefined, { PORT: "3000" })).toBe(3000);
+      expect(resolvePort(undefined, { PORT: "abc" })).toBe(8080);
+      expect(resolvePort(undefined, { PORT: "0" })).toBe(8080);
+      expect(resolvePort(undefined, { PORT: "70000" })).toBe(8080);
+      expect(String(warn.mock.calls[0]![0])).toContain("PORT");
     } finally {
       warn.mockRestore();
     }

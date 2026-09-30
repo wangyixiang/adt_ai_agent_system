@@ -66,6 +66,8 @@ pnpm -r --if-present typecheck
 
 数据库连接串默认 `postgres://adt:adt@localhost:55432/adt_test`（测试）与 `.../adt`（开发），可用 `TEST_DATABASE_URL` / `DATABASE_URL` 覆盖。
 
+Server 监听端口默认 `8080`，可用 `PORT` 覆盖；非法值（`abc` / `0` / `70000`）会**告警并回落默认**，而不是把 `NaN` 交给 Node 在 listen 时报一个难懂的 `ERR_SOCKET_BAD_PORT`。
+
 ### LLM 规划（可选）
 
 Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 兼容）：
@@ -76,6 +78,19 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 - `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试），上限 `10`（超出会**告警**并按默认值处理）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
 
 真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
+
+### Blob 通道（可选）
+
+大体积证据走独立通道（`PROTOCOL_SPEC.md` §7.5）。可用环境变量调整：
+
+- `BLOB_SECRET`：签名密钥；未配置则每次启动随机生成并**告警**（旧 URL 重启后失效）。
+- `BLOB_BASE_URL`：签名 URL 的基地址；默认按实际监听端口拼。
+- `BLOB_DATA_DIR`：内容寻址的落盘目录，默认 `.adt/blobs`。
+- `BLOB_TOKEN_TTL_MS`：令牌有效期，默认 15 分钟，**上限 24 小时**。
+- `BLOB_RETENTION_MS`：保留期，默认 30 天，**上限 365 天**（过期只回收**未被任何 Record 引用**的 blob）。
+- `BLOB_MAX_BYTES`：单 blob 上限，默认 512 MiB，**上限 8 GiB**。
+
+数值类变量必须是**整数**；不可用或超上限的值会**告警**并回落默认——不截断，也不会静默接受 `2.5` 这类值。
 
 ### KB 导出（可选，`ADR-005`）
 

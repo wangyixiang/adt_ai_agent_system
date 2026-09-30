@@ -33,3 +33,26 @@ export function parseBoundedInt(
   }
   return fallback;
 }
+
+/** The default listen port when neither an option nor a usable `PORT` is given. */
+const DEFAULT_PORT = 8080;
+const MAX_PORT = 65_535;
+
+/**
+ * The listen port: an explicit option wins (including `0`, "any free port").
+ *
+ * A missing or unusable `PORT` degrades to the default and says so, instead of
+ * handing Node a `NaN` that fails at listen time with `ERR_SOCKET_BAD_PORT`.
+ */
+export function resolvePort(
+  explicit: number | undefined,
+  env: Record<string, string | undefined>,
+): number {
+  if (explicit !== undefined) return explicit;
+  return parseBoundedInt(env.PORT, {
+    fallback: DEFAULT_PORT,
+    min: 1,
+    max: MAX_PORT,
+    name: "PORT",
+  });
+}

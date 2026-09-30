@@ -54,4 +54,32 @@ describe("blobConfigFromEnv", () => {
     expect(config.maxBlobBytes).toBe(DEFAULT_BLOB_CONFIG.maxBlobBytes);
     warn.mockRestore();
   });
+
+  it("rejects a non-integer size instead of silently accepting it", () => {
+    // The old local parser accepted 2.5; a byte count has to be a whole number.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const config = blobConfigFromEnv({ BLOB_SECRET: "s", BLOB_MAX_BYTES: "2.5" });
+
+    expect(config.maxBlobBytes).toBe(DEFAULT_BLOB_CONFIG.maxBlobBytes);
+    warn.mockRestore();
+  });
+
+  it("falls back and warns for a value above its ceiling", () => {
+    // An unbounded retention means "never collect"; an unbounded size means
+    // "stream until the disk is full". Both ceilings are visible in the warning.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const config = blobConfigFromEnv({
+      BLOB_SECRET: "s",
+      BLOB_TOKEN_TTL_MS: "999999999999",
+      BLOB_RETENTION_MS: "999999999999999",
+      BLOB_MAX_BYTES: "999999999999999999",
+    });
+
+    expect(config.tokenTtlMs).toBe(DEFAULT_BLOB_CONFIG.tokenTtlMs);
+    expect(config.retentionMs).toBe(DEFAULT_BLOB_CONFIG.retentionMs);
+    expect(config.maxBlobBytes).toBe(DEFAULT_BLOB_CONFIG.maxBlobBytes);
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(String(warn.mock.calls[0]![0])).toContain("BLOB_TOKEN_TTL_MS");
+    warn.mockRestore();
+  });
 });

@@ -182,6 +182,7 @@ import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
 import { kbConfigFromEnv, kbWorstCaseMs } from "./kb/config";
+import { resolvePort } from "./env";
 import { createHttpDepositor } from "./kb/depositor";
 import { registerSessionResume } from "./session/resume";
 import { OrphanReclaimer } from "./workflow/reclamation";
@@ -259,7 +260,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
   // cited by a Record, so leaving it to a flag would make P4c unreachable in a
   // real deployment. The base URL must name the port this server actually got,
   // which is only known after `listen` — hence the mutable holder.
-  const port = opts.port ?? Number(process.env.PORT ?? 8080);
+  const port = resolvePort(opts.port, process.env);
   let blobBaseUrl = process.env.BLOB_BASE_URL ?? `http://127.0.0.1:${port}`;
   const blobConfig: BlobConfig = {
     ...(opts.blobConfig ?? blobConfigFromEnv(process.env)),
