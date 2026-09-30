@@ -571,7 +571,7 @@ git commit -m "test(protocol): resource conflict waits, then ends the workflow o
 **Files:**
 - Modify: `docs/specs/WORKFLOW_SPEC.md`（v0.5 → v0.6：§2 `terminal_reason` 枚举加 `resource_conflict`；§4.4 改写为"资源占用由能力提供方判断并如实上报，Server 不仲裁、不排队"）
 - Modify: `docs/specs/PROTOCOL_SPEC.md`（v0.7 → v0.8：§9/§8 的人类等待列表加 `resource_conflict`，并在 §8 补一小段冲突流程；§12 无需新增错误码）
-- Modify: `docs/specs/CAPABILITY_SPEC.md`（v0.8 → v0.9：§7 增"提供方契约：可报告 `REJECTED(resource_conflict)` 而非执行"）
+- Modify: `docs/specs/CAPABILITY_SPEC.md`（v0.8 → v0.9：§2 声明规则增"提供方自行判断资源占用并如实上报"——放 §2 而非 §7：这是提供方的**声明/行为规则**，§7 是"已知待补项"清单）
 - Modify: `docs/REQUIREMENTS.md`（§7 引用行的版本号与说明；A-2 加注"共享测试台由提供方如实报告冲突，不建资源模型"）
 - Modify: `README.md`（当前状态补 P4b）
 

@@ -1,6 +1,6 @@
 # WORKFLOW_SPEC.md
 
-- **Version:** v0.5（系统失败原因补充：§2 的 `FAILED` 增 `invalid_input` / `invalid_output` / `planner_error`，对应 P3a 的 Planner/校验路径；对齐 `PROTOCOL_SPEC.md` v0.7、`CAPABILITY_SPEC.md` v0.7、`RECORD_SPEC.md` v0.7，取代 v0.4）
+- **Version:** v0.6（资源冲突如实上报：§4.4 由"Server 保证会话级串行"改为"资源占用由能力提供方判断并如实上报，Server 不仲裁"；§2 增 `resource_conflict` 终止原因；取代 v0.5）
 - **层级:** Specification — Client 与 Server 共享的行为契约
 - **拆分说明:** 原 v0.2 的 `CLIENT_SPEC.md` 和 `SERVER_SPEC.md` 里，Step 状态机、Evidence 结构、Completion 判定流程被各自定义了一遍，且已经出现细节漂移（例如 Evidence 两种不同的示例结构、Execution Loop 图里 "Done Candidate" 与其余各处 "Completion Candidate" 不一致）。本文件把这些内容整合为唯一权威定义，`architecture/CLIENT_SPEC.md` 与 `architecture/SERVER_SPEC.md` 均应引用本文件，不再各自维护副本。
 
@@ -50,7 +50,7 @@ CREATED ──▶ RUNNING ──▶ COMPLETED
 | 终止态 | `terminal_reason` 取值 |
 |---|---|
 | `COMPLETED` | 恒为 `null` |
-| `FAILED` | `client_unreachable`（§2.2 孤儿回收）/ `step_limit` / `retry_limit` / `user_round_limit` / `time_budget`（§13 护栏）/ `planner_error` / `invalid_input` / `invalid_output`（v0.5 规划与校验失败）；其他系统判定原因预留为自由字符串 |
+| `FAILED` | `client_unreachable`（§2.2 孤儿回收）/ `step_limit` / `retry_limit` / `user_round_limit` / `time_budget`（§13 护栏）/ `planner_error` / `invalid_input` / `invalid_output`（v0.5 规划与校验失败）/ `resource_conflict`（v0.6：能力提供方报告资源被占用，见 §4.4）；其他系统判定原因预留为自由字符串 |
 | `CANCELLED` | `user_cancelled` / `abandoned` / `superseded` 等（§2.1） |
 
 > `PROTOCOL_SPEC.md` 的 `workflow.terminated.terminal_reason`、`RECORD_SPEC.md` 的 `terminal_reason` 与本节使用同一套取值。
@@ -220,7 +220,7 @@ Client 和 Server 在实现时都不应该把这两种情况用同一套状态�
 
 **触发 `UNKNOWN` 的典型场景：** Client 已执行一个有副作用的 Step，但 `step.status(COMPLETED, evidence)` 在回传前丢失（断连、超时）。Server 无法区分"执行了但回包丢了"和"根本没收到/没执行"，因此把该 Step 判为 `UNKNOWN` 而非 `FAILED`。
 
-**副作用阻塞规则：** 当一个 Workflow 内存在未对账的 `UNKNOWN` 时，Server **禁止再下发其它副作用 Step**（只读 Step 与对账 Step 允许）。这条与 §4.4 的会话级串行共同成立。
+**副作用阻塞规则：** 当一个 Workflow 内存在未对账的 `UNKNOWN` 时，Server **禁止再下发其它副作用 Step**（只读 Step 与对账 Step 允许）。这条与 §4.4 是两件不同的事：这里管的是"我们自己的知识状态残缺"（动作可能已发生），§4.4 管的是"提供方报告资源此刻不可用"。
 
 **对账流程：** 优先由 Server 生成只读对账 Step 取客观证据，由 Workflow Engine 据此把原 `UNKNOWN` 裁定为 `COMPLETED` 或 `FAILED`；证据不足时退回工程师确认（属于人类等待，见 `PROTOCOL_SPEC.md` §9）。
 
@@ -228,15 +228,18 @@ Client 和 Server 在实现时都不应该把这两种情况用同一套状态�
 
 **幂等重试（白名单）：** Capability 可声明 `idempotent: true`（见 `CAPABILITY_SPEC.md` §2.3）。只有这类 Capability 允许在结果不确定时携带 `idempotency_key` 重试；Server 为同一意图生成 Workflow 内稳定的 `idempotency_key`，Client 必须持久化"键 → 结果"台账，命中台账直接返回缓存证据而不重新执行；Client 无法确认台账时不得静默重执行，应回报 `UNKNOWN` 待对账。`message_id` 去重（挡消息重传）与 `idempotency_key`（挡同意图语义重复）职责不同，不可互相替代。
 
-### 4.4 会话级副作用串行（v0.4 新增）
+### 4.4 资源占用（v0.4 新增，v0.6 重写）
 
-`REQUIREMENTS.md` NFR-4 允许同一工程师并发多个 Workflow，而假设 A-2 只声明了"一套硬件同时只由一位工程师操作"。为避免同一工程师的两个 Workflow 同时操作同一套硬件：
+`REQUIREMENTS.md` NFR-4 允许同一工程师并发多个 Workflow，而假设 A-2 只声明了"一套硬件同时只由一位工程师操作"。两个 Workflow 的副作用可能同时落到同一套硬件上——但**"谁被占用了"只有能力提供方知道**（硬件、被测对象、本地环境、外部锁……本系统不建模这些），因此：
 
-> **同一 `session` 内，任意时刻最多一个副作用 Step 处于活跃状态（`PENDING` / `RUNNING` / `WAITING`）。**
+> **资源占用由能力提供方自行判断；发现冲突时如实上报，由 Server 转达工程师决定。Server 不做资源仲裁、不排队、不建资源模型。**
 
-* 只读 Step 可以并发。
-* 不引入硬件资源 / 目标模型——本版本用会话级串行这一保守规则替代（`session` 的定义见 `PROTOCOL_SPEC.md` §3）。
-* Server 负责在生成 / 下发 Step 时保证这条约束（例如把副作用 Step 排队）。
+* **能解决 → 继续**：提供方报 `WAITING(wait_reason.code = resource_conflict)` 把 Step 停住（人类等待，不受 `step_timeout` 约束，见 `PROTOCOL_SPEC.md` §9），并向工程师询问；工程师腾出资源后提供方继续执行，Step 正常 `COMPLETED`。**这一路不落 Record 条目**——Record 记的是问题与结局，不是过程中的磕碰。
+* **不能解决 → 结束**：提供方报 `REJECTED(reject_reason.code = resource_conflict, message = ...)`；Server **不再重规划**（不允许换一个能力把问题绕过去），Workflow 终止为 `FAILED`，`terminal_reason = resource_conflict`，Record 如实记下"设备/资源被占用"（见 `RECORD_SPEC.md` §3/§4）。
+* Server 侧只做两件事：认这个码是**人类等待**（不许被超时杀掉），以及认这个码是**终结信号**。
+* 取消意图仍然优先：`CANCELLING` 中触发该终结，仍收敛为 `CANCELLED`（§2.1）。
+
+> 之前版本的表述是"同一 `session` 内最多一个副作用 Step 活跃，Server 负责保证（例如排队）"。v0.6 放弃这条：`session` 只是本地环境的一个粗糙替身（同一个 daemon 换个连接就是一个新 session），既会挡住本不冲突的动作，也拦不住真正共享的硬件；而判断"是否冲突"所需的信息只有提供方有。§4.3（同一 Workflow 内 `UNKNOWN` 未对账时禁止再下发副作用）不受影响——那不是资源问题，而是"我方知识状态"问题。
 
 ---
 

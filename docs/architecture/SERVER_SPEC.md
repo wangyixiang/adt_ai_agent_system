@@ -117,7 +117,7 @@ Server MUST：
 15. **在 User 明确请求时，基于指定 Record 生成 Report；不请求则不生成**（v0.4 新增，对应 REQUIREMENTS FR-17~FR-19）
 16. **在创建 / 推进 Workflow 时确定并维护 `completion_criteria`，每次修订写入 Record**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §8.1）
 17. **由 Workflow Engine 确定性执行终止护栏**（步数 / 重试 / `not_solved` 轮次 / 时长预算），触顶则 `FAILED` 并保存 Record（v0.7 新增，对应 `WORKFLOW_SPEC.md` §13）
-18. **保证同一 `session` 内任意时刻最多一个副作用 Step 处于活跃状态**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.4）
+18. **把能力提供方报告的 `resource_conflict` 认作人类等待（不受 `step_timeout` 约束）与终结信号（`FAILED` + `terminal_reason = resource_conflict`），不自行仲裁资源、不排队**（v0.7 新增；v0.11 按 `WORKFLOW_SPEC.md` §4.4 v0.6 重写）
 19. **为 `side_effect: true` 的 Step 生成 Workflow 内稳定的 `idempotency_key`；对结果不确定的副作用 Step 判为 `UNKNOWN` 并对账（不自动重试，除非该 Capability 声明 `idempotent`）**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §4.3）
 20. **按可配置宽限期回收失联的孤儿 Workflow（未请求取消 → `FAILED(client_unreachable)`；已请求取消 → `CANCELLED`）；并在任何终止状态先持久化 Record、成功后再发 `workflow.terminated`**（v0.7 新增，对应 `WORKFLOW_SPEC.md` §2.2、`PROTOCOL_SPEC.md` §7.4）
 21. **管理本地账号（创建 / 禁用 / 改密）与会话，校验 Client 认证；未认证连接不得进入业务消息**（v0.8 新增，对应 `ADR-003` §3、`PROTOCOL_SPEC.md` §5.1）
@@ -190,7 +190,9 @@ Step/Workflow 的具体状态机、Step Schema、Evidence 结构、Completion �
 
 > **v0.4 备注：** 是否需要为"Server 与第三方 Knowledge Base 的集成方式"、"Record 未来导出到 Knowledge Base"单独补一条 ADR，建议在下一次架构评审时决定——这两点目前只是在本文件和 `ARCHITECTURE.md` §1.1 里做了文字说明，还没有经过"排除替代方案"的决策过程，不应该被当作已经定案的架构决策。
 
-> **v0.7 补充：** 终止护栏（`WORKFLOW_SPEC.md` §13）、副作用结果未知与对账（§4.3）、会话级副作用串行（§4.4）都是 `ADR-001`（Workflow Engine 是唯一权威）的直接推论——它们必须由**确定性组件**执行，不能委托给 LLM；这一点也是它们写进 Spec 而不是留给实现自由发挥的原因。
+> **v0.7 补充：** 终止护栏（`WORKFLOW_SPEC.md` §13）、副作用结果未知与对账（§4.3）都是 `ADR-001`（Workflow Engine 是唯一权威）的直接推论——它们必须由**确定性组件**执行，不能委托给 LLM；这一点也是它们写进 Spec 而不是留给实现自由发挥的原因。
+
+> **v0.11 更正：** 资源占用（`WORKFLOW_SPEC.md` §4.4）**不属于**这条推论——它不是确定性规则，而是"只有提供方知道的事实"。Server 只认两个信号（人类等待、终结），**不判断谁占用了什么**。
 
 ---
 

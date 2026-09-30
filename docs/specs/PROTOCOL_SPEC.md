@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.7（重连认证、会话 TTL 与 `workflow.state_sync` 字段；v0.6 的字段澄清——`record.list_response` 的摘要用 `duration_ms`（毫秒整数），与 `RECORD_SPEC.md` v0.5 对齐——继续有效）
+**Version:** v0.8（资源冲突如实上报：`resource_conflict` 进入人类等待集合，并在 §8 补冲突流程；§3 的"会话级副作用串行"改为"提供方判断 + 如实上报"）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -137,7 +137,7 @@ session_id   一次逻辑会话（可跨越多次物理连接，见 §5 重连�
 * `client_request_id`：由 Client 为一个 `workflow.request` 生成、重发时保持不变；Server 按 `(session_id, client_request_id)` 去重，避免"提交成功但回包丢失"导致重复创建 Workflow（见 §7.1）。作用域限 session。
 * `idempotency_key`：由 Server 为"同一意图"生成、在 Workflow 内稳定，随 `step.dispatch` 下发；Client 持久化"键 → 结果"台账，用于幂等重试（见 §8）。仅 `side_effect: true` 的 Step 需要。
 
-**会话级副作用串行（v0.4 新增）：** 同一 `session` 内，任意时刻最多一个副作用 Step 处于活跃状态（`PENDING` / `RUNNING` / `WAITING`），只读 Step 可并发；Server 负责保证（见 `WORKFLOW_SPEC.md` §4.4）。
+**资源占用（v0.4 新增，v0.8 重写）：** 资源是否被占用由**能力提供方**判断并如实上报（`WAITING(wait_reason.code = resource_conflict)` / `REJECTED(reject_reason.code = resource_conflict)`）；Server 不仲裁、不排队（见 `WORKFLOW_SPEC.md` §4.4）。
 
 跨 Client 续接同一个 Workflow（例如手机发起、电脑继续）不在 v0.1 范围内，见 §14。
 
@@ -506,7 +506,7 @@ Client                                    Server
 
 **`wait_reason` 的两类（v0.4 新增）：**
 
-* **人类等待**：`user_input` / `user_confirmation`（以及人工对账）。**不受 `step_timeout` 约束**。
+* **人类等待**：`user_input` / `user_confirmation` / `resource_conflict`（v0.8 新增；以及人工对账）。**不受 `step_timeout` 约束**。
 * **执行类等待**：本地服务 / 设备响应 / 外部资源等。受 `step_timeout` 约束（见 §9）。
 
 **终态与迟到更新（v0.4 新增）：** `COMPLETED` / `FAILED` / `REJECTED` / `UNKNOWN` 均为 Step 终态。到达终态后，同一 `step_id` 的后续 `step.status` 一律忽略并告警（终态互不覆盖，先到为准）；**唯一例外是 `UNKNOWN` 可被对账收敛**。同一 `(step_id, 终态)` 只接受一次，避免重连补报在 Record 中产生重复条目。迟到的只读证据可由 Server 选择性并入 Context，但不改变 Step 状态（详见 `WORKFLOW_SPEC.md` §4）。
@@ -547,6 +547,16 @@ step.status   step.status
 
 这里特意写明，是因为"建议"路径讨论了好几轮方案，容易让人以为协议层需要专门再加点什么——实际上不需要，记录于此避免被重新提出。
 
+### 8.3 资源冲突的上报（v0.8 新增说明）
+
+对应 `WORKFLOW_SPEC.md` §4.4：**资源是否被占用只有能力提供方知道**，因此由它如实上报，Server 只认两个信号、不仲裁、不排队。同样复用 `step.dispatch` / `step.status`，不新增消息类型：
+
+* **能解决 → 继续**：提供方在动手前/动手时发现冲突，先上报 `step.status(WAITING, wait_reason={"code":"resource_conflict"})`（人类等待，不受 `step_timeout` 约束，见 §9），向工程师询问是否等待；工程师腾出资源后提供方继续执行，Step 正常走到 `COMPLETED`。**这一步不产生 Record 条目。**
+* **不能解决 → 结束**：提供方上报 `step.status(REJECTED, reject_reason={"code":"resource_conflict","message":"…"})`；Server **不再重规划**，Workflow 终止为 `FAILED`，`terminal_reason = "resource_conflict"`（见 `WORKFLOW_SPEC.md` §2），Record 以 `step_rejected` 条目 + 可读的 failure 说明记下"设备/资源被占用"（见 `RECORD_SPEC.md` §3/§4）。
+* `message` 由提供方填写（例如"测试台正被另一个会话复位"），Record 的 narrative 优先采用它——原因码留给机器，人看到的是提供方的话。
+
+> 这条路径**不**替代 §4.3：同一 Workflow 内 `UNKNOWN` 未对账时禁止再下发副作用，是"我方知识状态"问题（动作可能已发生，不能带着残缺信息继续规划），与"资源此刻是否空闲"无关，两者各自独立成立。
+
 ---
 
 ## 9. 心跳与超时策略
@@ -557,7 +567,7 @@ step.status   step.status
 
 * Server 为处于 `RUNNING` 的 Step，以及**执行类** `WAITING` 的 Step 维护一个 `step_timeout`。
 * 超时时长：优先使用该 Capability 声明的 `timeout_hint`（见 `CAPABILITY_SPEC.md` §2.4），Server 可覆盖并设硬上限；未声明时用全局默认。
-* **人类等待豁免（v0.4 新增）**：`wait_reason` 为 `user_input` / `user_confirmation`（以及人工对账）的 Step **不计入 `step_timeout`**，只由用户响应、用户取消、或失联后的孤儿回收结束（见 `WORKFLOW_SPEC.md` §2.2、§4）。
+* **人类等待豁免（v0.4 新增；v0.8 增 `resource_conflict`）**：`wait_reason` 为 `user_input` / `user_confirmation` / `resource_conflict`（以及人工对账）的 Step **不计入 `step_timeout`**，只由用户响应、用户取消、或失联后的孤儿回收结束（见 `WORKFLOW_SPEC.md` §2.2、§4）。
 * 只要收到该 Step 的任意 `step.status`（哪怕只是 `progress` 更新），计时器重置。
 * 超时未收到任何更新 → 按 Step 是否有副作用分流（v0.4 新增）：
   * **只读 Step**：标记为 `FAILED`（`fail_reason.code = "timeout"`），随后按 `WORKFLOW_SPEC.md` §4 决定 Retry / Change Approach / 判断无法继续（并受 §13 护栏约束）。

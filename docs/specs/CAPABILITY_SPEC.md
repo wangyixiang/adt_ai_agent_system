@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.8（登记 `terminal.execute_command` 的 I/O schema；新增 MVP 模拟能力 `sim_rig.query_state` 作为副作用对账的只读伴随能力；`human.manual_action` 的建议路径已由 `@adt/client-daemon` 实现，§7-6 关闭；取代 v0.7）
+- **Version:** v0.9（提供方契约：资源占用由能力提供方判断并如实上报，见 §2；`resource_conflict` 的流程由 `WORKFLOW_SPEC.md` §4.4 v0.6 定义；取代 v0.8）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -45,6 +45,7 @@ Server 根据这些 Capability 决定是否以及如何利用 Client 的本地�
 * `side_effect: false`：只读/无副作用操作。Server 可以直接下发对应 Step，不需要工程师确认即可执行。
 * `side_effect: true`：会改变硬件、被测对象或本地环境状态的操作。Server 下发这类 Step 前，必须先让工程师确认（具体确认流程——Step 什么时候进入 WAITING、拒绝时如何处理——由 `WORKFLOW_SPEC.md` 定义，本文件只负责声明这个属性）。
 * 声明必须保守：无法确定是否有副作用时，应声明为 `true`，而不是默认 `false`——这条对应 `terminal.execute_command` 的处理方式，因为终端命令内容不可预知,不能假设它总是安全的。
+* 提供方**自行判断资源占用**：如果这次动作需要的硬件/被测对象/本地环境/外部锁此刻不可用，**不要**假装执行，也不要自行重试到天荒地老；按 `WORKFLOW_SPEC.md` §4.4 如实上报——先问工程师（`WAITING(wait_reason.code = resource_conflict)`），不能解决就报 `REJECTED(reject_reason.code = resource_conflict, message)`。Server 不仲裁资源，只有提供方知道"谁被占用了"。
 
 ### 2.2 interruptible 声明规则（v0.2 新增）
 

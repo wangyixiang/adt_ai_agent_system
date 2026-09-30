@@ -113,7 +113,7 @@
 | 编号 | 假设 | 影响的需求 |
 |---|---|---|
 | A-1 | Record 对**所有**终止状态的 Workflow 保存（`COMPLETED`/`FAILED`/`CANCELLED`），不只是"已解决" | FR-11、FR-12 |
-| A-2 | v0.1 部署中，**每位工程师独占自己的测试台**，因此不存在多人争用同一硬件（v0.10 依据 `ADR-003` 澄清措辞；同一工程师并发多个 Workflow 时，同一 `session` 内副作用 Step 串行，见 `WORKFLOW_SPEC.md` §4.4）。若要支持共享测试台，必须重开资源模型 | 非目标、FR-7、NFR-7 |
+| A-2 | v0.1 部署中，**每位工程师独占自己的测试台**，因此不存在多人争用同一硬件（v0.10 依据 `ADR-003` 澄清措辞；同一工程师并发多个 Workflow 时，副作用资源的占用由**能力提供方**判断并如实上报，见 `WORKFLOW_SPEC.md` §4.4 v0.6）。若要支持共享测试台，结论不变：**不建资源模型**，冲突由提供方报告、由工程师决定等或停 | 非目标、FR-7、NFR-7 |
 | A-3 | v0.1 中 Record 只读，不提供编辑/删除功能；这只是"不提供功能"，不构成防篡改承诺 | FR-12、FR-13 |
 | A-4 | 请求生成报告的人就是提交问题的工程师 | FR-17 |
 | A-5 | 建议方式下，修复结果通过工程师的主动反馈获得，系统不能自行得知 | FR-8 |
@@ -139,9 +139,9 @@
 
 | 文档 | 需要的变化 | 来源需求 |
 |---|---|---|
-| `CAPABILITY_SPEC.md`（已建成，v0.8） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1）；登记 MVP 模拟能力 `sim_rig.trigger_reset` 与 I/O schema（v0.6）；`docker.inspect_container` schema、输出命名与 MVP 占位能力说明（v0.7）；`terminal.execute_command` schema、`sim_rig.query_state`、`human.manual_action` 建议路径已实现（v0.8） | FR-21、FR-22 |
-| `WORKFLOW_SPEC.md`（已建成，v0.5） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`、会话级副作用串行（v0.4）；系统失败原因 `planner_error` / `invalid_input` / `invalid_output`（v0.5） | FR-7~FR-11 |
-| `PROTOCOL_SPEC.md`（已建成，v0.7） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6）；`session.resume` 认证、会话 TTL、`workflow.state_sync` 扩展（v0.7） | FR-4、FR-7、FR-11、FR-14、FR-17 |
+| `CAPABILITY_SPEC.md`（已建成，v0.9） | 有副作用/需确认声明（v0.2）；I/O Schema（v0.5）；**"完成条件是否随 Capability 声明"已定论：完成条件是 Request 级、不随 Capability**（v0.9 关闭，见 `WORKFLOW_SPEC.md` §8.1）；登记 MVP 模拟能力 `sim_rig.trigger_reset` 与 I/O schema（v0.6）；`docker.inspect_container` schema、输出命名与 MVP 占位能力说明（v0.7）；`terminal.execute_command` schema、`sim_rig.query_state`、`human.manual_action` 建议路径已实现（v0.8）；提供方自行判断并如实上报资源占用（v0.9） | FR-21、FR-22 |
+| `WORKFLOW_SPEC.md`（已建成，v0.6） | 结束状态与取消收敛（v0.2/v0.4）；"建议"路径及工程师反馈；修复→验证→完成确认的顺序；"确认有副作用动作"的建模；`UNKNOWN` 与对账、终止护栏、`completion_criteria`（v0.4）；系统失败原因 `planner_error` / `invalid_input` / `invalid_output`（v0.5）；**资源占用改为"能力提供方判断 + 如实上报"、`resource_conflict` 终止原因、放弃"会话级副作用串行"（v0.6）** | FR-7~FR-11 |
+| `PROTOCOL_SPEC.md`（已建成，v0.8） | `step.dispatch.requires_confirmation`；确认/拒绝；取消；查看进展与证据；请求生成报告；查询 Record；`UNKNOWN`、`client_request_id`、`idempotency_key`、`revision`、blob 通道、错误处置矩阵、`user_id` 必填（v0.5）；`duration_ms` 字段澄清（v0.6）；`session.resume` 认证、会话 TTL、`workflow.state_sync` 扩展（v0.7）；`resource_conflict` 进入人类等待集合 + §8.3 资源冲突上报流程（v0.8） | FR-4、FR-7、FR-11、FR-14、FR-17 |
 | `SERVER_SPEC.md`（已建成，v0.9） | 保存 Record 与按需生成 Report（v0.4）；Knowledge 说明为对接第三方；完成条件、终止护栏、副作用串行、幂等键与对账、孤儿回收、先落盘后通知（v0.7）；断线会话保留与 `session.resume`/`workflow.state_sync`（v0.9） | FR-12、FR-17~FR-19、FR-23、NFR-3 |
 | `CLIENT_SPEC.md`（已建成，v0.9） | 展示历史 Record 与发起 Report 生成请求（v0.4）；幂等台账、迟到状态处理、确认 UI 锁定、blob 通道（v0.6）；登录与会话、可见性、KB 导出（v0.7）；断线重连恢复（v0.8）；只读 Capability 适配器与安全边界（v0.9） | FR-14、FR-17、NFR-3、FR-21 |
 | `RECORD_SPEC.md`（已建成，v0.7） | Record 结构、保存时机、与 Evidence 的关系；不为系统内检索预留结构（FR-15 删除），字段设计不与未来导出冲突（v0.1 §8）；`owner_user_id`、可见性（v0.4）；`UNKNOWN` 未对账标注、`completion_criteria`、新 entry kind、`actor`、`narrative` 规则（v0.3）；`duration_ms` 澄清（v0.5）；`step_dispatched.ref.input`、`criteria_revisions`（v0.6）；`step_rejected`（v0.7）；`guardrail_triggered.ref.threshold` / `user_input` / `reconciliation_resolved.ref.evidence_refs` 已由实现填充（P4a） | FR-12~FR-14、FR-24 |

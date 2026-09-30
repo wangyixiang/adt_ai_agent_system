@@ -4,7 +4,7 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 
 ## 当前状态
 
-已实现到 **P4a（受控执行与 `UNKNOWN` 对账）**：
+已实现到 **P4b（资源冲突如实上报与终结）**：
 
 - **P1 骨架与协议层**：TypeScript monorepo、协议信封编解码、认证握手、能力同步、应用层心跳与协议错误处置。
 - **P2a Workflow 引擎与持久化**：Step/Workflow 状态机（含 `UNKNOWN` 与终态不可变）、取消与 `CANCELLING` 收敛、终止护栏、`completion_criteria`、PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
@@ -18,8 +18,9 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
   - **`UNKNOWN` 对账**：Step 超时只读 → `FAILED(timeout)`、副作用 → `UNKNOWN`（人类等待豁免，重复 `RUNNING`/`progress` 视为保活、重置计时器），`StepTimeoutMonitor` 扫描并在超时后推进 Workflow；对账裁定由 Planner 产出（`PlannerDecision.reconcile`，LLM 侧有 `action=reconcile` 工具且必须给出 `evidence_refs`），Engine 只落在确定性规则上。存在未对账 `UNKNOWN` 时**禁止再下发副作用 Step**（`WORKFLOW_SPEC.md` §4.3：规划器连副作用能力都看不到，Engine 再兜一层）。State 机补齐 `WAITING → REJECTED`、`PENDING → UNKNOWN` 两条 spec 边。
   - **幂等台账**：Server 为副作用 Step 生成 Workflow 内稳定 `idempotency_key`；Client 用 `node:sqlite` 持久化「键 → 结果」，重连重发同一 Step 直接回放、不重复执行。
   - **Record 忠实性**：`guardrail_triggered.ref.threshold` 带出配置阈值；工程师输入记为 `user_input` 条目；`reconciliation_resolved.ref.evidence_refs` 落盘。
+- **P4b 资源冲突如实上报与终结**：资源是否被占用**只有能力提供方知道**，因此由它判断并如实上报，Server 不仲裁、不排队、不建资源模型。提供方报 `resource_conflict` → 客户端先发 `WAITING`（人类等待，不被 `step_timeout` 杀掉）并问工程师：**能腾出资源就让 Workflow 继续（不留痕）**；**腾不出就报 `REJECTED(resource_conflict)`**，Server 不再重规划，Workflow 终止为 `FAILED` + `terminal_reason = resource_conflict`，Record 用提供方的话说明"设备/资源被占用"。
 
-后续：**P4b**（blob 通道）、**P4c**（KB 导出，`ADR-005` 出站）。Client UI 尚未开始。
+后续：**P4c**（blob 通道）、**P4d**（KB 导出，`ADR-005` 出站）。Client UI 尚未开始。
 
 ## 结构
 
