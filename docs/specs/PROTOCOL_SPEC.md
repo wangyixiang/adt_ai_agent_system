@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.9（blob 通道写实：§7.5 补齐两个方向的申请字段、签名令牌、上传完成语义、默认值与"只回收未被 Record 引用者"的回收规则）
+**Version:** v0.10（清单增 `output_type`、`expected_output` 明确为派发快照并据此核对 `evidence.type`、§5.2 补 Client 侧 resume 行为与回落、`state_sync` 携带 `heartbeat_interval_ms`）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -252,6 +252,15 @@ Client                                        Server
 
 **会话 TTL（v0.7 新增）：** 物理连接断开后，`session_id` 在 Server 可配置的 TTL 内仍然有效，可被 `resume` 恢复；建议默认 **24 小时**。超过 TTL（或 `session_id` 不存在）→ `protocol.error(code=session_expired)`（致命）。Resume 成功时**复用原 `session_id`**、保留会话级 `message_id` 去重窗口（§2）与 Capability 声明，并把新物理连接绑定到该逻辑会话。
 
+**Client 侧行为（v0.10 新增，`NFR-3` 的客户端半边）：** `resume` 是 Client 的主动动作，约定如下：
+
+* Client **持久化**最近一次成功握手的 `session_id`；下次连接**先试 `resume`**。
+* `resume` 被拒（`session_expired` / `auth_failed` 等，均为致命 → Server 关闭该连接）→ Client 在**一条新连接**上退回 `session.hello`（新逻辑会话），并更新持久化的会话。不要复用已被 Server 关闭的连接。
+* `resume` 成功时不重发 `capability.sync`：会话仍持有原声明，而声明是按 `revision` 单调的，重发 `revision: 0` 只会被判为陈旧。**清单变更要靠下一次新会话**（增量同步留给后续版本）。
+* Client 必须处理 `pending_step`：它可能是一个**已经执行过、但回执丢失**的副作用 Step。此时**不得静默重执行**——只能按本地幂等台账回放结果，或（台账无法确认结果时）回报 `UNKNOWN` 等 Server 对账（`WORKFLOW_SPEC.md` §4.3）。
+* `workflow.state_sync` 也携带 `heartbeat_interval_ms`（`session.welcome` 只在全新握手时出现），Client 用它维持心跳。
+* Client **不需要**持久化 `known_workflows`：未终态的 Workflow（也就是带 `pending_step` 的那些）**一律同步**，`known_workflows` 只用于筛选需要一并核对的**已终态** Workflow。
+
 `workflow.state_sync.workflows[]`（v0.7 扩展）：
 
 ```text
@@ -294,6 +303,7 @@ Client                                        Server
 * **`revision` 为必填（v0.4 新增）**：会话内**单调递增**的声明版本号；首次全量声明（含 `session.hello` 内联能力）为 `0`。Server **只应用更高 `revision` 的声明**，陈旧 / 乱序丢弃并告警——解决重连或乱序时"旧声明覆盖新声明"的问题。
 * **`side_effect`、`interruptible` 为必填字段**（v0.2 新增）：对应 `CAPABILITY_SPEC.md` §2.1、§2.2。Server 收到缺失这两个字段的声明时，应按该文件规定的保守默认值处理（`side_effect` 缺失视为 `true`，`interruptible` 缺失视为 `false`），而不是拒绝整条声明。
 * **`idempotent`、`timeout_hint`、`input_schema`、`output_schema`（v0.4 新增，可选）**：分别对应 `CAPABILITY_SPEC.md` §2.3、§2.4、§5。`idempotent` 缺省为 `false`；`timeout_hint` 缺省使用 Server 全局默认；`input_schema` / `output_schema` 缺失时 Server **不做强校验**并告警（兼容未补 schema 的旧接入方）。
+* **`output_type`（v0.10 新增，可选）**：该 Capability 产出的 Evidence `type`（`CAPABILITY_SPEC.md` §5.3），用于核对 `evidence.type`（§5.2 的这条校验此前因缺字段无法落地）。缺失时不做类型核对、只按 `output_schema` 校验并告警。
 * **在途规则（v0.4 新增）**：能力变化**只影响未来的 `step.dispatch`**，不影响已下发的 Step。若 Client 收到引用已不可用能力的 Step，回 `step.status(REJECTED, reject_reason.code = capability_unavailable)`。
 
 Capability 名称必须是 `CAPABILITY_SPEC.md` 中登记的标准名称；Server 收到未登记名称时不应报错拒绝整条消息，而应忽略该项并记录警告——避免因为一个新 Capability 命名还没来得及登记，整个连接被卡住。
@@ -509,6 +519,8 @@ Client                                    Server
 ```
 
 `requires_confirmation`（v0.2 新增）：布尔值，由 Server 在生成 Step 时决定——默认取自该 Step 引用的 Capability 的 `side_effect` 声明，但 Server 可以针对个别 Step 显式覆盖为 `true`（例如某个本来无副作用的 Capability，在特定上下文下 Server 想多一层工程师确认）。这个字段是自包含的：Client 不需要回查此前收到的 Capability Manifest 才能决定要不要弹确认，看这一条 `step.dispatch` 就够了（详见 §8.2 的决策记录）。
+
+`expected_output`（v0.10 明确）：该 Step 允许产出的 Evidence `type`，取自**派发时**该 Capability 的 `output_type`（缺失则为 `null`），并冻结在 Step 上——与 `output_schema` 同理，`capability.sync` 不改变在途 Step 的判定依据（`CAPABILITY_SPEC.md` §4 的在途规则）。Client 上报 `COMPLETED` 时，`evidence.type` 必须等于它；不符或缺失 → Server 记 `FAILED(fail_reason.code = invalid_output)` 并保留被拒证据。`expected_output` 为 `null` 时不核对类型（§5.4 的兼容口子）。
 
 `idempotency_key`（v0.4 新增）：仅 `side_effect: true` 的 Step 必须非空。由 Server 为"同一意图"生成、在 Workflow 内稳定；Client 以它做"键 → 结果"的持久化台账，命中台账时直接返回缓存证据而不重新执行（见 `WORKFLOW_SPEC.md` §4.3）。
 

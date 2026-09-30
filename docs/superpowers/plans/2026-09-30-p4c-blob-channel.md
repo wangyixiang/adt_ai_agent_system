@@ -770,6 +770,8 @@ P4c 验收通过后写 **P4d（KB 导出）**。
 
 **移交 P4d 的延后项**：N8（令牌进 header/cookie）、N9（客户端流式下载）、内联阈值强制（超阈值内联判 `invalid_output`）、能力层"大输出自动外置"（属能力语义）、反向代理下的 `baseUrl` 策略、`sharesBytes` 也会被未提交/被放弃的行挡住（共享文件多留一会儿，安全）。
 
+**审计后的关闭记录（P4 收口阶段）**：本阶段（`docs/superpowers/plans/2026-09-30-p4-gap-closure.md`）关闭了审计列出的 D1/D2/D3——**客户端 `session.resume`**（含三态幂等台账，原先重连会静默重复执行副作用）、**Manifest `output_type` + `expected_output` 快照校验**（原 §7-5 待补项）、**Workflow 时间改墙钟**（原先护栏的 `elapsedMs`、`duration_ms`、`record.list` 的时间过滤都基于单调钟而失真）。本文件其余内容保持不变，作为该阶段当时的记录。
+
 **验证状态（已恢复并验证）**：`pnpm -r --if-present test` → shared 14 · server 253（+1 skipped 真实 LLM）· client-daemon 67 = **334 passed / 1 skipped**；`pnpm -r --if-present typecheck` 四个包干净。（中途 Docker Desktop 曾挂掉一次，Postgres 引擎无响应；重启后重跑通过。）
 
 **deferred-minors 轮之后**：server 增 `test/blob/config.test.ts`（3 条）+ §7.5 的 `Content-Type` 契约，server 测试数 253 → **256**。

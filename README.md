@@ -4,7 +4,7 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 
 ## 当前状态
 
-已实现到 **P4c（blob 通道）**：
+已实现到 **P4 收口（重连恢复 + 清单 `output_type` + 墙钟）**：
 
 - **P1 骨架与协议层**：TypeScript monorepo、协议信封编解码、认证握手、能力同步、应用层心跳与协议错误处置。
 - **P2a Workflow 引擎与持久化**：Step/Workflow 状态机（含 `UNKNOWN` 与终态不可变）、取消与 `CANCELLING` 收敛、终止护栏、`completion_criteria`、PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
@@ -17,6 +17,10 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
   - **建议路径**：`human.manual_action` 由 daemon 拦截，展示 `instruction` 并把工程师反馈包装为 `evidence(source=user_input, type=manual_action_result)`；Server 侧把该保留能力补进"规划器可选能力"，否则规划器永远不会提议它。
   - **`UNKNOWN` 对账**：Step 超时只读 → `FAILED(timeout)`、副作用 → `UNKNOWN`（人类等待豁免，重复 `RUNNING`/`progress` 视为保活、重置计时器），`StepTimeoutMonitor` 扫描并在超时后推进 Workflow；对账裁定由 Planner 产出（`PlannerDecision.reconcile`，LLM 侧有 `action=reconcile` 工具且必须给出 `evidence_refs`），Engine 只落在确定性规则上。存在未对账 `UNKNOWN` 时**禁止再下发副作用 Step**（`WORKFLOW_SPEC.md` §4.3：规划器连副作用能力都看不到，Engine 再兜一层）。State 机补齐 `WAITING → REJECTED`、`PENDING → UNKNOWN` 两条 spec 边。
   - **幂等台账**：Server 为副作用 Step 生成 Workflow 内稳定 `idempotency_key`；Client 用 `node:sqlite` 持久化「键 → 结果」，重连重发同一 Step 直接回放、不重复执行。
+    - 台账是**三态**的：未见过 / **执行中** / 已完成。重连后重发一个"当时正在执行"的副作用 Step，**不得静默重执行**——报 `UNKNOWN` 等 Server 对账（`WORKFLOW_SPEC.md` §4.3）。
+  - **断线恢复（NFR-3）**：daemon 持久化逻辑会话，重连先试 `session.resume`（被拒则在新连接上回落 `session.hello`），并按 `workflow.state_sync` 的 `pending_step` 继续未完成的 Step；`state_sync` 也带回 `heartbeat_interval_ms`。
+  - **`evidence.type` 校验**：Manifest 携带 `output_type`，Server 在**派发时**快照为 Step 的 `expected_output`（与 `output_schema` 同样"冻结"），`COMPLETED` 时核对；不符或缺失 → `FAILED(invalid_output)`。
+  - **时间基准**：会被人读、且跨重启成立的结论性时间（Workflow 的 `created_at`/`ended_at`、`duration_ms`、`record.list` 的时间过滤）一律**墙钟**；事件的 `ts` 按 `PROTOCOL_SPEC.md` §2 保持**单调**、排序按插入顺序。
   - **Record 忠实性**：`guardrail_triggered.ref.threshold` 带出配置阈值；工程师输入记为 `user_input` 条目；`reconciliation_resolved.ref.evidence_refs` 落盘。
 - **P4b 资源冲突如实上报与终结**：资源是否被占用**只有能力提供方知道**，因此由它判断并如实上报，Server 不仲裁、不排队、不建资源模型。提供方报 `resource_conflict` → 客户端先发 `WAITING`（人类等待，不被 `step_timeout` 杀掉）并问工程师：**能腾出资源就让 Workflow 继续（不留痕）**；**腾不出就报 `REJECTED(resource_conflict)`**，Server 不再重规划，Workflow 终止为 `FAILED` + `terminal_reason = resource_conflict`，Record 用提供方的话说明"设备/资源被占用"。
 - **P4c blob 通道**：大体积/二进制证据（日志、截图）不进正文类消息，走**申请制**的独立通道。`blob.allocate_request/response` 换一条带 **HMAC 签名令牌**的 URL（服务端无会话态，重启后旧 URL 仍有效，`BLOB_SECRET` 未配置则每启动随机并告警），`PUT`/`GET /blob/:contentRef` **流式**收发并**边收边校验** size/sha256（不符则失败且不提交）；`LocalBlobStore` 按 sha256 **内容寻址**落本地 FS，元数据在 `blobs` 表；过期**只回收没有被任何 Record 引用的 blob**——Record 不可变，它引用过的证据必须仍能取回。默认：单 blob 512 MiB、令牌 15 分钟、保留期 30 天、白名单 9 种媒体类型；内联阈值 64 KiB **只登记不强制**。

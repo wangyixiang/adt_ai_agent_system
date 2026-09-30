@@ -122,7 +122,7 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
 /**
  * CAPABILITY_SPEC.md §5.2: a COMPLETED step's `evidence.result` must satisfy the
  * output schema that was declared when the step was dispatched (frozen on the
- * step, §4.1); an invalid or missing result is recorded as
+ * step, CAPABILITY_SPEC.md §4 的在途规则); an invalid or missing result is recorded as
  * `FAILED(invalid_output)` and the rejected evidence is preserved for the
  * Record. A step with no declared schema does not block (§5.4) — it warns.
  */

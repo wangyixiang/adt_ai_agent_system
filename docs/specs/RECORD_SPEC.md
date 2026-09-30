@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.7（新增 `step_rejected` entry kind：非工程师决定的拒绝（如 `capability_unavailable`）不再被记成 `user_confirmation`；`step_dispatched` 的 `ref` 增 `input`（FR-12）；`completion_criteria` 的修订历史落为 `criteria_revisions` 字段；与 `PROTOCOL_SPEC.md` v0.7 对齐，取代 v0.6）
+- **Version:** v0.8（新增 §6.1 时间基准：结论性时间（`created_at`/`ended_at`/`duration_ms`）是墙钟，过程性时间（entry `ts`）是单调读数、排序按条目顺序；与 `PROTOCOL_SPEC.md` v0.10 对齐，取代 v0.7）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -52,8 +52,8 @@ Record
 ├── workflow_id            对应的 Workflow
 ├── owner_user_id          v0.4 新增：提交该 Workflow 的工程师（Record 归属与可见性依据）
 ├── spec_versions          生成时依据的领域模型版本（见 §6）
-├── created_at             Workflow 创建时间
-├── ended_at               Workflow 终止时间
+├── created_at             Workflow 创建时间（**墙钟**，Unix 毫秒，见 §6 的时间基准说明）
+├── ended_at               Workflow 终止时间（**墙钟**，Unix 毫秒）
 ├── terminal_state         COMPLETED | FAILED | CANCELLED
 ├── terminal_reason        可选。CANCELLED 时区分"取消"/"放弃"等意图；FAILED 时区分失败原因（v0.3 扩展，取值见 WORKFLOW_SPEC.md §2）
 ├── completion_criteria    v0.3 新增：Request 级完成条件（最新一条，见 WORKFLOW_SPEC.md §8.1）
@@ -105,7 +105,7 @@ final_result:
 ```text
 Entry
 ├── entry_id
-├── ts                    发生时间（Server 权威时间，v0.3）
+├── ts                    发生时间（Server 权威时间，v0.3；**单调读数**，见 §6 的时间基准说明——排序请按条目顺序，不要按 ts）
 ├── kind                  事件类型（见下）
 ├── ref                   结构化引用（因 kind 而不同，见下）
 ├── actor                 可选。做出该人工决定的人（v0.3 预留，见 §9-5）
@@ -182,6 +182,17 @@ spec_versions
 ```
 
 原因（对齐此前讨论）：`entries` 里出现的概念（Step 状态、Evidence 结构、终止状态、`side_effect`/`interruptible` 声明）都来自这两份文档，不是 `PROTOCOL_SPEC.md`——协议层的改动（心跳间隔、重连机制）不影响 Record 的内容含义，不需要跟着记录版本。如果未来 `WORKFLOW_SPEC.md` 或 `CAPABILITY_SPEC.md` 的领域概念发生不兼容变化（例如又调整了终止状态的分类），读取旧 Record 时可以依据 `spec_versions` 判断该用哪套语义去理解 `entries` 里的内容——但因为 Record 是"写入时定型的成品文档"（§0），这种情况下通常只影响**如何解释**历史 entry 的 `kind`/`ref` 含义，不需要重新解析或转换格式，`narrative` 始终可以直接展示。
+
+### 6.1 时间基准（v0.8 新增）
+
+Record 里有两类时间值，**不要混用**：
+
+| 字段 | 基准 | 为什么 |
+|---|---|---|
+| `created_at`、`ended_at`、`summary.duration_ms` | **墙钟**（Unix 毫秒） | 它们要跨进程重启仍然成立：`duration_ms` 是耗时、`record.list_request` 的 `time_range` 过滤直接与它们比较、列表也按 `ended_at` 排序 |
+| `entries[].ts`、`criteria_revisions[].ts` | **Server 单调读数**（`PROTOCOL_SPEC.md` §2） | 事件时间戳是"同一个进程内的先后"，排序以**条目顺序**为准；把它当墙钟读会在重启后失真 |
+
+也就是说：**结论性、供人阅读与过滤的时间用墙钟；过程性、只用于排序的时间可以单调**。若将来要按时间检索某条 entry，应新增一个墙钟字段，而不是改变 `ts` 的含义。
 
 ---
 

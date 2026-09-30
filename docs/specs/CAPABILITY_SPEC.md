@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.9（提供方契约：资源占用由能力提供方判断并如实上报，见 §2；`resource_conflict` 的流程由 `WORKFLOW_SPEC.md` §4.4 v0.6 定义；取代 v0.8）
+- **Version:** v0.10（`evidence.type` 校验落地：Manifest 增 `output_type`，派发时快照为 Step 的 `expected_output`，§7-5 关闭；取代 v0.9）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -255,5 +255,5 @@ output: manual_action_result
 2. ~~**Capability 声明的真实性**~~ **已解决（v0.5）**：schema 落地后，声明与实际不符会在运行时被 schema 校验与 `REJECTED` / `FAILED(invalid_output)` 捕获，不再静默（见 §5.2、`PROTOCOL_SPEC.md` §8）。认证授权部分仍留待 Security Spec。
 3. **第三方 Knowledge Base 检索不建模为 Capability（v0.2 已决定）**：曾经讨论过是否要把"查询第三方 Knowledge Base"做成一种特殊 Capability（类似 §6 讨论的 `human.manual_action`）。已决定**不这样做**——这个检索完全是 Server 与外部系统之间的事，不经过 Client，不出现在 Capability Manifest 里，也不会生成 Step。详见 `SERVER_SPEC.md` §4。记录于此，避免以后被重新提出、重新讨论。
 4. ~~是否需要"可中断（interruptible）"声明~~ **已决定（v0.2）**：见 §2.2。
-5. **`evidence.type` 与声明的输出名称暂不校验（v0.7）**：Manifest 目前只携带 `output_schema`、没有输出名称字段，因此 Server 无法核对 `evidence.type` 是否等于该 Capability 登记的 output 名称（§5.2 的这一条尚未落地）；`result` 仍按 schema 校验。需要时再给 Manifest 增一个 output 名称字段。
+5. ~~**`evidence.type` 与声明的输出名称暂不校验**~~ **已解决（v0.10）**：Manifest 增 `output_type`（`PROTOCOL_SPEC.md` §6），Server 在**派发时**把它快照到 Step 的 `expected_output`（§4 的"在途规则"同样适用于它），并在 `COMPLETED` 时核对 `evidence.type`；不符或缺失 → `FAILED(fail_reason.code = invalid_output)`（与 schema 校验同一个拒绝通道）。声明缺 `output_type` 时只按 `output_schema` 校验并告警（§5.4）。
 6. ~~**`human.manual_action` 的 Client 执行（建议路径）尚未实现**~~ **已实现（v0.8）**：`@adt/client-daemon` 拦截该保留名称（不查注册表），发 `WAITING(wait_reason.code = user_input)`，把 `input.instruction` 交给宿主展示，再把工程师的反馈包成 `evidence = {source: "user_input", type: "manual_action_result", result: {outcome, observation, details?}}`；没有宿主接应时以 `REJECTED(user_declined)` 收场。因为该名称**不在 Manifest 里**，Server 侧由编排层把它补进"规划器可选能力"（连同 §6 的 I/O schema），否则没有任何规划器会提议这条路径。流程见 `WORKFLOW_SPEC.md` §6.1。

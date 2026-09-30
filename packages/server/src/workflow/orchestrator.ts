@@ -151,7 +151,7 @@ export class WorkflowOrchestrator {
         dispatched = await this.deps.engine.dispatchStep(workflowId, {
           ...decision.step,
           // Frozen at dispatch so a later capability.sync cannot move the goalposts
-          // for an in-flight step (CAPABILITY_SPEC.md §4.1).
+          // for an in-flight step (CAPABILITY_SPEC.md §4 的在途规则).
           outputSchema: (capability?.output_schema as Record<string, unknown> | undefined) ?? null,
         // Same reasoning for the promised evidence type: what the capability
         // declared when it was dispatched is what its evidence is checked
