@@ -9,11 +9,13 @@ import {
   RecordService,
   registerSessionResume,
   registerWorkflowProtocol,
+  LlmPlanner,
   SessionLifecycle,
   UserRepository,
   WorkflowEngine,
   WorkflowOrchestrator,
   type GuardrailConfig,
+  type LlmProvider,
   type NormalizedCapability,
   type Planner,
   type PlannerDecision,
@@ -40,6 +42,8 @@ export interface TestServerOptions {
   planner?: PlannerDecision[];
   /** A full planner implementation (takes precedence over `planner`). */
   plannerImpl?: Planner;
+  /** Drives the real `LlmPlanner` with a (scripted) provider. */
+  llm?: LlmProvider;
   failRecordPersistence?: boolean;
   /** Makes `RecordService.finalize` throw (as if a DB read failed). */
   throwOnFinalize?: boolean;
@@ -133,13 +137,14 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   });
 
   const script = [...(opts.planner ?? [])];
-  const planner: Planner =
-    opts.plannerImpl ??
-    ({
-      initialCriteria: async () => ({ mode: "open", revision: 0 }),
-      proposeNext: async () =>
-        script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
-    } satisfies Planner);
+  const planner: Planner = opts.llm
+    ? new LlmPlanner({ provider: opts.llm })
+    : (opts.plannerImpl ??
+      ({
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
+        proposeNext: async () =>
+          script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
+      } satisfies Planner));
   const orchestrator = new WorkflowOrchestrator({
     engine,
     store: workflowStore,

@@ -84,6 +84,7 @@ export {
   type PlannerInput,
 } from "./workflow/orchestrator";
 export { NOOP_PLANNER } from "./workflow/planner";
+export { LlmPlanner } from "./workflow/llmPlanner";
 export {
   PostgresRecordStore,
 } from "./record/postgresRecordStore";
