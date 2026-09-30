@@ -138,6 +138,7 @@ export {
   llmProviderFromEnv,
   type OpenAiCompatibleOptions,
 } from "./llm/openaiCompatible";
+export { selectPlanner } from "./llm/selectPlanner";
 
 import { createPool } from "./db/pool";
 import { migrate } from "./db/migrate";
@@ -146,7 +147,8 @@ import type { SessionManager } from "./session/sessionManager";
 import { PostgresWorkflowStore } from "./workflow/postgresStore";
 import { WorkflowEngine } from "./workflow/engine";
 import { WorkflowOrchestrator } from "./workflow/orchestrator";
-import { NOOP_PLANNER, type Planner } from "./workflow/planner";
+import type { Planner } from "./workflow/planner";
+import { selectPlanner } from "./llm/selectPlanner";
 import { PostgresRecordStore } from "./record/postgresRecordStore";
 import { RecordService } from "./record/service";
 import { registerWorkflowProtocol } from "./protocol/workflowProtocol";
@@ -214,7 +216,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 
-  const planner = opts.planner ?? NOOP_PLANNER;
+  const planner = selectPlanner(process.env, opts.planner);
   const orchestrator = new WorkflowOrchestrator({
     engine,
     store: workflowStore,
