@@ -75,5 +75,59 @@ export function mvpDescriptors(): CapabilitySpec[] {
     },
     { name: "local-agent.diagnose_project", side_effect: false, interruptible: true },
     { name: "browser.open_page", side_effect: false, interruptible: true },
+    {
+      name: "terminal.execute_command",
+      side_effect: true,
+      interruptible: false,
+      idempotent: false,
+      timeout_hint: 30000,
+      output_type: "command_result",
+      input_schema: {
+        type: "object",
+        required: ["command"],
+        properties: {
+          command: { type: "string" },
+          args: { type: "array", items: { type: "string" } },
+        },
+      },
+      output_schema: {
+        type: "object",
+        required: ["exit_code"],
+        properties: { exit_code: { type: "integer" }, stdout: { type: "string" } },
+      },
+    },
+    {
+      // MVP simulated side effect (CAPABILITY_SPEC.md §5.3): exercises
+      // confirmation / UNKNOWN / reconciliation / idempotency without hardware.
+      name: "sim_rig.trigger_reset",
+      side_effect: true,
+      interruptible: false,
+      idempotent: false,
+      timeout_hint: 30000,
+      output_type: "reset_ack",
+      input_schema: {
+        type: "object",
+        properties: { reason: { type: "string" } },
+      },
+      output_schema: {
+        type: "object",
+        required: ["reset_ack"],
+        properties: { reset_ack: { type: "boolean" } },
+      },
+    },
+    {
+      // The read-only companion used to reconcile an UNKNOWN reset.
+      name: "sim_rig.query_state",
+      side_effect: false,
+      interruptible: true,
+      timeout_hint: 5000,
+      output_type: "reset_state",
+      input_schema: { type: "object", properties: {} },
+      output_schema: {
+        type: "object",
+        required: ["reset_applied"],
+        properties: { reset_applied: { type: "boolean" } },
+      },
+    },
   ];
 }

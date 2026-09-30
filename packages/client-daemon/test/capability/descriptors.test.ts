@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mvpDescriptors } from "../../src/capability/descriptors";
 
 describe("mvpDescriptors", () => {
-  it("declares the read-only MVP capabilities with their schemas", () => {
+  it("declares the MVP capabilities with their schemas", () => {
     const byName = new Map(mvpDescriptors().map((spec) => [spec.name, spec]));
     expect(byName.get("git.collect_diagnostics")!.output_type).toBe("git_status");
     expect(byName.get("git.collect_diagnostics")!.side_effect).toBe(false);
@@ -14,8 +14,18 @@ describe("mvpDescriptors", () => {
     });
     expect(byName.get("docker.inspect_container")!.side_effect).toBe(false);
     // Placeholders are declared but carry no schema (CAPABILITY_SPEC.md §5.4).
-    expect(byName.get("local-agent.diagnose_project")!.input_schema).toBeUndefined();
-    expect(byName.get("browser.open_page")!.input_schema).toBeUndefined();
-    expect(mvpDescriptors().every((spec) => spec.side_effect === false)).toBe(true);
+    expect(
+      mvpDescriptors()
+        .filter((spec) => spec.input_schema === undefined)
+        .map((spec) => spec.name)
+        .sort(),
+    ).toEqual(["browser.open_page", "local-agent.diagnose_project"]);
+    // Everything that can change local state must say so (CAPABILITY_SPEC.md §2).
+    expect(
+      mvpDescriptors()
+        .filter((spec) => spec.side_effect)
+        .map((spec) => spec.name)
+        .sort(),
+    ).toEqual(["sim_rig.trigger_reset", "terminal.execute_command"]);
   });
 });

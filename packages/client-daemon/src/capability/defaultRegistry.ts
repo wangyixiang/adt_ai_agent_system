@@ -2,6 +2,8 @@ import { dockerInspectContainer } from "./adapters/docker";
 import { filesystemReadFile } from "./adapters/filesystem";
 import { gitCollectDiagnostics } from "./adapters/git";
 import { placeholderAdapter } from "./adapters/placeholder";
+import { simRigQueryState, simRigTriggerReset } from "./adapters/simRig";
+import { terminalExecuteCommand } from "./adapters/terminal";
 import { mvpSpec } from "./descriptors";
 import { CapabilityRegistry } from "./registry";
 
@@ -17,6 +19,9 @@ export function defaultRegistry(): CapabilityRegistry {
   registry.register(gitCollectDiagnostics(mvpSpec("git.collect_diagnostics")));
   registry.register(filesystemReadFile(mvpSpec("filesystem.read_file")));
   registry.register(dockerInspectContainer(mvpSpec("docker.inspect_container")));
+  registry.register(terminalExecuteCommand(mvpSpec("terminal.execute_command")));
+  registry.register(simRigTriggerReset(mvpSpec("sim_rig.trigger_reset")));
+  registry.register(simRigQueryState(mvpSpec("sim_rig.query_state")));
   for (const name of PLACEHOLDER_CAPABILITIES) {
     registry.register(placeholderAdapter(mvpSpec(name)));
   }

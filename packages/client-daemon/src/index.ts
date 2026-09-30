@@ -20,6 +20,8 @@ export {
 export { filesystemReadFile } from "./capability/adapters/filesystem";
 export { dockerInspectContainer } from "./capability/adapters/docker";
 export { placeholderAdapter } from "./capability/adapters/placeholder";
+export { terminalExecuteCommand } from "./capability/adapters/terminal";
+export { simRigTriggerReset, simRigQueryState } from "./capability/adapters/simRig";
 export type {
   CapabilityAdapter,
   CommandResult,

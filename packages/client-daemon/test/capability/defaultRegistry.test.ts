@@ -12,8 +12,29 @@ describe("defaultRegistry", () => {
       "filesystem.read_file",
       "git.collect_diagnostics",
       "local-agent.diagnose_project",
+      "sim_rig.query_state",
+      "sim_rig.trigger_reset",
+      "terminal.execute_command",
     ]);
     expect(names).toEqual(mvpDescriptors().map((spec) => spec.name).sort());
-    expect(registry.descriptors().every((descriptor) => descriptor.side_effect === false)).toBe(true);
+  });
+
+  it("declares every side effect conservatively", () => {
+    const registry = defaultRegistry();
+    const sideEffects = registry
+      .specs()
+      .filter((spec) => spec.side_effect)
+      .map((spec) => spec.name)
+      .sort();
+    expect(sideEffects).toEqual(["sim_rig.trigger_reset", "terminal.execute_command"]);
+    // A side effect that cannot be interrupted is the conservative declaration
+    // (CAPABILITY_SPEC.md §2): claiming interruptibility means promising to stop
+    // a half-done action on a cancel.
+    expect(
+      registry
+        .specs()
+        .filter((spec) => spec.side_effect)
+        .every((spec) => spec.interruptible === false),
+    ).toBe(true);
   });
 });
