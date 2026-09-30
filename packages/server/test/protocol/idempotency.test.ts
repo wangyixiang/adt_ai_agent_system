@@ -40,6 +40,7 @@ describe("workflow.request idempotency", () => {
     expect((other.payload as { workflow_id: string }).workflow_id).not.toBe(
       (first.payload as { workflow_id: string }).workflow_id,
     );
+    await b.next(); // drain the completion candidate before closing the pool
     await b.close();
     await srv.close();
   });

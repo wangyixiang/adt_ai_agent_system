@@ -49,8 +49,19 @@ export function toStepStatusUpdate(payload: Record<string, unknown>): StepStatus
       return evidence === undefined
         ? { state: "COMPLETED" }
         : { state: "COMPLETED", evidence };
-    case "FAILED":
-      return evidence === undefined ? { state: "FAILED" } : { state: "FAILED", evidence };
+    case "FAILED": {
+      const reason = asRecord(payload.fail_reason);
+      const code = reason.code ?? payload.fail_reason;
+      const failReason =
+        typeof code === "string"
+          ? { code, ...(typeof reason.message === "string" ? { message: reason.message } : {}) }
+          : undefined;
+      return {
+        state: "FAILED",
+        ...(evidence === undefined ? {} : { evidence }),
+        ...(failReason === undefined ? {} : { failReason }),
+      };
+    }
     case "REJECTED":
       return { state: "REJECTED" };
     case "UNKNOWN":
@@ -95,13 +106,17 @@ export function stepDispatchPayload(step: StepSnapshot): StepDispatchPayload {
 async function withOutputValidation(
   conn: Connection,
   engine: WorkflowEngine,
+  workflowId: string,
   stepId: string,
   update: StepStatusUpdate,
 ): Promise<StepStatusUpdate> {
   if (update.state !== "COMPLETED") return update;
 
   const step = await engine.getStep(stepId);
-  const schema = step?.outputSchema as JsonSchema | null | undefined;
+  // Never read a schema off a step that belongs to another workflow.
+  if (!step || step.workflowId !== workflowId) return update;
+
+  const schema = step.outputSchema as JsonSchema | null | undefined;
   if (!schema) {
     conn.warn(`no output_schema for step ${stepId}; skipping evidence validation`);
     return update;
@@ -265,14 +280,25 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    const capabilities = [...session.capabilities.asMap().values()];
-    const criteria = await planner.initialCriteria(request, capabilities).catch((error) => {
-      conn.warn(`initial criteria failed: ${(error as Error).message}`);
-      return { mode: "open" as const, revision: 0 };
-    });
+    if (!sessions.tryReserveClientRequest(session.id, payload.client_request_id)) {
+      conn.warn(`duplicate workflow.request in flight: ${payload.client_request_id}`);
+      return;
+    }
 
-    const workflow = await engine.create(session.userId, session.id, request, criteria);
-    sessions.rememberClientRequest(session.id, payload.client_request_id, workflow.id);
+    const capabilities = [...session.capabilities.asMap().values()];
+    let workflow: WorkflowSnapshot;
+    try {
+      const criteria = await planner.initialCriteria(request, capabilities).catch((error) => {
+        conn.warn(`initial criteria failed: ${(error as Error).message}`);
+        return { mode: "open" as const, revision: 0 };
+      });
+      workflow = await engine.create(session.userId, session.id, request, criteria);
+      sessions.rememberClientRequest(session.id, payload.client_request_id, workflow.id);
+    } catch (error) {
+      // Release the reservation so a retry with the same id can succeed.
+      sessions.forgetClientRequest(session.id, payload.client_request_id);
+      throw error;
+    }
 
     send(
       conn,
@@ -302,7 +328,7 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    const effective = await withOutputValidation(conn, engine, payload.step_id, update);
+    const effective = await withOutputValidation(conn, engine, workflow.id, payload.step_id, update);
 
     try {
       await engine.applyStepStatus(workflow.id, payload.step_id, effective);

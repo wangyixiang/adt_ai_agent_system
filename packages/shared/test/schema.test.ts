@@ -31,4 +31,23 @@ describe("validateJsonSchema", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join(" ")).toMatch(/unsupported/i);
   });
+
+  it("flags keywords outside the documented subset without flagging property names", () => {
+    expect(findUnsupportedKeyword({ type: "integer", minimum: 0 })).toBe("minimum");
+    expect(findUnsupportedKeyword({ type: "object", additionalProperties: false })).toBe(
+      "additionalProperties",
+    );
+    expect(
+      findUnsupportedKeyword({ type: "object", properties: { format: { type: "string" } } }),
+    ).toBeNull();
+    expect(findUnsupportedKeyword({ type: "object", properties: { a: { format: "date" } } })).toBe(
+      "format",
+    );
+    expect(
+      validateJsonSchema(
+        { type: "object", properties: { path: { minimum: 1 } } } as never,
+        { path: "x" },
+      ).valid,
+    ).toBe(false);
+  });
 });

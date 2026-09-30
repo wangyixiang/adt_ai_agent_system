@@ -35,6 +35,9 @@ export interface SessionManagerOptions {
 
 const DEFAULT_TTL_MS = 86_400_000;
 
+/** Sentinel stored while a `client_request_id`'s workflow is being created. */
+const IN_FLIGHT = "__in_flight__";
+
 export class SessionManager implements SessionResolver {
   private readonly byId = new Map<string, Session>();
   private readonly byConn = new Map<string, Session>();
@@ -159,12 +162,30 @@ export class SessionManager implements SessionResolver {
     return this.byId.get(sessionId)?.capabilities.asMap() ?? new Map();
   }
 
-  /** Records the workflow a `client_request_id` already created (idempotency). */
+  /**
+   * Reserves a `client_request_id` before the async create, so two concurrent
+   * requests cannot both miss and create a duplicate workflow. Returns false
+   * when the id is already reserved or resolved.
+   */
+  tryReserveClientRequest(sessionId: string, clientRequestId: string): boolean {
+    const requests = this.byId.get(sessionId)?.clientRequests;
+    if (!requests || requests.has(clientRequestId)) return false;
+    requests.set(clientRequestId, IN_FLIGHT);
+    return true;
+  }
+
+  /** Records the workflow a `client_request_id` created (idempotency). */
   rememberClientRequest(sessionId: string, clientRequestId: string, workflowId: string): void {
     this.byId.get(sessionId)?.clientRequests.set(clientRequestId, workflowId);
   }
 
+  /** Drops a reservation whose create failed, so a retry can succeed. */
+  forgetClientRequest(sessionId: string, clientRequestId: string): void {
+    this.byId.get(sessionId)?.clientRequests.delete(clientRequestId);
+  }
+
   findClientRequest(sessionId: string, clientRequestId: string): string | null {
-    return this.byId.get(sessionId)?.clientRequests.get(clientRequestId) ?? null;
+    const value = this.byId.get(sessionId)?.clientRequests.get(clientRequestId);
+    return value === undefined || value === IN_FLIGHT ? null : value;
   }
 }

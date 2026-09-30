@@ -28,25 +28,43 @@ export interface SchemaValidation {
   errors: string[];
 }
 
-const UNSUPPORTED_KEYWORDS = ["$ref", "oneOf", "anyOf", "allOf", "not"] as const;
+const SUPPORTED_KEYWORDS = new Set([
+  "type",
+  "properties",
+  "required",
+  "enum",
+  "items",
+  "description",
+  "default",
+]);
 
-/** Returns the first unsupported keyword found anywhere in a schema tree, or null. */
+const COMPOSITION_KEYWORDS = ["$ref", "oneOf", "anyOf", "allOf", "not"] as const;
+
+/**
+ * Returns the first keyword outside the documented subset (CAPABILITY_SPEC.md
+ * §5.1), or null. Structural traversal: `properties` values and `items` are
+ * sub-schemas, so their keys are property names, not keywords.
+ */
 export function findUnsupportedKeyword(raw: unknown): string | null {
-  if (raw === null || typeof raw !== "object") return null;
-  if (Array.isArray(raw)) {
-    for (const item of raw) {
-      const found = findUnsupportedKeyword(item);
-      if (found) return found;
-    }
-    return null;
-  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
 
   const record = raw as Record<string, unknown>;
-  for (const keyword of UNSUPPORTED_KEYWORDS) {
+  for (const keyword of COMPOSITION_KEYWORDS) {
     if (keyword in record) return keyword;
   }
-  for (const value of Object.values(record)) {
-    const found = findUnsupportedKeyword(value);
+  for (const key of Object.keys(record)) {
+    if (!SUPPORTED_KEYWORDS.has(key)) return key;
+  }
+
+  const properties = record.properties;
+  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    for (const child of Object.values(properties as Record<string, unknown>)) {
+      const found = findUnsupportedKeyword(child);
+      if (found) return found;
+    }
+  }
+  if (record.items) {
+    const found = findUnsupportedKeyword(record.items);
     if (found) return found;
   }
   return null;

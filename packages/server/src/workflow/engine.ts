@@ -180,7 +180,7 @@ export class WorkflowEngine {
     };
     await this.store.createWorkflow(
       workflow,
-      this.event(workflow.id, "workflow_created", { request }),
+      this.event(workflow.id, "workflow_created", { request, criteria }),
     );
     return workflow;
   }

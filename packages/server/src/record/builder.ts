@@ -145,6 +145,25 @@ function toEntry(
   }
 }
 
+/** Revision 0 is recorded on `workflow_created`; later revisions emit `criteria_revised`. */
+function collectCriteriaRevisions(
+  events: WorkflowEvent[],
+): Array<{ ts: number; criteria: CompletionCriteria }> {
+  const revisions: Array<{ ts: number; criteria: CompletionCriteria }> = [];
+  for (const event of events) {
+    if (event.kind === "workflow_created") {
+      const criteria = (event.payload as { criteria?: CompletionCriteria }).criteria;
+      if (criteria) revisions.push({ ts: event.ts, criteria });
+    } else if (event.kind === "criteria_revised") {
+      revisions.push({
+        ts: event.ts,
+        criteria: (event.payload as { criteria: CompletionCriteria }).criteria,
+      });
+    }
+  }
+  return revisions;
+}
+
 export function buildRecord(input: BuildRecordInput): RecordDocument {
   const { workflow, steps, events, userRequest, recordId } = input;
   const stepsById = new Map(steps.map((step) => [step.id, step]));
@@ -204,12 +223,7 @@ export function buildRecord(input: BuildRecordInput): RecordDocument {
     terminal_state: workflow.state,
     terminal_reason: workflow.terminalReason,
     completion_criteria: workflow.criteria,
-    criteria_revisions: events
-      .filter((event) => event.kind === "criteria_revised")
-      .map((event) => ({
-        ts: event.ts,
-        criteria: (event.payload as { criteria: CompletionCriteria }).criteria,
-      })),
+    criteria_revisions: collectCriteriaRevisions(events),
     user_request: userRequest,
     summary: {
       problem_short: truncate(requestText),
