@@ -1,6 +1,6 @@
 # WORKFLOW_SPEC.md
 
-- **Version:** v0.6（资源冲突如实上报：§4.4 由"Server 保证会话级串行"改为"资源占用由能力提供方判断并如实上报，Server 不仲裁"；§2 增 `resource_conflict` 终止原因；取代 v0.5）
+- **Version:** v0.7（§4.3 明确"副作用超时两端一致走 `UNKNOWN`，只有只读才是 `FAILED(timeout)`"；取代 v0.6）
 - **层级:** Specification — Client 与 Server 共享的行为契约
 - **拆分说明:** 原 v0.2 的 `CLIENT_SPEC.md` 和 `SERVER_SPEC.md` 里，Step 状态机、Evidence 结构、Completion 判定流程被各自定义了一遍，且已经出现细节漂移（例如 Evidence 两种不同的示例结构、Execution Loop 图里 "Done Candidate" 与其余各处 "Completion Candidate" 不一致）。本文件把这些内容整合为唯一权威定义，`architecture/CLIENT_SPEC.md` 与 `architecture/SERVER_SPEC.md` 均应引用本文件，不再各自维护副本。
 
@@ -219,6 +219,8 @@ Client 和 Server 在实现时都不应该把这两种情况用同一套状态�
 呼应 `PRODUCT.md` 产品原则1（"工程师始终掌控"）与 `REQUIREMENTS.md` FR-7：有副作用的动作一旦执行，就可能在现实世界产生后果。Server 必须区分"动作没执行"与"动作可能已执行但结果丢失"，后者不能简单重试。
 
 **触发 `UNKNOWN` 的典型场景：** Client 已执行一个有副作用的 Step，但 `step.status(COMPLETED, evidence)` 在回传前丢失（断连、超时）。Server 无法区分"执行了但回包丢了"和"根本没收到/没执行"，因此把该 Step 判为 `UNKNOWN` 而非 `FAILED`。
+
+**谁发现的都一样（v0.7 明确）：** 副作用的超时**两端一致**——服务端的 `step_timeout` 到点判 `UNKNOWN`，客户端自己在本地掐掉（命令超过 `timeout_hint`）也报 `UNKNOWN`；**只有只读**超时才是 `FAILED(timeout)`。被掐掉的副作用可能已部分生效，它的不确定性与"回包丢失"是同一种，不因为是谁先发现而给出不同结论。
 
 **副作用阻塞规则：** 当一个 Workflow 内存在未对账的 `UNKNOWN` 时，Server **禁止再下发其它副作用 Step**（只读 Step 与对账 Step 允许）。这条与 §4.4 是两件不同的事：这里管的是"我们自己的知识状态残缺"（动作可能已发生），§4.4 管的是"提供方报告资源此刻不可用"。
 

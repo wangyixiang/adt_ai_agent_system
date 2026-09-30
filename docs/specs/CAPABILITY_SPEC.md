@@ -1,6 +1,6 @@
 # CAPABILITY_SPEC.md
 
-- **Version:** v0.10（`evidence.type` 校验落地：Manifest 增 `output_type`，派发时快照为 Step 的 `expected_output`，§7-5 关闭；取代 v0.9）
+- **Version:** v0.11（`timeout_hint` 明确为客户端本地上限、服务端叠宽限；掐掉后的分流两端一致；取代 v0.10）
 - **层级:** Specification — Client 与 Server 共享的 Capability 契约
 - **拆分说明:** 原 v0.2 `CLIENT_SPEC.md` §5 与 `SERVER_SPEC.md` §9 分别举例说明了 Capability，但两边使用的命名不一致（例如 `filesystem.read_file` vs `filesystem.read`）。本文件统一命名规范，作为 Client 声明能力、Server 引用能力时共同遵守的唯一定义。
 
@@ -73,9 +73,10 @@ Server 根据这些 Capability 决定是否以及如何利用 Client 的本地�
 
 对应 `PROTOCOL_SPEC.md` §9：Server 需要按 Capability 类型决定 Step 超时，但不同的 Capability 合理耗时差异很大。因此：
 
-* `timeout_hint`（可选，毫秒）：该 Capability 的建议超时 / 预期时长。
+* `timeout_hint`（可选，毫秒）：该 Capability 的建议超时 / 预期时长。**它是客户端本地的执行上限**（例如命令跑到这个时长就被本地掐掉），服务端在其之上再叠一个**宽限**（默认 2s，见 `PROTOCOL_SPEC.md` §9），让客户端的观察先到。
 * Server 可以覆盖它，并对其设硬上限；未声明时使用全局默认。
 * 它只是**建议**，不构成安全边界；`step_timeout` 的最终判定权在 Server。
+* **掐掉之后怎么算，两端一致**：只读 → `FAILED(timeout)`；**副作用 → `UNKNOWN`**（可能已部分生效，见 `WORKFLOW_SPEC.md` §4.3）。
 
 现有一处明显需要它的示例：`test_rig.trigger_reset` 这类物理动作的合理耗时可能远大于一个只读查询，应在登记时给出 `timeout_hint`。
 

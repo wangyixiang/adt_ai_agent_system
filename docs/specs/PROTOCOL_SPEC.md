@@ -1,6 +1,6 @@
 # PROTOCOL_SPEC.md
 
-**Version:** v0.10（清单增 `output_type`、`expected_output` 明确为派发快照并据此核对 `evidence.type`、§5.2 补 Client 侧 resume 行为与回落、`state_sync` 携带 `heartbeat_interval_ms`）
+**Version:** v0.11（§9 `step_timeout` = 依据值 + 宽限（默认 2s）、并补客户端本地上限的同款分流）
 **层级:** Specification — 消息 Schema 与传输机制
 **拆分说明:** 本文件把 `WORKFLOW_SPEC.md` 定义的概念契约（Step/Evidence/Completion）和 `CAPABILITY_SPEC.md` 定义的能力命名，落地成 Client 与 Server 之间实际传输的消息格式。原 v0.2 `SERVER_SPEC.md` §20 只列出了消息名字，没有字段定义，也没有覆盖 Step ID、拒绝执行、超时、重连等场景——本文件不是把那份名单逐条填字段，而是重新设计了一套消息分类，§0 说明具体差异。
 
@@ -611,11 +611,13 @@ step.status   step.status
 
 * Server 为处于 `RUNNING` 的 Step，以及**执行类** `WAITING` 的 Step 维护一个 `step_timeout`。
 * 超时时长：优先使用该 Capability 声明的 `timeout_hint`（见 `CAPABILITY_SPEC.md` §2.4），Server 可覆盖并设硬上限；未声明时用全局默认。
+* **宽限（v0.11 新增）**：`step_timeout` 取**依据值 + 宽限**（依据值 = 显式值 ?? `timeout_hint` ?? 全局默认；宽限默认 **2s**）。理由：客户端用同一个 `timeout_hint` 作为**本地执行上限**，让服务端比它晚一点到点，客户端的观察才能先到——服务端只在客户端沉默时才需要自己推断。
 * **人类等待豁免（v0.4 新增；v0.8 增 `resource_conflict`）**：`wait_reason` 为 `user_input` / `user_confirmation` / `resource_conflict`（以及人工对账）的 Step **不计入 `step_timeout`**，只由用户响应、用户取消、或失联后的孤儿回收结束（见 `WORKFLOW_SPEC.md` §2.2、§4）。
 * 只要收到该 Step 的任意 `step.status`（哪怕只是 `progress` 更新），计时器重置。
 * 超时未收到任何更新 → 按 Step 是否有副作用分流（v0.4 新增）：
   * **只读 Step**：标记为 `FAILED`（`fail_reason.code = "timeout"`），随后按 `WORKFLOW_SPEC.md` §4 决定 Retry / Change Approach / 判断无法继续（并受 §13 护栏约束）。
   * **副作用 Step**：标记为 `UNKNOWN`（**不是** `FAILED`），进入对账流程（见 `WORKFLOW_SPEC.md` §4.3 与 §8 的 `UNKNOWN`）。
+* **客户端本地上限的分流（v0.11 新增）**：客户端自己在本地掐掉一个 Step（例如命令超过 `timeout_hint`）时**用同一套分流**——**只读** → `FAILED(fail_reason.code = "timeout")`；**副作用** → `UNKNOWN`。副作用被掐掉意味着可能已部分生效，那与"服务端到点"是同一种不确定性，不应因为是谁发现的而给出不同结论。
 * 计时与排序一律以 **Server 侧单调时钟 / 序列**为准（见 §2 的 `ts` 说明）。
 
 > Workflow 级别的失联由 §5.1 的应用层心跳 + `WORKFLOW_SPEC.md` §2.2 的孤儿回收处理，与本节 Step 级超时是两件事。

@@ -124,3 +124,12 @@ packages/
 实现上有一个已知坑：Vite 5 从 `module.builtinModules` 中过滤掉任何含 `:` 的项，而 Node 只在 `node:sqlite` 前缀下暴露该模块，因此**静态 `import` 会让测试 runner 解析失败**（会去找名为 `sqlite` 的文件）；`packages/client-daemon/src/ledger.ts` 用 `createRequire` 运行时加载以绕开静态解析，生产产物（tsc 输出 ESM）同样成立。
 
 若未来需要 SQLite 的高级能力（WAL 调优、扩展、同步 API 的成熟度保障），可回到 `better-sqlite3`——本修订只改选型实现，不改"SQLite + 跨进程保留"这一决定。
+
+### A2. LLM provider 的有界重试（2026-09-30，D5）
+
+§2 的"Provider 抽象 + 云端 API"在实现时**没有重试**：一次 429 / 网络抖动就会以 `planner_error` 终结整个 Workflow。修订为在**实现层**（`OpenAiCompatibleProvider`）做有界重试——重试属于传输职责，引擎与编排层的确定性失败规则不变（重试只发生在一次 `proposeNext` 调用内部，**不会**重复派发 Step）。
+
+* **可重试**：HTTP `429`、`5xx`、以及**网络错误**。
+* **不可重试**：其它 `4xx`（这是裁定不是抖动）；**我们自己的超时**（`TimeoutError`/`AbortError`——请求已经等满 `timeoutMs`，重试只会把最坏耗时放大三倍）；响应体解析失败与工具调用形状错误（模型语义问题，重试只会重复犯错并放大计费）。
+* **参数**：`LLM_MAX_RETRIES`（默认 2 → 最多 3 次尝试），退避 500ms / 1000ms（指数）。**最坏耗时 = `timeoutMs` + 退避总和（默认 1.5s）**，不是 `timeoutMs × 3`。设为 0 可关闭重试。
+* 重试耗尽后仍抛错 → 编排层 `FAILED(planner_error)`（既有语义）。
