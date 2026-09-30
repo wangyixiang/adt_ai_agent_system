@@ -343,6 +343,14 @@ async function executeStep(
     }
 
     if (result.status === "failed") {
+      // A side effect we killed at its own local limit is not a known failure:
+      // it may have taken (partial) effect, so the honest state is UNKNOWN
+      // (WORKFLOW_SPEC.md §4.3) — and the ledger must keep saying "in flight",
+      // so a re-dispatch still cannot run it a second time.
+      if (adapter.spec.side_effect && result.code === "timeout") {
+        send("UNKNOWN");
+        return;
+      }
       forget();
       send("FAILED", {
         fail_reason: {
