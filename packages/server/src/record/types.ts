@@ -39,6 +39,8 @@ export interface RecordDocument {
   terminal_state: string;
   terminal_reason: string | null;
   completion_criteria: CompletionCriteria;
+  /** Every recorded revision, oldest first (RECORD_SPEC.md §3). */
+  criteria_revisions: Array<{ ts: number; criteria: CompletionCriteria }>;
   user_request: unknown;
   summary: RecordSummary;
   entries: RecordEntry[];

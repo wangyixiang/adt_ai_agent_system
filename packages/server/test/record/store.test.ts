@@ -35,6 +35,7 @@ const rec = (
   terminal_state: "COMPLETED",
   terminal_reason: null,
   completion_criteria: { mode: "open", revision: 0 },
+  criteria_revisions: [],
   user_request: { text: "svc down" },
   summary: {
     problem_short: "svc down",

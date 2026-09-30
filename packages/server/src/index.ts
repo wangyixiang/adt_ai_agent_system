@@ -200,10 +200,11 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     onSessionAlive: (sessionId) => reclaimer.onSessionAlive(sessionId),
   });
 
+  const planner = opts.planner ?? NOOP_PLANNER;
   const orchestrator = new WorkflowOrchestrator({
     engine,
     store: workflowStore,
-    planner: opts.planner ?? NOOP_PLANNER,
+    planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
   });
 
@@ -213,6 +214,7 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
     engine,
     store: workflowStore,
     orchestrator,
+    planner,
     records,
     recordStore,
   });

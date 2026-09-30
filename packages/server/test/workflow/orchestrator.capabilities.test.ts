@@ -42,7 +42,7 @@ function orchestrated(decisions: PlannerDecision[], capabilities: NormalizedCapa
     orch: new WorkflowOrchestrator({
       engine,
       store,
-      planner: { proposeNext: async () => script.shift()! },
+      planner: { initialCriteria: async () => ({ mode: "open", revision: 0 }), proposeNext: async () => script.shift()! },
       capabilitiesOf: () => capabilities,
     }),
   };
@@ -58,6 +58,7 @@ describe("planner capabilities + input validation", () => {
       engine,
       store,
       planner: {
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
         proposeNext: async (input) => {
           seen = input.capabilities;
           return { kind: "completion_candidate", summary: "", evidenceRefs: [] };
@@ -123,6 +124,7 @@ describe("planner capabilities + input validation", () => {
       engine,
       store,
       planner: {
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
         proposeNext: async () => {
           throw new Error("llm down");
         },

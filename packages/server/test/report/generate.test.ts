@@ -12,6 +12,7 @@ const base: RecordDocument = {
   terminal_state: "COMPLETED",
   terminal_reason: null,
   completion_criteria: { mode: "open", revision: 0 },
+  criteria_revisions: [],
   user_request: { text: "项目起不来了" },
   summary: {
     problem_short: "项目起不来",

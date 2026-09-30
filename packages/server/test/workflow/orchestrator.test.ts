@@ -28,6 +28,7 @@ afterAll(async () => {
 });
 
 const scripted = (decisions: PlannerDecision[]): Planner => ({
+  initialCriteria: async () => ({ mode: "open", revision: 0 }),
   proposeNext: async () => decisions.shift()!,
 });
 
@@ -77,6 +78,7 @@ describe("WorkflowOrchestrator.advance", () => {
     const wf = await engine.create("usr_1", "sess_1", { text: "x" }, open);
     let calls = 0;
     const planner: Planner = {
+      initialCriteria: async () => ({ mode: "open", revision: 0 }),
       proposeNext: async () => {
         calls++;
         return { kind: "step", step: readStep };
@@ -96,6 +98,7 @@ describe("WorkflowOrchestrator.advance", () => {
     await engine.confirmCompletion(wf.id, "solved");
     let calls = 0;
     const planner: Planner = {
+      initialCriteria: async () => ({ mode: "open", revision: 0 }),
       proposeNext: async () => {
         calls++;
         return { kind: "step", step: readStep };

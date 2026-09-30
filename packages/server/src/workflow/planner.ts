@@ -1,4 +1,5 @@
 import type { NormalizedCapability } from "@adt/shared";
+import type { CompletionCriteria } from "./criteria";
 import type { NewStep } from "./engine";
 import type { StepSnapshot, WorkflowEvent, WorkflowSnapshot } from "./store";
 
@@ -11,8 +12,13 @@ export interface PlannerInput {
 }
 
 export type PlannerDecision =
-  | { kind: "step"; step: NewStep }
-  | { kind: "completion_candidate"; summary: string; evidenceRefs: string[] };
+  | { kind: "step"; step: NewStep; criteria?: Omit<CompletionCriteria, "revision"> }
+  | {
+      kind: "completion_candidate";
+      summary: string;
+      evidenceRefs: string[];
+      criteria?: Omit<CompletionCriteria, "revision">;
+    };
 
 /**
  * The seam between the engine and "how the next step is decided".
@@ -20,6 +26,15 @@ export type PlannerDecision =
  * touching the protocol layer.
  */
 export interface Planner {
+  /**
+   * The Request-level completion criteria for a new workflow
+   * (WORKFLOW_SPEC.md §8.1); recorded at creation with `revision: 0`.
+   */
+  initialCriteria(
+    request: unknown,
+    capabilities: NormalizedCapability[],
+  ): Promise<CompletionCriteria>;
+
   proposeNext(input: PlannerInput): Promise<PlannerDecision>;
 }
 
@@ -29,6 +44,7 @@ export interface Planner {
  * rather than hanging.
  */
 export const NOOP_PLANNER: Planner = {
+  initialCriteria: async () => ({ mode: "open", revision: 0 }),
   proposeNext: async () => ({
     kind: "completion_candidate",
     summary: "未配置规划器（P3 接入 LLM）",

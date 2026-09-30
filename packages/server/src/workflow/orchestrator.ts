@@ -77,6 +77,9 @@ export class WorkflowOrchestrator {
     }
 
     if (decision.kind === "step") {
+      if (decision.criteria) {
+        await this.deps.engine.reviseCriteria(workflowId, decision.criteria);
+      }
       const invalid = validateStepInput(
         capabilities,
         decision.step.capability,
@@ -94,6 +97,9 @@ export class WorkflowOrchestrator {
 
     // A completion candidate is a proposal; the protocol layer records the
     // event and sends it. State is untouched here.
+    if (decision.criteria) {
+      await this.deps.engine.reviseCriteria(workflowId, decision.criteria);
+    }
     return {
       completionCandidate: {
         summary: decision.summary,

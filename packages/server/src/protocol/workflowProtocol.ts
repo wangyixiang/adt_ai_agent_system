@@ -17,6 +17,7 @@ import type { WorkflowOrchestrator } from "../workflow/orchestrator";
 import { isTerminalWorkflow } from "../workflow/stateMachine";
 import type { StepSnapshot, WorkflowSnapshot, WorkflowStore } from "../workflow/store";
 import type { WorkflowEventKind } from "../workflow/store";
+import type { Planner } from "../workflow/planner";
 
 export interface WorkflowProtocolDeps {
   router: MessageRouter;
@@ -24,6 +25,7 @@ export interface WorkflowProtocolDeps {
   engine: WorkflowEngine;
   store: WorkflowStore;
   orchestrator: WorkflowOrchestrator;
+  planner: Planner;
   records: RecordService;
   recordStore: RecordStore;
 }
@@ -121,7 +123,7 @@ async function withOutputValidation(
 }
 
 export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
-  const { router, engine, store, orchestrator, records, recordStore } = deps;
+  const { router, engine, store, orchestrator, planner, records, recordStore } = deps;
   const notified = new Set<string>();
 
   const send = (
@@ -246,10 +248,13 @@ export function registerWorkflowProtocol(deps: WorkflowProtocolDeps): void {
       return;
     }
 
-    const workflow = await engine.create(session.userId, session.id, request, {
-      mode: "open",
-      revision: 0,
+    const capabilities = [...session.capabilities.asMap().values()];
+    const criteria = await planner.initialCriteria(request, capabilities).catch((error) => {
+      conn.warn(`initial criteria failed: ${(error as Error).message}`);
+      return { mode: "open" as const, revision: 0 };
     });
+
+    const workflow = await engine.create(session.userId, session.id, request, criteria);
 
     send(
       conn,

@@ -1,3 +1,4 @@
+import type { CompletionCriteria } from "../workflow/criteria";
 import type { StepSnapshot, WorkflowEvent, WorkflowSnapshot } from "../workflow/store";
 import type {
   RecordDocument,
@@ -199,6 +200,12 @@ export function buildRecord(input: BuildRecordInput): RecordDocument {
     terminal_state: workflow.state,
     terminal_reason: workflow.terminalReason,
     completion_criteria: workflow.criteria,
+    criteria_revisions: events
+      .filter((event) => event.kind === "criteria_revised")
+      .map((event) => ({
+        ts: event.ts,
+        criteria: (event.payload as { criteria: CompletionCriteria }).criteria,
+      })),
     user_request: userRequest,
     summary: {
       problem_short: truncate(requestText),

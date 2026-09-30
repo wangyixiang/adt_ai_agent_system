@@ -50,6 +50,7 @@ describe("production entry point (start)", () => {
       port: 0,
       databaseUrl: TEST_DATABASE_URL,
       planner: {
+        initialCriteria: async () => ({ mode: "open", revision: 0 }),
         proposeNext: async () =>
           decisions.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
       },

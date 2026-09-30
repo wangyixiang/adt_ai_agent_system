@@ -15,6 +15,7 @@ import {
   WorkflowOrchestrator,
   type GuardrailConfig,
   type NormalizedCapability,
+  type Planner,
   type PlannerDecision,
   type Pool,
   type RecordListPage,
@@ -37,6 +38,8 @@ export interface TestServerOptions {
   reclaimIntervalMs?: number;
   /** Scripted planner decisions; an exhausted script yields a completion candidate. */
   planner?: PlannerDecision[];
+  /** A full planner implementation (takes precedence over `planner`). */
+  plannerImpl?: Planner;
   failRecordPersistence?: boolean;
   /** Makes `RecordService.finalize` throw (as if a DB read failed). */
   throwOnFinalize?: boolean;
@@ -130,13 +133,17 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   });
 
   const script = [...(opts.planner ?? [])];
+  const planner: Planner =
+    opts.plannerImpl ??
+    ({
+      initialCriteria: async () => ({ mode: "open", revision: 0 }),
+      proposeNext: async () =>
+        script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
+    } satisfies Planner);
   const orchestrator = new WorkflowOrchestrator({
     engine,
     store: workflowStore,
-    planner: {
-      proposeNext: async () =>
-        script.shift() ?? { kind: "completion_candidate", summary: "", evidenceRefs: [] },
-    },
+    planner,
     capabilitiesOf: (sessionId) => [...server.sessions.capabilitiesOf(sessionId).values()],
   });
 
@@ -146,6 +153,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
     engine,
     store: workflowStore,
     orchestrator,
+    planner,
     records,
     recordStore: realRecordStore,
   });
