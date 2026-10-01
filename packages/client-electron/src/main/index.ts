@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, type Tray } from "electron";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,13 +9,19 @@ import type { MainEvent, RendererRequest } from "../shared/contract";
 import { IPC } from "../shared/contract";
 import { createBridge } from "./core/bridge";
 import { createSession, type Session } from "./core/session";
+import { createLifecycle } from "./lifecycle";
+import { createTray } from "./tray";
 
 const isSmoke = process.argv.includes("--smoke");
 
+/** Set once the app is really leaving (tray quit), so the window may close. */
+let isQuitting = false;
+/** Keep the tray referenced; a GC'd tray icon disappears. */
+let tray: Tray | null = null;
+
 /**
  * Proof that `node:sqlite` (through the daemon's ledger) runs inside Electron's
- * own Node — the dependency ADR-006's Client form rests on. Prints the versions
- * so the floor is recorded, then exits.
+ * own Node. Prints the versions, then exits.
  */
 function runSmoke(): number {
   const location = join(tmpdir(), `adt-ledger-smoke-${Date.now()}.db`);
@@ -37,7 +43,7 @@ function broadcast(event: MainEvent): void {
   }
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 1024,
     height: 720,
@@ -53,6 +59,7 @@ async function createWindow(): Promise<void> {
   } else {
     await window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)));
   }
+  return window;
 }
 
 app
@@ -65,8 +72,7 @@ app
 
     const userData = app.getPath("userData");
     const session: Session = createSession({
-      // The Server address is configuration, not something the UI types
-      // (ADR-006 §Decision 1).
+      // The Server address is configuration, not something the UI types.
       serverUrl: process.env["ADT_SERVER_URL"] ?? "ws://127.0.0.1:8080/ws",
       workspaceRoot: process.env["ADT_WORKSPACE"] ?? process.cwd(),
       clientInfo: { name: "adt-client-electron", platform: process.platform },
@@ -84,16 +90,37 @@ app
     });
     ipcMain.handle(IPC.invoke, (_event, request: RendererRequest) => bridge.handle(request));
 
-    await createWindow();
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    const window = await createWindow();
+    const lifecycle = createLifecycle({
+      hideWindow: () => window.hide(),
+      closeDaemon: () => session.close(),
+      quit: () => {
+        isQuitting = true;
+        app.quit();
+      },
     });
+
+    // Closing the window keeps the daemon (and any run) alive: hide instead.
+    window.on("close", (event) => {
+      if (isQuitting) return;
+      event.preventDefault();
+      lifecycle.onWindowClose();
+    });
+
+    tray = createTray({
+      onShow: () => window.show(),
+      onQuit: () => void lifecycle.onTrayQuit(),
+    });
+
+    app.on("before-quit", () => {
+      isQuitting = true;
+    });
+    app.on("activate", () => window.show());
   })
   .catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     app.exit(1);
   });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+// The tray owns the app's lifetime now: no windows does not mean "quit".
+app.on("window-all-closed", () => undefined);
