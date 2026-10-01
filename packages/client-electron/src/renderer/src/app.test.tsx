@@ -879,4 +879,40 @@ describe("the app", () => {
     await user.click(screen.getByRole("button", { name: /导出到知识库/ }));
     expect(await screen.findByText(/export_failed/)).toBeTruthy();
   });
+
+  it("shows the settings page on first run instead of the login page", async () => {
+    const client = fakeClient({
+      configGet: async () => ({ serverUrl: "ws://127.0.0.1:8080/ws", workspaceRoot: "", configured: false }),
+    });
+    render(<App client={client} />);
+    expect(await screen.findByTestId("settings")).toBeTruthy();
+    expect(screen.queryByLabelText("用户名")).toBeNull();
+  });
+
+  it("saves from the settings page and then shows the login", async () => {
+    const saved: string[] = [];
+    const client = fakeClient({
+      snapshot: async () => disconnected,
+      configGet: async () => ({ serverUrl: "", workspaceRoot: "", configured: false }),
+      configSet: async (serverUrl) => {
+        saved.push(serverUrl);
+        return { serverUrl, workspaceRoot: "", configured: true };
+      },
+    });
+    render(<App client={client} />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/Server 地址/), "ws://127.0.0.1:8080/ws");
+    await user.click(screen.getByRole("button", { name: /保存/ }));
+    expect(await screen.findByLabelText("用户名")).toBeTruthy();
+    expect(saved).toEqual(["ws://127.0.0.1:8080/ws"]);
+  });
+
+  it("reopens the settings from the app", async () => {
+    const client = fakeClient();
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    expect(await screen.findByTestId("settings")).toBeTruthy();
+  });
 });

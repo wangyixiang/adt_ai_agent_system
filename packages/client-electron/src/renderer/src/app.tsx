@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 
 import type { Answer } from "@adt/shared";
 
-import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot, UiBlobPreview, IncomingAttachment } from "../../shared/contract";
+import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot, UiBlobPreview, UiConfig, IncomingAttachment } from "../../shared/contract";
 import type { AdtClient } from "./api";
 import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
 import { Login } from "./components/Login";
 import { ProgressHeader } from "./components/ProgressHeader";
 import { ReportViewer } from "./components/ReportViewer";
+import { Settings } from "./components/Settings";
 import { Transcript } from "./components/Transcript";
 import { Workbench } from "./components/Workbench";
 import { conversations } from "./conversations";
@@ -41,6 +42,10 @@ export function App({ client }: { client: AdtClient }) {
   const [records, setRecords] = useState<UiRecordListEntry[]>([]);
   const [recordsTick, setRecordsTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The effective settings; `null` until the first `configGet` resolves. */
+  const [config, setConfig] = useState<UiConfig | null>(null);
+  /** The settings page was opened from the app (as opposed to first run). */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /** The open Report viewer: markdown on success, an error otherwise (never both). */
   const [report, setReport] = useState<{ markdown: string | null; error: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -83,6 +88,21 @@ export function App({ client }: { client: AdtClient }) {
   }, [client]);
 
   const signedIn = ui.snapshot.connection === "connected" && ui.snapshot.userId !== null;
+
+  useEffect(() => {
+    let alive = true;
+    client
+      .configGet()
+      .then((next) => {
+        if (alive) setConfig(next);
+      })
+      .catch((cause: unknown) => {
+        if (alive) setError(messageOf(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [client]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -152,6 +172,17 @@ export function App({ client }: { client: AdtClient }) {
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
 
+  const handleSaveConfig = (serverUrl: string, workspaceRoot: string): void => {
+    setError(null);
+    client
+      .configSet(serverUrl, workspaceRoot === "" ? undefined : workspaceRoot)
+      .then((next) => {
+        setConfig(next);
+        setSettingsOpen(false);
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
   const handleSubmit = (text: string, attachments: IncomingAttachment[]): Promise<void> => {
     setError(null);
     setSubmitting(true);
@@ -171,6 +202,16 @@ export function App({ client }: { client: AdtClient }) {
   };
 
   if (!loaded) return <div className="loading">加载中…</div>;
+  if (config === null) return <div className="loading">加载中…</div>;
+  if (!config.configured || settingsOpen) {
+    return (
+      <Settings
+        initial={config}
+        onSave={handleSaveConfig}
+        {...(config.configured ? { onCancel: () => setSettingsOpen(false) } : {})}
+      />
+    );
+  }
   if (!signedIn) return <Login onSubmit={handleLogin} error={error} />;
 
   const viewItems: TranscriptItem[] =
@@ -291,6 +332,9 @@ export function App({ client }: { client: AdtClient }) {
       <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
       <main className="thread">
         <ProgressHeader items={viewItems} connection={ui.snapshot.connection} />
+        <button type="button" className="open-settings" onClick={() => setSettingsOpen(true)}>
+          设置
+        </button>
         {error !== null && <p role="alert">{error}</p>}
         {notice !== null && <p role="status">{notice}</p>}
         {selectedConversation !== null && !selectedConversation.live && (
