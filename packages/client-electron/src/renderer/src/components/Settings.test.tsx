@@ -45,4 +45,21 @@ describe("settings", () => {
     );
     expect(screen.getByRole("button", { name: /取消|返回/ })).toBeTruthy();
   });
+
+  it("refuses a non-ws address", () => {
+    render(<Settings initial={{ serverUrl: "http://x", workspaceRoot: "" }} onSave={() => undefined} />);
+    expect((screen.getByRole("button", { name: /保存/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("shows a save error", () => {
+    render(
+      <Settings
+        initial={{ serverUrl: "ws://x/ws", workspaceRoot: "" }}
+        onSave={() => undefined}
+        error="写入失败：EACCES"
+      />,
+    );
+    expect(screen.getByText(/EACCES/)).toBeTruthy();
+  });
 });

@@ -915,4 +915,16 @@ describe("the app", () => {
     await user.click(screen.getByRole("button", { name: "设置" }));
     expect(await screen.findByTestId("settings")).toBeTruthy();
   });
+
+  it("says so when the config cannot be loaded, instead of spinning forever", async () => {
+    const client = fakeClient({
+      configGet: async () => {
+        throw new Error("config unreadable");
+      },
+    });
+    render(<App client={client} />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/config unreadable/)).toBeTruthy();
+    expect(screen.queryByTestId("settings")).toBeNull();
+  });
 });

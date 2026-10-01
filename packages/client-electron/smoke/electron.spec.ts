@@ -108,6 +108,10 @@ test("a fresh install asks for the server address first", async () => {
     await page.getByLabel(/Server 地址/).fill(serverUrl);
     await page.getByRole("button", { name: /保存/ }).click();
     await expect(page.getByLabel("用户名")).toBeVisible({ timeout: 20_000 });
+
+    // The rebuilt session must actually use the saved address: log in for real.
+    await login(page);
+    await expect(page.getByTestId("app")).toBeVisible({ timeout: 20_000 });
   } finally {
     await app.close();
   }

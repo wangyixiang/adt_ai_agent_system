@@ -202,12 +202,16 @@ export function App({ client }: { client: AdtClient }) {
   };
 
   if (!loaded) return <div className="loading">加载中…</div>;
-  if (config === null) return <div className="loading">加载中…</div>;
+  if (config === null) {
+    // A failed config load must say so, not spin forever.
+    return error !== null ? <p role="alert">{error}</p> : <div className="loading">加载中…</div>;
+  }
   if (!config.configured || settingsOpen) {
     return (
       <Settings
         initial={config}
         onSave={handleSaveConfig}
+        error={error}
         {...(config.configured ? { onCancel: () => setSettingsOpen(false) } : {})}
       />
     );

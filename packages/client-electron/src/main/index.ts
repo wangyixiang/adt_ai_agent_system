@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { openLedger } from "@adt/client-daemon";
 
-import type { MainEvent, RendererRequest } from "../shared/contract";
+import type { MainEvent, RendererRequest, UiConfig } from "../shared/contract";
 import { IPC } from "../shared/contract";
 import { createBridge } from "./core/bridge";
-import { effectiveConfig, readConfig, writeConfig, type AppConfig, type StoredConfig } from "./core/config";
+import { effectiveConfig, readConfig, sameConfig, writeConfig, type AppConfig, type StoredConfig } from "./core/config";
 import { writeBytesFile, writeTextFile } from "./core/save";
 import { createSession, type Session } from "./core/session";
 import { createLifecycle } from "./lifecycle";
@@ -89,6 +89,12 @@ app
     let currentConfig = effectiveConfig(stored, process.env, process.cwd());
     let session = newSession(currentConfig);
 
+    const toUiConfig = (config: AppConfig): UiConfig => ({
+      serverUrl: config.serverUrl,
+      workspaceRoot: config.workspaceRoot,
+      configured: config.configured,
+    });
+
     const bridge = createBridge({
       snapshot: () => session.snapshot(),
       login: (username, secret) => session.login(username, secret),
@@ -115,24 +121,32 @@ app
       },
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
-      configGet: () => ({
-        serverUrl: currentConfig.serverUrl,
-        workspaceRoot: currentConfig.workspaceRoot,
-        configured: currentConfig.configured,
-      }),
+      configGet: () => toUiConfig(currentConfig),
       configSet: async (serverUrl, workspaceRoot) => {
         const next: StoredConfig = { serverUrl, ...(workspaceRoot === undefined ? {} : { workspaceRoot }) };
+        const nextConfig = effectiveConfig(next, process.env, process.cwd());
+
+        // Saving what is already effective must not tear down a live run.
+        if (sameConfig(nextConfig, currentConfig)) return toUiConfig(currentConfig);
+
+        // A genuine change drops the connection; ask first if a run is in flight.
+        if (session.isRunning()) {
+          const { response } = await dialog.showMessageBox(window, {
+            type: "warning",
+            buttons: ["改地址并中断", "取消"],
+            defaultId: 1,
+            cancelId: 1,
+            message: "有正在进行的诊断。改 Server 地址会中断它（服务器侧稍后回收）。确定吗？",
+          });
+          if (response !== 0) return toUiConfig(currentConfig);
+        }
+
         writeConfig(configPath, next);
-        // Changing the address means a new connection: drop the old session first.
         await session.close();
-        currentConfig = effectiveConfig(next, process.env, process.cwd());
+        currentConfig = nextConfig;
         session = newSession(currentConfig);
         broadcast({ type: "state", snapshot: session.snapshot() });
-        return {
-          serverUrl: currentConfig.serverUrl,
-          workspaceRoot: currentConfig.workspaceRoot,
-          configured: currentConfig.configured,
-        };
+        return toUiConfig(currentConfig);
       },
       emit: broadcast,
     });

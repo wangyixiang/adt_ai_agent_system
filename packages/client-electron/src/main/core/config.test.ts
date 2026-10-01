@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, it, expect } from "vitest";
 
-import { DEFAULT_SERVER_URL, effectiveConfig, readConfig, writeConfig } from "./config";
+import { DEFAULT_SERVER_URL, effectiveConfig, readConfig, sameConfig, writeConfig } from "./config";
 
 describe("config", () => {
   it("prefers the stored value over the environment", () => {
@@ -38,5 +38,21 @@ describe("config", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("creates the parent directory, and compares effective configs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "adt-cfg-"));
+    try {
+      const nested = join(dir, "a", "b", "config.json");
+      writeConfig(nested, { serverUrl: "ws://x/ws" });
+      expect(readConfig(nested)).toEqual({ serverUrl: "ws://x/ws" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const a = effectiveConfig({ serverUrl: "ws://x/ws", workspaceRoot: "/w" }, {}, "C:/w");
+    const b = effectiveConfig({ serverUrl: "ws://x/ws", workspaceRoot: "/w" }, {}, "C:/w");
+    const c = effectiveConfig({ serverUrl: "ws://y/ws", workspaceRoot: "/w" }, {}, "C:/w");
+    expect(sameConfig(a, b)).toBe(true);
+    expect(sameConfig(a, c)).toBe(false);
   });
 });

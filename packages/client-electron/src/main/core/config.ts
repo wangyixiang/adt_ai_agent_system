@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 /** Shown as a default in the settings page — not a connection the app picks itself. */
 export const DEFAULT_SERVER_URL = "ws://127.0.0.1:8080/ws";
@@ -35,9 +36,15 @@ export function readConfig(path: string): StoredConfig | null {
 
 /** Writes via a temp file + rename, so a crash cannot leave a half-written config. */
 export function writeConfig(path: string, config: StoredConfig): void {
+  mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.tmp`;
   writeFileSync(temporary, JSON.stringify(config, null, 2));
   renameSync(temporary, path);
+}
+
+/** Two effective configs that would connect the same way. */
+export function sameConfig(a: AppConfig, b: AppConfig): boolean {
+  return a.serverUrl === b.serverUrl && a.workspaceRoot === b.workspaceRoot;
 }
 
 /**
