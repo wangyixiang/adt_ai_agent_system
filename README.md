@@ -134,6 +134,8 @@ pnpm -C packages/client-electron test:e2e  # 桌面冒烟：真 Electron + 真 S
 
 **它做什么**：登录（Server 地址是 `ADT_SERVER_URL`，默认 `ws://127.0.0.1:8080/ws`；工作区 `ADT_WORKSPACE`）→ 提交一次请求 → 看步骤卡 → **四种决策都在卡片上回答**（确认 / 手工动作 / 资源冲突 / 完成候选）→ 看到 `Record`。**关窗 = 最小化到托盘、运行继续**；只有托盘里的"退出"才真正收尾（`ADR-006` §Decision 4）。
 
+**左栏会话历史**：列出本次会话跑过的对话 **加上** Server 上你**过去的所有 Record**；点开往期对话，用该 Record **重建**出过程（条目时间线）与结论——**不新增存储**（往期是重建，不是当时的可交互界面）。见 `docs/superpowers/specs/2026-10-01-conversation-history-design.md`。
+
 **台账 / 会话**落在 Electron 的 `userData` 目录；**`node:sqlite`** 是唯一实现（Electron 44 = Node 24，内置可用，无需原生模块）。
 
 ### KB 导出（可选，`ADR-005`）

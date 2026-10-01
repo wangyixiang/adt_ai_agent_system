@@ -89,10 +89,10 @@
 
 ## 6. 布局与组件
 
-- 外壳变**两栏**：左 `ConversationList`，右沿用 `ProgressHeader + Transcript`（+ `Composer` 仅用于发起新对话）。
+- 外壳变**两栏**：左 `ConversationList`，右沿用 `ProgressHeader + Transcript`，底部 `Composer`**常驻**（它只负责开一条新对话，与当前选中的会话无关；有进行中的会话时禁用）。
 - `ConversationList`：每行 = 标题（问题一句话）+ 状态徽章（`进行中` / `COMPLETED` / `FAILED` / `CANCELLED`）+ 耗时；**选中高亮**。
 - 选中 **live**：现有行为（该 Workflow 的转录 + 进度头 + 输入框按"是否有进行中"禁用）。
-- 选中 **history**：渲染重建结果，顶部标"往期记录"，**不显示 `Composer`**（往期不能续跑）。
+- 选中 **history**：渲染重建结果，顶部标"往期记录"。（`Composer` 仍常驻——它只开新对话，不属于选中的那条。）
 - 空态："还没有对话，提交一次请求开始。"；`records()` 失败 → `role="alert"` 错误条（不是空列表）。
 
 ## 7. 确定性与性能（明确定义）

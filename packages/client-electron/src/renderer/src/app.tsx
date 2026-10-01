@@ -172,9 +172,10 @@ export function App({ client }: { client: AdtClient }) {
           <p className="past-note">往期记录</p>
         )}
         <Transcript items={viewItems} onAnswer={handleAnswer} />
-        {selectedConversation !== null && selectedConversation.live && (
-          <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
-        )}
+        {/* The composer only opens a *new* conversation, so it is always
+            available (disabled while anything is running) — including when the
+            list is empty or a past record is selected. */}
+        <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
       </main>
     </div>
   );
