@@ -118,6 +118,7 @@ export function Workbench({
                   </option>
                 </select>
               </label>
+              {!reportReady && <span className="hint">生成一次报告后可导出 Report</span>}
               <button type="button" onClick={() => onExport(exportObject)}>
                 导出到知识库
               </button>

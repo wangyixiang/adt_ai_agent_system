@@ -133,6 +133,13 @@ export function App({ client }: { client: AdtClient }) {
     };
   }, [client, historyRecordId, historyTranscripts]);
 
+  // An export result or an open report belongs to the conversation it came from;
+  // switching conversations must not leave a stale "received" line under another.
+  useEffect(() => {
+    setExportNotice(null);
+    setReport(null);
+  }, [effectiveSelected]);
+
   const handleLogin = (username: string, secret: string): void => {
     setError(null);
     client

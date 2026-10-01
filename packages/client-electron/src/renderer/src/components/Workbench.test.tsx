@@ -145,4 +145,9 @@ describe("the workbench", () => {
     expect(screen.queryByRole("button", { name: /生成报告/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /导出/ })).toBeNull();
   });
+
+  it("explains why Report export is unavailable before a report exists", () => {
+    show({ recordId: "rec_1", reportReady: false });
+    expect(screen.getByText(/生成一次报告后/)).toBeTruthy();
+  });
 });

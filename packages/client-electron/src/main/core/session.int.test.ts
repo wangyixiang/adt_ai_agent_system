@@ -368,4 +368,22 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("maps a refused report to ok:false, and never invents content", async () => {
+    const f = await fixture([readStep, done]);
+    try {
+      await f.session.submit("读一下状态");
+      const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
+      f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      const recordId = settled.workflows[0]!.recordId!;
+
+      // The Server refuses an unknown detail_level → the client must surface it, not a body.
+      const bad = await f.session.report(recordId, "bogus" as never);
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.errorCode).toBe("invalid_option");
+    } finally {
+      await f.close();
+    }
+  });
 });

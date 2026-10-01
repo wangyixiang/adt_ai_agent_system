@@ -43,6 +43,21 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
 const pushUi = (push: (e: MainEvent) => void, event: UiEvent): void =>
   push({ type: "ui", event });
 
+function pastRecord(recordId: string, workflowId: string, problem: string): UiRecord {
+  return {
+    record_id: recordId,
+    workflow_id: workflowId,
+    created_at: 0,
+    ended_at: 1,
+    terminal_state: "COMPLETED",
+    terminal_reason: null,
+    user_request: { text: problem },
+    summary: { problem_short: problem, terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+    entries: [],
+    final_result: {},
+  };
+}
+
 describe("the app", () => {
   it("shows the login error instead of pretending to be in", async () => {
     const client = fakeClient({
@@ -523,5 +538,126 @@ describe("the app", () => {
     await user.click(screen.getByRole("button", { name: /导出/ }));
     expect(await screen.findByText(/端点已接收/)).toBeTruthy();
     expect(screen.getByText(/不表示已被收录|收录/)).toBeTruthy();
+  });
+
+  it("shows the report error instead of a body when generation fails", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      report: async () => ({ ok: false, errorCode: "insufficient_content", message: "record too thin" }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /生成报告/ }));
+    const viewer = await screen.findByTestId("report-viewer");
+    expect(within(viewer).getByRole("alert")).toBeTruthy();
+    expect(within(viewer).getByText(/insufficient_content/)).toBeTruthy();
+    expect(within(viewer).queryByRole("button", { name: "复制" })).toBeNull();
+  });
+
+  it("does not claim success when the save is cancelled", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      report: async () => ({ ok: true, markdown: "# 结论" }),
+      saveText: async () => ({ saved: false }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /生成报告/ }));
+    const viewer = await screen.findByTestId("report-viewer");
+    await user.click(within(viewer).getByRole("button", { name: /另存为/ }));
+    expect(screen.queryByText(/已保存报告/)).toBeNull();
+  });
+
+  it("confirms a successful save", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      report: async () => ({ ok: true, markdown: "# 结论" }),
+      saveText: async () => ({ saved: true, path: "/tmp/report.md" }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /生成报告/ }));
+    const viewer = await screen.findByTestId("report-viewer");
+    await user.click(within(viewer).getByRole("button", { name: /另存为/ }));
+    expect(await screen.findByText(/已保存报告/)).toBeTruthy();
+  });
+
+  it("says the KB endpoint is unconfigured, distinctly", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      export: async () => ({ ok: false, errorCode: "export_unavailable", message: null }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /导出到知识库/ }));
+    expect(await screen.findByText(/未配置 KB 端点/)).toBeTruthy();
+  });
+
+  it("can export the generated Report", async () => {
+    const asked: Array<[string, string]> = [];
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      report: async () => ({ ok: true, markdown: "# 结论" }),
+      export: async (recordId, object) => {
+        asked.push([recordId, object]);
+        return { ok: true, errorCode: null, message: null };
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /生成报告/ }));
+    await user.click(within(screen.getByTestId("report-viewer")).getByRole("button", { name: "关闭" }));
+    await user.selectOptions(screen.getByLabelText("导出"), "report");
+    await user.click(screen.getByRole("button", { name: /导出到知识库/ }));
+    expect(asked).toEqual([["rec_9", "report"]]);
+  });
+
+  it("does not let an export notice follow you to another conversation", async () => {
+    const nine = pastRecord("rec_9", "wf_9", "第九");
+    const eight = pastRecord("rec_8", "wf_8", "第八");
+    const client = fakeClient({
+      records: async () => ({
+        records: [
+          { recordId: "rec_9", workflowId: "wf_9", summary: nine.summary },
+          { recordId: "rec_8", workflowId: "wf_8", summary: eight.summary },
+        ],
+        nextCursor: null,
+      }),
+      record: async (id) => (id === "rec_9" ? nine : eight),
+      export: async () => ({ ok: true, errorCode: null, message: null }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /导出到知识库/ }));
+    expect(await screen.findByText(/端点已接收/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /第八/ }));
+    await waitFor(() => expect(screen.queryByText(/端点已接收/)).toBeNull());
   });
 });
