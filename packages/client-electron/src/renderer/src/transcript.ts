@@ -58,7 +58,7 @@ export interface UiState {
 }
 
 /** The system could not reconcile the step's outcome — not the human's doubt. */
-const STEP_STATE_TEXT: Record<StepState, string> = {
+export const STEP_STATE_TEXT: Record<StepState, string> = {
   PENDING: "待执行",
   RUNNING: "执行中",
   WAITING: "等待中",
@@ -69,7 +69,7 @@ const STEP_STATE_TEXT: Record<StepState, string> = {
 };
 
 /** `outcome:"unknown"` is the human saying they are not sure. */
-const MANUAL_OUTCOME_TEXT: Record<"succeeded" | "failed" | "partially" | "unknown", string> = {
+export const MANUAL_OUTCOME_TEXT: Record<"succeeded" | "failed" | "partially" | "unknown", string> = {
   succeeded: "人说已成功",
   failed: "人说已失败",
   partially: "人说部分成功",
