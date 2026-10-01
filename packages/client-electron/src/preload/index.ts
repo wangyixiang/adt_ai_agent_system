@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AdtBridge,
+  IncomingAttachment,
   MainEvent,
   RendererRequest,
   UiExportResult,
@@ -28,8 +29,8 @@ const bridge: AdtBridge = {
       secret,
     } satisfies RendererRequest) as Promise<void>,
 
-  submit: (text) =>
-    ipcRenderer.invoke(IPC.invoke, { kind: "submit", text } satisfies RendererRequest) as Promise<string>,
+  submit: (text, attachments) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "submit", text, attachments } satisfies RendererRequest) as Promise<string>,
 
   answer: (askId, answer) =>
     ipcRenderer.invoke(IPC.invoke, { kind: "answer", askId, answer } satisfies RendererRequest) as Promise<void>,

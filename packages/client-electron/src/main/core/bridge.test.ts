@@ -46,7 +46,7 @@ describe("the main bridge", () => {
         },
       }),
     );
-    expect(await bridge.handle({ kind: "submit", text: "服务异常" })).toBe("wf_9");
+    expect(await bridge.handle({ kind: "submit", text: "服务异常", attachments: [] })).toBe("wf_9");
     expect(seen).toEqual(["服务异常"]);
   });
 

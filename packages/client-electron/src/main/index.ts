@@ -85,7 +85,7 @@ app
     const bridge = createBridge({
       snapshot: () => session.snapshot(),
       login: (username, secret) => session.login(username, secret),
-      submit: (text) => session.submit(text),
+      submit: (text, attachments) => session.submit(text, attachments),
       answer: (askId, answer) => session.answer(askId, answer),
       cancel: (workflowId) => session.cancel(workflowId),
       report: (recordId, detailLevel) => session.report(recordId, detailLevel),

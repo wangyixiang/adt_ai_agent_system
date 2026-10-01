@@ -1,6 +1,6 @@
 import type { Answer } from "@adt/shared";
 
-import type { MainEvent, RendererRequest, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
+import type { IncomingAttachment, MainEvent, RendererRequest, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
 
 /**
  * The main-process side of the IPC contract. Pure logic on purpose: it takes the
@@ -10,7 +10,7 @@ import type { MainEvent, RendererRequest, UiExportResult, UiRecord, UiRecordList
 export interface BridgeDeps {
   snapshot(): UiSnapshot;
   login(username: string, secret: string): Promise<void>;
-  submit(text: string): Promise<string>;
+  submit(text: string, attachments: IncomingAttachment[]): Promise<string>;
   answer(askId: string, answer: Answer): void;
   cancel(workflowId: string): Promise<void>;
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
@@ -35,7 +35,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
           await deps.login(request.username, request.secret);
           return undefined;
         case "submit":
-          return deps.submit(request.text);
+          return deps.submit(request.text, request.attachments);
         case "answer":
           deps.answer(request.askId, request.answer);
           return undefined;

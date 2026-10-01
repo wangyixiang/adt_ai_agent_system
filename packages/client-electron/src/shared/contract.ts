@@ -17,7 +17,7 @@ export const IPC = {
 export type RendererRequest =
   | { kind: "snapshot" }
   | { kind: "login"; username: string; secret: string }
-  | { kind: "submit"; text: string }
+  | { kind: "submit"; text: string; attachments: IncomingAttachment[] }
   | { kind: "answer"; askId: string; answer: Answer }
   | { kind: "cancel"; workflowId: string }
   | { kind: "report"; recordId: string; detailLevel?: "summary" | "full" }
@@ -90,13 +90,29 @@ export interface UiSaveResult {
   path?: string;
 }
 
+/** An attachment the renderer hands to main (bytes as base64). */
+export interface IncomingAttachment {
+  name: string;
+  mediaType: string;
+  dataBase64: string;
+}
+
+/**
+ * An attachment as it travels to the Server and is kept in the Record
+ * (`RECORD_SPEC.md` v0.10): inline bytes, or a blob reference.
+ */
+export type UiAttachment = { name: string; media_type: string; size: number; sha256: string } & (
+  | { mode: "inline"; data_base64: string }
+  | { mode: "blob"; content_ref: string }
+);
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
 export interface AdtBridge {
   snapshot(): Promise<UiSnapshot>;
   login(username: string, secret: string): Promise<void>;
-  submit(text: string): Promise<string>;
+  submit(text: string, attachments: IncomingAttachment[]): Promise<string>;
   answer(askId: string, answer: Answer): Promise<void>;
   cancel(workflowId: string): Promise<void>;
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;

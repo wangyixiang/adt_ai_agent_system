@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { ClientDaemon, openLedger, openSessionStore } from "@adt/client-daemon";
+import { ClientDaemon, openLedger, openSessionStore, uploadBlob } from "@adt/client-daemon";
 
-import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot } from "../../shared/contract";
+import type { UiAttachment, UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot, IncomingAttachment } from "../../shared/contract";
+import { checkAttachments, normalizeMediaType, planAttachment } from "./attachments";
 import { createDecisionHost } from "./host";
 import { createProjection } from "./projection";
 
@@ -21,7 +22,7 @@ export interface SessionOptions {
 export interface Session {
   snapshot(): UiSnapshot;
   login(username: string, secret: string): Promise<void>;
-  submit(text: string): Promise<string>;
+  submit(text: string, attachments?: IncomingAttachment[]): Promise<string>;
   answer(askId: string, body: unknown): void;
   /** Ask the Server to cancel a run; resolves once the cancel is acknowledged. */
   cancel(workflowId: string): Promise<void>;
@@ -109,13 +110,46 @@ export function createSession(options: SessionOptions): Session {
       options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
     },
 
-    async submit(text) {
-      if (daemon === null) throw new Error("not logged in");
+    async submit(text, attachments = []) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const allowed = checkAttachments(attachments);
+      if (!allowed.ok) throw new Error(`${allowed.code}: ${allowed.message}`);
+
+      const built: UiAttachment[] = [];
+      for (const incoming of attachments) {
+        const bytes = Buffer.from(incoming.dataBase64, "base64");
+        const mediaType = normalizeMediaType(incoming.mediaType);
+        const sha256 = createHash("sha256").update(bytes).digest("hex");
+        if (planAttachment(bytes).mode === "inline") {
+          built.push({
+            name: incoming.name,
+            media_type: mediaType,
+            size: bytes.length,
+            sha256,
+            mode: "inline",
+            data_base64: incoming.dataBase64,
+          });
+        } else {
+          const ref = await uploadBlob(
+            { connection: daemon.connection },
+            { name: incoming.name, mediaType, bytes },
+          );
+          built.push({
+            name: ref.name ?? incoming.name,
+            media_type: ref.media_type,
+            size: ref.size,
+            sha256: ref.sha256,
+            mode: "blob",
+            content_ref: ref.content_ref,
+          });
+        }
+      }
+
       const created = await daemon.connection.request(
         "workflow.request",
         {
           client_request_id: randomUUID(),
-          user_request: { text, attachments: [], context: {} },
+          user_request: { text, attachments: built, context: {} },
         },
         "workflow.created",
       );

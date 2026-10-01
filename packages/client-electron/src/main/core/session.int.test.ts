@@ -386,4 +386,34 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("carries a small attachment inline and offloads a large one to blob", async () => {
+    const f = await fixture([readStep, done]);
+    try {
+      const small = { name: "note.txt", mediaType: "text/plain", dataBase64: Buffer.from("hi").toString("base64") };
+      const big = {
+        name: "trace.log",
+        mediaType: "text/plain",
+        dataBase64: Buffer.alloc(70 * 1024, 65).toString("base64"),
+      };
+      await f.session.submit("看附件", [small, big]);
+      const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
+      f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+
+      const detail = await f.session.record(settled.workflows[0]!.recordId!);
+      const attachments =
+        (detail.user_request as { attachments?: Array<Record<string, unknown>> }).attachments ?? [];
+      expect(attachments).toHaveLength(2);
+
+      const inline = attachments.find((a) => a["name"] === "note.txt")!;
+      expect(inline).toMatchObject({ mode: "inline", size: 2 });
+
+      const blob = attachments.find((a) => a["name"] === "trace.log")!;
+      expect(blob["mode"]).toBe("blob");
+      expect(String(blob["content_ref"])).toMatch(/^blob_/);
+    } finally {
+      await f.close();
+    }
+  });
 });

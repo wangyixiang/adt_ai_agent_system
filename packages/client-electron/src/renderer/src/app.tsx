@@ -153,7 +153,7 @@ export function App({ client }: { client: AdtClient }) {
     setError(null);
     setSubmitting(true);
     client
-      .submit(text)
+      .submit(text, [])
       .then((workflowId) => setSelected(workflowId))
       .catch((cause: unknown) => setError(messageOf(cause)))
       .finally(() => setSubmitting(false));
