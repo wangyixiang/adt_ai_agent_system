@@ -56,11 +56,17 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
   try {
     await login(page);
     await page.getByPlaceholder(/请求/).fill("服务异常");
+    await page.getByLabel("添加附件").setInputFiles({
+      name: "note.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("hello"),
+    });
     await page.getByRole("button", { name: "发送" }).click();
 
     await page.getByRole("button", { name: "确认" }).click({ timeout: 20_000 });
-    // The right-hand workbench shows the run's steps.
+    // The right-hand workbench shows the run's steps and its attachment.
     await expect(page.getByTestId("workbench").getByText("复位测试台")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("workbench").getByText("note.txt")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "已解决" }).click({ timeout: 20_000 });
 
     await expect(page.getByRole("main").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });

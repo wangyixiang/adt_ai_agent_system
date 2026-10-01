@@ -185,7 +185,7 @@ export function createSession(options: SessionOptions): Session {
       // Only this call knows the text the human typed; the Server's reply does
       // not carry it back.
       projection.noteRequest(workflowId, text);
-      emitUi({ type: "workflow.created", workflowId, userRequest: { text } });
+      emitUi({ type: "workflow.created", workflowId, userRequest: { text }, attachments: built });
       return workflowId;
     },
 
