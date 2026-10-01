@@ -1,6 +1,7 @@
 # ADR-004: 技术栈选型
 
 - **Status:** ACCEPTED
+- **被取代（部分，2026-10-01）:** Client 形态见 `ADR-006`——改为**单体 Electron 应用**；本文件 §3 的形态行与 §Rejected Alternatives 中"否决 Electron 单应用"一条被取代，**其余决定不变**。
 - **日期:** 2026-09-30
 - **关联:** `ADR-001`（状态权威）、`ADR-003`（部署与信任模型）、`PROTOCOL_SPEC.md`、`CAPABILITY_SPEC.md`、`REQUIREMENTS.md` NFR-7、MVP 范围说明（`docs/superpowers/specs/2026-09-29-mvp-scope.md`）
 - **来源:** 基础产品启动前的技术栈决策
