@@ -1,6 +1,6 @@
 import type { Answer } from "@adt/shared";
 
-import type { IncomingAttachment, MainEvent, RendererRequest, UiBlobPreview, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
+import type { IncomingAttachment, MainEvent, RendererRequest, UiBlobPreview, UiConfig, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
 
 /**
  * The main-process side of the IPC contract. Pure logic on purpose: it takes the
@@ -18,6 +18,8 @@ export interface BridgeDeps {
   saveText(suggestedName: string, content: string): Promise<UiSaveResult>;
   blobPreview(contentRef: string, mediaType: string): Promise<UiBlobPreview>;
   blobSave(contentRef: string, mediaType: string, suggestedName?: string): Promise<UiSaveResult>;
+  configGet(): UiConfig;
+  configSet(serverUrl: string, workspaceRoot?: string): Promise<UiConfig>;
   records(cursor: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   emit(event: MainEvent): void;
@@ -54,6 +56,10 @@ export function createBridge(deps: BridgeDeps): Bridge {
           return deps.blobPreview(request.contentRef, request.mediaType);
         case "blob_save":
           return deps.blobSave(request.contentRef, request.mediaType, request.suggestedName);
+        case "config_get":
+          return deps.configGet();
+        case "config_set":
+          return deps.configSet(request.serverUrl, request.workspaceRoot);
         case "records":
           return deps.records(request.cursor ?? null, request.pageSize);
         case "record":

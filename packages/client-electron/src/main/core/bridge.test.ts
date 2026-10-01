@@ -27,6 +27,8 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     saveText: async () => ({ saved: false }),
     blobPreview: async () => ({ kind: "binary", mediaType: "application/octet-stream", size: 0 }),
     blobSave: async () => ({ saved: false }),
+    configGet: () => ({ serverUrl: "ws://x/ws", workspaceRoot: "/w", configured: true }),
+    configSet: async (serverUrl) => ({ serverUrl, workspaceRoot: "/w", configured: true }),
     emit: () => undefined,
     ...overrides,
   };
@@ -145,5 +147,23 @@ describe("the main bridge", () => {
     );
     await bridge.handle({ kind: "blob_save", contentRef: "blob_1", mediaType: "text/plain" });
     expect(seen).toEqual(["blob_1"]);
+  });
+
+  it("routes config_get and config_set", async () => {
+    const seen: string[] = [];
+    const bridge = createBridge(
+      deps({
+        configGet: () => ({ serverUrl: "ws://a/ws", workspaceRoot: "/w", configured: true }),
+        configSet: async (serverUrl) => {
+          seen.push(serverUrl);
+          return { serverUrl, workspaceRoot: "/w", configured: true };
+        },
+      }),
+    );
+    expect(await bridge.handle({ kind: "config_get" })).toMatchObject({ configured: true });
+    expect(await bridge.handle({ kind: "config_set", serverUrl: "ws://b/ws" })).toMatchObject({
+      serverUrl: "ws://b/ws",
+    });
+    expect(seen).toEqual(["ws://b/ws"]);
   });
 });

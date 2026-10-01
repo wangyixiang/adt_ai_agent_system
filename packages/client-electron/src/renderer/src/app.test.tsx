@@ -33,6 +33,12 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
     saveText: async () => ({ saved: true, path: "x.md" }),
     blobPreview: async () => ({ kind: "binary", mediaType: "application/octet-stream", size: 0 }),
     blobSave: async () => ({ saved: true, path: "x.bin" }),
+    configGet: async () => ({ serverUrl: "ws://127.0.0.1:8080/ws", workspaceRoot: "", configured: true }),
+    configSet: async (serverUrl, workspaceRoot) => ({
+      serverUrl,
+      workspaceRoot: workspaceRoot ?? "",
+      configured: true,
+    }),
     records: async () => ({ records: [], nextCursor: null }),
     record: async () => {
       throw new Error("record is not used in this test");

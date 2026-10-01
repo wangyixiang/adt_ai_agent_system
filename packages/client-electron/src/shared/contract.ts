@@ -25,6 +25,8 @@ export type RendererRequest =
   | { kind: "save_text"; suggestedName: string; content: string }
   | { kind: "blob_preview"; contentRef: string; mediaType: string }
   | { kind: "blob_save"; contentRef: string; mediaType: string; suggestedName?: string }
+  | { kind: "config_get" }
+  | { kind: "config_set"; serverUrl: string; workspaceRoot?: string }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -114,6 +116,13 @@ export type UiBlobPreview =
   | { kind: "image"; mediaType: string; dataUrl: string }
   | { kind: "binary"; mediaType: string; size: number };
 
+/** The settings the renderer reads and writes (never touches the file itself). */
+export interface UiConfig {
+  serverUrl: string;
+  workspaceRoot: string;
+  configured: boolean;
+}
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
@@ -128,6 +137,8 @@ export interface AdtBridge {
   saveText(suggestedName: string, content: string): Promise<UiSaveResult>;
   blobPreview(contentRef: string, mediaType: string): Promise<UiBlobPreview>;
   blobSave(contentRef: string, mediaType: string, suggestedName?: string): Promise<UiSaveResult>;
+  configGet(): Promise<UiConfig>;
+  configSet(serverUrl: string, workspaceRoot?: string): Promise<UiConfig>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;

@@ -8,6 +8,7 @@ import { openLedger } from "@adt/client-daemon";
 import type { MainEvent, RendererRequest } from "../shared/contract";
 import { IPC } from "../shared/contract";
 import { createBridge } from "./core/bridge";
+import { effectiveConfig, readConfig, writeConfig, type AppConfig, type StoredConfig } from "./core/config";
 import { writeBytesFile, writeTextFile } from "./core/save";
 import { createSession, type Session } from "./core/session";
 import { createLifecycle } from "./lifecycle";
@@ -72,15 +73,21 @@ app
     }
 
     const userData = app.getPath("userData");
-    const session: Session = createSession({
-      // The Server address is configuration, not something the UI types.
-      serverUrl: process.env["ADT_SERVER_URL"] ?? "ws://127.0.0.1:8080/ws",
-      workspaceRoot: process.env["ADT_WORKSPACE"] ?? process.cwd(),
-      clientInfo: { name: "adt-client-electron", platform: process.platform },
-      ledgerPath: join(userData, "ledger.db"),
-      sessionPath: join(userData, "session.json"),
-      emit: broadcast,
-    });
+    const configPath = join(userData, "config.json");
+
+    const newSession = (config: AppConfig): Session =>
+      createSession({
+        serverUrl: config.serverUrl,
+        workspaceRoot: config.workspaceRoot,
+        clientInfo: { name: "adt-client-electron", platform: process.platform },
+        ledgerPath: join(userData, "ledger.db"),
+        sessionPath: join(userData, "session.json"),
+        emit: broadcast,
+      });
+
+    const stored = readConfig(configPath);
+    let currentConfig = effectiveConfig(stored, process.env, process.cwd());
+    let session = newSession(currentConfig);
 
     const bridge = createBridge({
       snapshot: () => session.snapshot(),
@@ -108,6 +115,25 @@ app
       },
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
+      configGet: () => ({
+        serverUrl: currentConfig.serverUrl,
+        workspaceRoot: currentConfig.workspaceRoot,
+        configured: currentConfig.configured,
+      }),
+      configSet: async (serverUrl, workspaceRoot) => {
+        const next: StoredConfig = { serverUrl, ...(workspaceRoot === undefined ? {} : { workspaceRoot }) };
+        writeConfig(configPath, next);
+        // Changing the address means a new connection: drop the old session first.
+        await session.close();
+        currentConfig = effectiveConfig(next, process.env, process.cwd());
+        session = newSession(currentConfig);
+        broadcast({ type: "state", snapshot: session.snapshot() });
+        return {
+          serverUrl: currentConfig.serverUrl,
+          workspaceRoot: currentConfig.workspaceRoot,
+          configured: currentConfig.configured,
+        };
+      },
       emit: broadcast,
     });
     ipcMain.handle(IPC.invoke, (_event, request: RendererRequest) => bridge.handle(request));

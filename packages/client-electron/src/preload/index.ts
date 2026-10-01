@@ -6,6 +6,7 @@ import type {
   MainEvent,
   RendererRequest,
   UiBlobPreview,
+  UiConfig,
   UiExportResult,
   UiRecord,
   UiRecordList,
@@ -70,6 +71,16 @@ const bridge: AdtBridge = {
       mediaType,
       ...(suggestedName === undefined ? {} : { suggestedName }),
     } satisfies RendererRequest) as Promise<UiSaveResult>,
+
+  configGet: () =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "config_get" } satisfies RendererRequest) as Promise<UiConfig>,
+
+  configSet: (serverUrl, workspaceRoot) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "config_set",
+      serverUrl,
+      ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+    } satisfies RendererRequest) as Promise<UiConfig>,
 
   records: (cursor, pageSize) =>
     ipcRenderer.invoke(IPC.invoke, {
