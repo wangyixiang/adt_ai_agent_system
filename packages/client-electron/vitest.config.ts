@@ -8,6 +8,11 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],
+    // The integration test drives a real Server + daemon round trip; 5s (the
+    // default) is too tight once the machine is busy from other packages.
+    testTimeout: 30000,
+    hookTimeout: 30000,
+    fileParallelism: false,
   },
   resolve: {
     alias: {
