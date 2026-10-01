@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { MainEvent, UiEvent, UiSnapshot } from "../../shared/contract";
+import type { MainEvent, UiEvent, UiRecord, UiSnapshot } from "../../shared/contract";
 import type { AdtClient } from "./api";
 import { App } from "./app";
 
@@ -190,5 +190,108 @@ describe("the app", () => {
     expect(answers).toEqual([
       { askId: "ask_c", body: { kind: "completion", resolution: "solved", feedback: "我看了下没问题" } },
     ]);
+  });
+
+  it("lists a past run and shows it reconstructed from its Record", async () => {
+    const fetched: string[] = [];
+    const pastRecord: UiRecord = {
+      record_id: "rec_9",
+      workflow_id: "wf_9",
+      created_at: 0,
+      ended_at: 1000,
+      terminal_state: "COMPLETED",
+      terminal_reason: null,
+      user_request: { text: "旧的一次诊断" },
+      summary: {
+        problem_short: "旧的一次诊断",
+        terminal_state: "COMPLETED",
+        result_short: "好了",
+        duration_ms: 1000,
+      },
+      entries: [
+        { entry_id: "e1", ts: 1, kind: "step_dispatched", ref: { step_id: "st_1", capability: "git.collect_diagnostics", objective: "查一下日志", input: {} }, narrative: "n" },
+        { entry_id: "e2", ts: 2, kind: "step_status", ref: { step_id: "st_1", state: "COMPLETED" }, narrative: "n" },
+      ],
+      final_result: { resolution_summary: "好了" },
+    };
+    const client = fakeClient({
+      records: async () => ({
+        records: [
+          {
+            recordId: "rec_9",
+            workflowId: "wf_9",
+            summary: pastRecord.summary,
+          },
+        ],
+        nextCursor: null,
+      }),
+      record: async (id) => {
+        fetched.push(id);
+        return pastRecord;
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+
+    // The list shows the past run, and opening it reconstructs the transcript.
+    expect(await screen.findByText("查一下日志")).toBeTruthy();
+    expect(screen.getByText(/Record: rec_9/)).toBeTruthy();
+    expect(fetched).toEqual(["rec_9"]);
+  });
+
+  it("keeps a live run in the list once, even when a Record already exists for it", async () => {
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => { push = l; return () => undefined; },
+      records: async () => ({
+        records: [
+          {
+            recordId: "rec_1",
+            workflowId: "wf_1",
+            summary: { problem_short: "跑一下", terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+          },
+        ],
+        nextCursor: null,
+      }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "跑一下" } });
+      pushUi(push, {
+        id: 2,
+        type: "step.dispatched",
+        workflowId: "wf_1",
+        stepId: "st_1",
+        capability: "git.collect_diagnostics",
+        objective: "做",
+        input: {},
+        requiresConfirmation: false,
+      });
+    });
+
+    expect(screen.getAllByRole("button", { name: /跑一下/ })).toHaveLength(1);
+    expect(screen.getByText("进行中")).toBeTruthy();
+    expect((screen.getByPlaceholderText(/请求/) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("shows an error instead of a blank list when records fail", async () => {
+    const client = fakeClient({
+      records: async () => {
+        throw new Error("bad_token: no session");
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/bad_token/)).toBeTruthy();
+  });
+
+  it("says there are no conversations yet", async () => {
+    const client = fakeClient();
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    expect(await screen.findByText(/还没有对话/)).toBeTruthy();
   });
 });

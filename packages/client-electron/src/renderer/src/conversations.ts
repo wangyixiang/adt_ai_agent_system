@@ -1,9 +1,11 @@
 /**
- * The left list's model: the runs this session knows (live, from the projection)
- * merged with the user's finished Records (history, from the Server). Pure, so
- * the de-dup and ordering are testable without a UI.
+ * The left list's model: the runs this session knows (live, from the derived
+ * transcript — which already merges the snapshot and the event stream) merged
+ * with the user's finished Records (history, from the Server). Pure, so the
+ * de-dup and ordering are testable without a UI.
  */
-import type { UiRecordListEntry, UiSnapshot } from "../../shared/contract";
+import type { UiRecordListEntry } from "../../shared/contract";
+import type { TranscriptItem } from "./transcript";
 
 export interface UiConversation {
   workflowId: string;
@@ -13,28 +15,42 @@ export interface UiConversation {
   live: boolean;
 }
 
+interface LiveInfo {
+  title: string;
+  state: UiConversation["state"];
+}
+
 export function conversations(
-  snapshot: UiSnapshot,
+  items: TranscriptItem[],
   records: UiRecordListEntry[],
 ): UiConversation[] {
-  const liveIds = new Set(snapshot.workflows.map((workflow) => workflow.workflowId));
+  // Live runs come from the transcript, not the snapshot: a run started since
+  // the snapshot was fetched exists only in the event stream.
+  const live = new Map<string, LiveInfo>();
+  for (const item of items) {
+    if (item.kind === "notice") continue;
+    const info: LiveInfo = live.get(item.workflowId) ?? { title: "", state: "running" };
+    if (item.kind === "user") info.title = item.text;
+    if (item.kind === "summary") info.state = item.terminalState;
+    live.set(item.workflowId, info);
+  }
+
+  const liveIds = new Set(live.keys());
   const byWorkflow = new Map(records.map((record) => [record.workflowId, record]));
 
   const running: UiConversation[] = [];
   const finished: UiConversation[] = [];
 
-  // Live first: a run this session still holds (even after it terminated but
-  // before the Record is fetched) must not vanish from the list.
-  for (const workflow of snapshot.workflows) {
-    const record = byWorkflow.get(workflow.workflowId);
+  for (const [workflowId, info] of live) {
+    const record = byWorkflow.get(workflowId);
     const conversation: UiConversation = {
-      workflowId: workflow.workflowId,
+      workflowId,
       recordId: record?.recordId ?? null,
-      title: workflow.userRequest.text !== "" ? workflow.userRequest.text : (record?.summary.problem_short ?? "（未命名）"),
-      state: workflow.terminalState ?? "running",
+      title: info.title !== "" ? info.title : (record?.summary.problem_short ?? "（未命名）"),
+      state: info.state,
       live: true,
     };
-    if (workflow.terminalState === null) running.push(conversation);
+    if (info.state === "running") running.push(conversation);
     else finished.push(conversation);
   }
 

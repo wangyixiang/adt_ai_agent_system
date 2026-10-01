@@ -33,10 +33,11 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
   );
 
   if (ask === null) {
+    // A reconstructed past decision: only the outcome is recorded, not the card.
     return (
-      <article className="ask-card" data-ask-kind={item.askKind ?? "unknown"}>
+      <article className="ask-card" data-ask-kind={item.askKind ?? "unknown"} data-answered={item.answered}>
         {header}
-        <p className="hint">这个问题缺少内容，无法在此回答。</p>
+        {item.answered ? <p className="answer">{item.text}</p> : <p className="hint">{item.text}</p>}
       </article>
     );
   }
