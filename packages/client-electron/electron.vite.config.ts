@@ -19,6 +19,13 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin({ exclude: workspaceTs })],
+    build: {
+      rollupOptions: {
+        // Electron loads an ESM preload only with `sandbox: false`; keep the
+        // security default (sandbox on) by emitting a CommonJS preload.
+        output: { format: "cjs", entryFileNames: "[name].cjs" },
+      },
+    },
   },
   renderer: {
     plugins: [react()],

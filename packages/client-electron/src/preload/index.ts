@@ -1,3 +1,36 @@
-// The preload bridge is filled in Task 2 (`contextBridge`). For now it is a
-// valid, empty preload so the build has a target.
-export {};
+import { contextBridge, ipcRenderer } from "electron";
+
+import type { AdtBridge, MainEvent, RendererRequest, UiSnapshot } from "../shared/contract";
+import { IPC } from "../shared/contract";
+
+/**
+ * The whole surface the renderer gets: a narrow set of methods, nothing else.
+ * No Node, no daemon, no Server protocol — every call is one IPC request.
+ */
+const bridge: AdtBridge = {
+  snapshot: () =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "snapshot" } satisfies RendererRequest) as Promise<UiSnapshot>,
+
+  login: (username, secret) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "login",
+      username,
+      secret,
+    } satisfies RendererRequest) as Promise<void>,
+
+  submit: (text) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "submit", text } satisfies RendererRequest) as Promise<string>,
+
+  answer: (askId, answer) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "answer", askId, answer } satisfies RendererRequest) as Promise<void>,
+
+  onEvent: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, event: MainEvent): void => listener(event);
+    ipcRenderer.on(IPC.event, handler);
+    return () => {
+      ipcRenderer.off(IPC.event, handler);
+    };
+  },
+};
+
+contextBridge.exposeInMainWorld("adt", bridge);

@@ -1,17 +1,52 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openLedger } from "@adt/client-daemon";
 
+import type { RendererRequest, UiSnapshot } from "../shared/contract";
+import { IPC } from "../shared/contract";
+import { createBridge, type Bridge } from "./core/bridge";
+
 const isSmoke = process.argv.includes("--smoke");
+
+const EMPTY_SNAPSHOT: UiSnapshot = {
+  connection: "disconnected",
+  userId: null,
+  capabilities: [],
+  workflows: [],
+};
+
+/**
+ * The main-process bridge. It is wired to the real in-process daemon session in
+ * a later task; here it only proves the channel: it answers with an empty
+ * snapshot and refuses commands, so the renderer never sees a half-built session.
+ */
+function createMainBridge(): Bridge {
+  return createBridge({
+    snapshot: () => EMPTY_SNAPSHOT,
+    login: async () => {
+      throw new Error("login is not wired yet");
+    },
+    submit: async () => {
+      throw new Error("submit is not wired yet");
+    },
+    answer: () => {
+      throw new Error("answer is not wired yet");
+    },
+    emit: (event) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC.event, event);
+      }
+    },
+  });
+}
 
 /**
  * Proof that `node:sqlite` (through the daemon's ledger) runs inside Electron's
- * own Node — the one dependency ADR-004's `node:sqlite` choice rests on when the
- * Client becomes a single Electron process (ADR-006). Prints the versions so the
- * floor is recorded, then exits.
+ * own Node — the dependency ADR-006's Client form rests on. Prints the versions
+ * so the floor is recorded, then exits.
  */
 function runSmoke(): number {
   const location = join(tmpdir(), `adt-ledger-smoke-${Date.now()}.db`);
@@ -31,7 +66,11 @@ async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     width: 1024,
     height: 720,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      preload: fileURLToPath(new URL("../preload/index.cjs", import.meta.url)),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devServerUrl !== undefined) {
@@ -40,6 +79,9 @@ async function createWindow(): Promise<void> {
     await window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)));
   }
 }
+
+const bridge = createMainBridge();
+ipcMain.handle(IPC.invoke, (_event, request: RendererRequest) => bridge.handle(request));
 
 app
   .whenReady()
