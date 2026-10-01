@@ -1,6 +1,6 @@
 # WORKFLOW.md — 本仓库的阶段推进约定
 
-> 这不是规格，而是**我们实际怎么推进这个项目**的记录（P1–P4c 一路这么做）。新会话或新 agent 先读它，可以不必把已经付出过代价的教训再买一遍。
+> 这不是规格，而是**我们实际怎么推进这个项目**的记录。新会话或新 agent 先读它，可以不必把已经付出过代价的教训再买一遍。
 
 ## 1. 一阶段一份计划
 
@@ -42,16 +42,25 @@
 
 ## 6. 合并与提交纪律
 
-- 验收后**本地 `ff-merge` 到 `master` 并删除分支**；**不 push**，除非人明确要求（本地一直领先远端）。
-- 一个任务一个提交；合并后的零散小修（换行符、deferred minors）可直接提交到 `master`。
+- 验收后**本地 `ff-merge` 到 `master` 并删除分支**；
+- **不 push**，除非人明确要求（本地一直领先远端）。
+- 一个任务一个提交；合并后的零散小修（换行符、deferred minors）可直接提交。
 - `.superpowers/` 与 `docs/superpowers/handoffs/` 是本地工作产物（已 gitignore），不推。
 
 ## 7. 验证口径
 
-- 改代码必须跑：`pnpm -r --if-present test` 与 `pnpm -r --if-present typecheck`（四个包）。
+- 改代码必须跑：`pnpm -r --if-present test` 与 `pnpm -r --if-present typecheck`（**全部 package**；`--if-present` 已排除没有该脚本的）。
 - **两个 package 的测试不能并行跑**：它们共享 `adt_test` 且会 `TRUNCATE`，并行会互相打架。
 - Postgres 由 `docker compose` 提供（`localhost:55432`）。Docker 掉线时表现为测试挂住（P4c 遇到过），**先确认 `docker compose ps` 健康再下"失败"的结论**。
+- **各产品线自己的"出口"在它自己的计划里写明**。例如桌面产品线的出口是"`client-electron` 能**打包并启动**"（打包冒烟）；用了原生模块则需 `@electron/rebuild`。
 
 ## 8. 延后项
 
 - 延后项写在对应计划的「移交后续计划的待办」与阶段 handoff 里；跨阶段的开放项（例如"时间预算护栏的单调钟""客户端与服务端超时同值"）按阶段记录，接手时先扫一遍。
+
+## 9. ADR（架构决策）
+
+- `docs/adr/ADR-NNN-*.md` 记录**不可轻易更改的架构决策**；**正文不改**。
+- 推翻某条决定：写一份**新 ADR 取代它**，并在被取代的 ADR 头部加一行"被取代"指向新 ADR（**不在旧正文里改决定**）。
+- `Status` 走 **`PROPOSED`（评审中）→ `ACCEPTED`**；未 `ACCEPTED` 的 ADR 不作为实现依据。
+- ADR 落地后照 §1 写实现计划（计划里写明它依据哪份 ADR）。
