@@ -1,6 +1,6 @@
 {
   "name": "@adt/client-electron",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "icon": "node scripts/make-placeholder-icon.mjs",
     "smoke": "electron . --smoke",
     "pack": "electron-vite build && electron-builder",
     "test": "vitest run --passWithNoTests",
