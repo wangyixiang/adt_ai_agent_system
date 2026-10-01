@@ -313,3 +313,26 @@ test("a fresh install asks for the server address first", async () => {
 **4. Review Focus：** 五条都落到测试——首启门（T3 第 1 例 + T4）、优先级（T1 第 1/2/3 例）、保存即生效（T2 bridge 例 + T3 第 2 例）、改地址重建（T2 实现：先关旧再建新；T3 保存后回到登录）、工作区可选（T3 第 1 例只填地址也应可保存——实现里 `workspaceRoot` 为空即不再必填）。
 
 **5. Proportion：** 计划只钉接口、优先级与断言；组件长相与文案留给实现。
+
+---
+
+## 评审裁决表（整分支评审）
+
+评审：`opencode-go/deepseek-v4.1-flash`，范围 `e81d218..c4d0a55`（5 提交）。结论 **With fixes**（**0 Critical / 5 Important / 若干 Minor**）。一轮修复（提交 `6e6c042`）后全绿：整仓 `pnpm -r --if-present test` exit 0（`client-electron` 131/131）、`typecheck` exit 0、桌面冒烟 **3/3**。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **I1（重要）** `config_set` 失败被**静默吞掉**：`setError` 设了，但设置页分支下**没有任何地方渲染 `error`**——点"保存"后毫无反应 | **已修** | `Settings` 增 `error?: string|null` 并渲染 `role="alert"`；`app.tsx` 把 `error` 传下去；新增 `Settings.test.tsx`「shows a save error」 |
+| **I2（重要）** `configGet` 失败时**永久停在"加载中…"**（`config===null` 分支不显示错误、无重试） | **已修** | `config===null` 分支改为：有 `error` 就显示 `role="alert"`，否则才是 loading；新增 `app.test.tsx`「says so when the config cannot be loaded」 |
+| **I3（重要）** **重存未变的配置也会重建 session**，把正在跑的诊断**静默中断并登出**（与"退出前会二次确认"不一致） | **已修** | `main/index.ts`：`sameConfig` → **原样返回、不重建**；地址**确有变化且 `session.isRunning()`** 时先 `dialog` 二次确认（取消则不动）；新增 `config.test.ts` 的 `sameConfig` 用例 |
+| **I4（重要）** spec §5 要求"地址需通过基本格式校验"，实现只查非空 | **已修** | `Settings` 用 `isValidServerUrl`（`ws://`/`wss://`）校验：地址非法时**禁用保存**并给出提示；新增 `Settings.test.tsx`「refuses a non-ws address」 |
+| **I5（重要）** Review Focus #3（"重建的 session 用的是**新地址**"）**没有真测试**（e2e 只断言登录页出现，那只取决于 `configured`） | **已修** | 冒烟的首启用例在保存后**真的 `login(page)` 并断言进入 app**——若仍连默认地址，登录会失败 |
+| **M6** `writeConfig` 不建父目录 | **已修** | `mkdirSync(dirname(path), { recursive: true })`；新增用例（写嵌套路径） |
+| **M9** 重开设置页仍显示"第一次使用…" | **已修** | 该提示仅在 `onCancel === undefined`（即首启）时显示 |
+| **M7** 没有"旧 session 被关"的测试 | **已记录** | 关闭在建新之前由 `main/index.ts` 保证；I3 的 no-op/确认与 I5 的登录 e2e 已覆盖主要风险面，单独断言需给 main 抽测试缝 |
+| **M8** 未存 `workspaceRoot` 时，设置页把它**预填成 cwd**，一保存就被固化成显式工作区 | **延后** | 行为仍正确（用户看到的就是生效值）；要区分"未存"需 `UiConfig` 带标志。触发条件：用户打开设置页只为看一眼又保存 |
+| **M10** `AppConfig` 与 `UiConfig` 结构重复 | **已记录** | 分属 main 与 shared 两层（避免 shared 依赖 main）；形状一致由本文件的类型一致性检查守住 |
+
+**评审"Declined to judge"各行：维持**——NSIS 打包（§6）、`DEPLOY.md`（§7）、Server 侧（§4，已在 `master`）、无缝改地址、多配置档/证书、TLS/签名/自动更新、`client-daemon` 改动、`config.json` 版本迁移——均在本切片范围之外或由 spec 有意排除。另：**`configured = 存在 env 也算已配置`** 这一解释已由计划显式裁定（保持 dev 与既有冒烟可用），在此**确认生效**。
+
+**RED 证据（如实）**：I1/I2/I4（设置页错误、加载失败、URL 校验）为**先写出的回归测试**（先红后绿）；I3/I5/M6/M9 为评审指出后修复，并补了 `sameConfig`、父目录、提示条件与 e2e 登录的断言。
