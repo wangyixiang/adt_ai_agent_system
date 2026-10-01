@@ -119,6 +119,21 @@ pnpm -C packages/client-cli start -- --user alice --url ws://127.0.0.1:8080/ws
 
 **安全语义**：确认**绝不默认同意**——解析不出的回答会**重问**，`EOF`（管道结束、没人在键盘前）一律落到**安全默认**（拒绝副作用、资源冲突停下、完成候选不算已解决）。幂等台账与会话默认落在 `.adt/client-cli/`（文件后端），这样断线才能 `resume` 而不重复执行物理动作。
 
+### 单体桌面客户端（`client-electron`，`ADR-006`）
+
+`packages/client-electron` 是**单体 Electron 应用**：**daemon 跑在 Electron 的 main 进程里**（`ClientDaemon.connect`，与 `client-cli` 同一套库），界面是 renderer，两者之间只走 **preload 的 `contextBridge` IPC**——没有独立进程、没有本地 HTTP、没有令牌/cookie。它依据 **`ADR-006`**（取代 `ADR-004` 的 Client 形态）。
+
+```bash
+pnpm -C packages/client-electron dev     # 开发（electron-vite 热更）
+pnpm -C packages/client-electron build   # 构建 out/{main,preload,renderer}
+pnpm -C packages/client-electron smoke   # 探针：Electron 里的 node:sqlite 台账
+pnpm -C packages/client-electron run pack  # 打包成单个 Windows portable exe（release/）
+```
+
+**它做什么**：登录（Server 地址是 `ADT_SERVER_URL`，默认 `ws://127.0.0.1:8080/ws`；工作区 `ADT_WORKSPACE`）→ 提交一次请求 → 看步骤卡 → **四种决策都在卡片上回答**（确认 / 手工动作 / 资源冲突 / 完成候选）→ 看到 `Record`。**关窗 = 最小化到托盘、运行继续**；只有托盘里的"退出"才真正收尾（`ADR-006` §Decision 4）。
+
+**台账 / 会话**落在 Electron 的 `userData` 目录；**`node:sqlite`** 是唯一实现（Electron 44 = Node 24，内置可用，无需原生模块）。
+
 ### KB 导出（可选，`ADR-005`）
 
 Server 通过环境变量启用"把 Record/Report 导出到第三方 Knowledge Base"的出站：

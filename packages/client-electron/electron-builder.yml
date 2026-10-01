@@ -1,0 +1,21 @@
+# A single, runnable Windows exe (ADR-006). `ws` is the only runtime dependency
+# (everything else is bundled into `out/`); `node:sqlite` is built into Electron.
+appId: com.adt.client-electron
+productName: ADT
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - portable
+  # rcedit can fail to commit on this environment ("Unable to commit changes");
+  # we do not need exe metadata/signing for the smoke, so skip both.
+  signAndEditExecutable: false
