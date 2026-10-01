@@ -27,6 +27,10 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
     login: async () => undefined,
     submit: async () => "wf_1",
     answer: async () => undefined,
+    records: async () => ({ records: [], nextCursor: null }),
+    record: async () => {
+      throw new Error("record is not used in this test");
+    },
     onEvent: () => () => undefined,
     ...overrides,
   };

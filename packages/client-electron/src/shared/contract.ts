@@ -18,7 +18,52 @@ export type RendererRequest =
   | { kind: "snapshot" }
   | { kind: "login"; username: string; secret: string }
   | { kind: "submit"; text: string }
-  | { kind: "answer"; askId: string; answer: Answer };
+  | { kind: "answer"; askId: string; answer: Answer }
+  | { kind: "records"; cursor?: string | null; pageSize?: number }
+  | { kind: "record"; id: string };
+
+/**
+ * A Record, as the UI sees it — the finished document (`RECORD_SPEC.md` §3),
+ * snake_case as stored. The renderer never imports the Server package.
+ */
+export interface UiRecordSummary {
+  problem_short: string;
+  terminal_state: string;
+  result_short: string;
+  duration_ms: number;
+}
+
+export interface UiRecordEntry {
+  entry_id: string;
+  ts: number;
+  kind: string;
+  ref: Record<string, unknown>;
+  narrative: string;
+}
+
+export interface UiRecord {
+  record_id: string;
+  workflow_id: string;
+  created_at: number;
+  ended_at: number;
+  terminal_state: string;
+  terminal_reason: string | null;
+  user_request: { text: string } & Record<string, unknown>;
+  summary: UiRecordSummary;
+  entries: UiRecordEntry[];
+  final_result: Record<string, unknown>;
+}
+
+export interface UiRecordListEntry {
+  recordId: string;
+  workflowId: string;
+  summary: UiRecordSummary;
+}
+
+export interface UiRecordList {
+  records: UiRecordListEntry[];
+  nextCursor: string | null;
+}
 
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
@@ -28,6 +73,8 @@ export interface AdtBridge {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): Promise<void>;
+  records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
+  record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;
 }
 

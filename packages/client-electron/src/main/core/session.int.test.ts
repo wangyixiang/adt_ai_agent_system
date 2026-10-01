@@ -241,4 +241,34 @@ describe("the in-process session", () => {
       await srv.close();
     }
   });
+
+  it("lists terminals past runs and returns one Record by id", async () => {
+    const f = await fixture([resetStep, done]);
+    try {
+      await f.session.submit("服务异常");
+      const asked = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "confirmation", "the confirmation");
+      f.session.answer(asked.workflows[0]!.pendingAsk!.askId, { kind: "confirmation", decision: "confirmed" });
+      const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
+      f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      const workflowId = settled.workflows[0]!.workflowId;
+      const recordId = settled.workflows[0]!.recordId!;
+
+      const list = await f.session.records();
+      const entry = list.records.find((record) => record.workflowId === workflowId);
+      expect(entry).toBeDefined();
+      expect(entry!.recordId).toBe(recordId);
+      expect(entry!.summary.terminal_state).toBe("COMPLETED");
+
+      const detail = await f.session.record(recordId);
+      expect(detail.terminal_state).toBe("COMPLETED");
+      expect(detail.workflow_id).toBe(workflowId);
+      // T1's addition: a past run's step states are recorded, not inferred.
+      expect(detail.entries.some((e) => e.kind === "step_status")).toBe(true);
+
+      await expect(f.session.record("rec_nope")).rejects.toThrow(/unknown_record/);
+    } finally {
+      await f.close();
+    }
+  });
 });

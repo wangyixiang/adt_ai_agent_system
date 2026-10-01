@@ -86,6 +86,8 @@ app
       login: (username, secret) => session.login(username, secret),
       submit: (text) => session.submit(text),
       answer: (askId, answer) => session.answer(askId, answer),
+      records: (cursor, pageSize) => session.records(cursor, pageSize),
+      record: (id) => session.record(id),
       emit: broadcast,
     });
     ipcMain.handle(IPC.invoke, (_event, request: RendererRequest) => bridge.handle(request));

@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { AdtBridge, MainEvent, RendererRequest, UiSnapshot } from "../shared/contract";
+import type {
+  AdtBridge,
+  MainEvent,
+  RendererRequest,
+  UiRecord,
+  UiRecordList,
+  UiSnapshot,
+} from "../shared/contract";
 import { IPC } from "../shared/contract";
 
 /**
@@ -23,6 +30,16 @@ const bridge: AdtBridge = {
 
   answer: (askId, answer) =>
     ipcRenderer.invoke(IPC.invoke, { kind: "answer", askId, answer } satisfies RendererRequest) as Promise<void>,
+
+  records: (cursor, pageSize) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "records",
+      cursor: cursor ?? null,
+      ...(pageSize === undefined ? {} : { pageSize }),
+    } satisfies RendererRequest) as Promise<UiRecordList>,
+
+  record: (id) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "record", id } satisfies RendererRequest) as Promise<UiRecord>,
 
   onEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, event: MainEvent): void => listener(event);

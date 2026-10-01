@@ -1,6 +1,6 @@
 import type { Answer } from "@adt/shared";
 
-import type { MainEvent, RendererRequest, UiSnapshot } from "../../shared/contract";
+import type { MainEvent, RendererRequest, UiRecord, UiRecordList, UiSnapshot } from "../../shared/contract";
 
 /**
  * The main-process side of the IPC contract. Pure logic on purpose: it takes the
@@ -12,6 +12,8 @@ export interface BridgeDeps {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): void;
+  records(cursor: string | null, pageSize?: number): Promise<UiRecordList>;
+  record(id: string): Promise<UiRecord>;
   emit(event: MainEvent): void;
 }
 
@@ -33,6 +35,10 @@ export function createBridge(deps: BridgeDeps): Bridge {
         case "answer":
           deps.answer(request.askId, request.answer);
           return undefined;
+        case "records":
+          return deps.records(request.cursor ?? null, request.pageSize);
+        case "record":
+          return deps.record(request.id);
       }
     },
   };

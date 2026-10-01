@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ClientDaemon, openLedger, openSessionStore } from "@adt/client-daemon";
 
-import type { UiEvent, UiEventInput, UiSnapshot } from "../../shared/contract";
+import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiSnapshot } from "../../shared/contract";
 import { createDecisionHost } from "./host";
 import { createProjection } from "./projection";
 
@@ -23,6 +23,10 @@ export interface Session {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, body: unknown): void;
+  /** List this user's finished Records (the Server filters by owner). */
+  records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
+  /** One finished Record, by id. */
+  record(id: string): Promise<UiRecord>;
   /** Is any workflow still live (not terminated)? */
   isRunning(): boolean;
   close(): Promise<void>;
@@ -122,6 +126,36 @@ export function createSession(options: SessionOptions): Session {
       if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`);
       const event = projection.noteAnswered(askId, outcome.answer);
       if (event !== null) emitUi(event);
+    },
+
+    async records(cursor = null, pageSize = 100) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const payload = (await daemon.connection.request(
+        "record.list_request",
+        { filters: {}, cursor, page_size: pageSize },
+        "record.list_response",
+      )) as {
+        records?: Array<{ record_id: string; workflow_id: string; summary: UiRecordSummary }>;
+        next_cursor?: string | null;
+      };
+      return {
+        records: (payload.records ?? []).map((row) => ({
+          recordId: row.record_id,
+          workflowId: row.workflow_id,
+          summary: row.summary,
+        })),
+        nextCursor: payload.next_cursor ?? null,
+      };
+    },
+
+    async record(id) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const payload = (await daemon.connection.request(
+        "record.get_request",
+        { record_id: id },
+        "record.get_response",
+      )) as { record: UiRecord };
+      return payload.record;
     },
 
     async close() {
