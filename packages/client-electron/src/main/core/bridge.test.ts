@@ -25,6 +25,8 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     report: async () => ({ ok: true, markdown: "" }),
     export: async () => ({ ok: true, errorCode: null, message: null }),
     saveText: async () => ({ saved: false }),
+    blobPreview: async () => ({ kind: "binary", mediaType: "application/octet-stream", size: 0 }),
+    blobSave: async () => ({ saved: false }),
     emit: () => undefined,
     ...overrides,
   };
@@ -117,6 +119,17 @@ describe("the main bridge", () => {
     const bridge = createBridge(deps({ saveText: async () => ({ saved: false }) }));
     expect(await bridge.handle({ kind: "save_text", suggestedName: "r.md", content: "x" })).toEqual({
       saved: false,
+    });
+  });
+
+  it("routes a blob_preview to the session", async () => {
+    const bridge = createBridge(
+      deps({ blobPreview: async () => ({ kind: "text", mediaType: "text/plain", text: "x" }) }),
+    );
+    expect(await bridge.handle({ kind: "blob_preview", contentRef: "blob_1", mediaType: "text/plain" })).toEqual({
+      kind: "text",
+      mediaType: "text/plain",
+      text: "x",
     });
   });
 });

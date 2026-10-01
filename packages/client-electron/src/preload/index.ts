@@ -5,6 +5,7 @@ import type {
   IncomingAttachment,
   MainEvent,
   RendererRequest,
+  UiBlobPreview,
   UiExportResult,
   UiRecord,
   UiRecordList,
@@ -57,6 +58,17 @@ const bridge: AdtBridge = {
       kind: "save_text",
       suggestedName,
       content,
+    } satisfies RendererRequest) as Promise<UiSaveResult>,
+
+  blobPreview: (contentRef, mediaType) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "blob_preview", contentRef, mediaType } satisfies RendererRequest) as Promise<UiBlobPreview>,
+
+  blobSave: (contentRef, mediaType, suggestedName) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "blob_save",
+      contentRef,
+      mediaType,
+      ...(suggestedName === undefined ? {} : { suggestedName }),
     } satisfies RendererRequest) as Promise<UiSaveResult>,
 
   records: (cursor, pageSize) =>

@@ -8,7 +8,7 @@ import { openLedger } from "@adt/client-daemon";
 import type { MainEvent, RendererRequest } from "../shared/contract";
 import { IPC } from "../shared/contract";
 import { createBridge } from "./core/bridge";
-import { writeTextFile } from "./core/save";
+import { writeBytesFile, writeTextFile } from "./core/save";
 import { createSession, type Session } from "./core/session";
 import { createLifecycle } from "./lifecycle";
 import { createTray } from "./tray";
@@ -94,6 +94,16 @@ app
         const { canceled, filePath } = await dialog.showSaveDialog(window, { defaultPath: suggestedName });
         if (canceled || filePath === undefined) return { saved: false };
         await writeTextFile(filePath, content);
+        return { saved: true, path: filePath };
+      },
+      blobPreview: (contentRef, mediaType) => session.blobPreview(contentRef, mediaType),
+      blobSave: async (contentRef, mediaType, suggestedName) => {
+        const bytes = await session.blobBytes(contentRef);
+        const { canceled, filePath } = await dialog.showSaveDialog(window, {
+          defaultPath: suggestedName ?? "attachment",
+        });
+        if (canceled || filePath === undefined) return { saved: false };
+        await writeBytesFile(filePath, bytes);
         return { saved: true, path: filePath };
       },
       records: (cursor, pageSize) => session.records(cursor, pageSize),

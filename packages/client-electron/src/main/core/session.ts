@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { ClientDaemon, openLedger, openSessionStore, uploadBlob } from "@adt/client-daemon";
+import { ClientDaemon, downloadBlob, openLedger, openSessionStore, uploadBlob } from "@adt/client-daemon";
 
-import type { UiAttachment, UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot, IncomingAttachment } from "../../shared/contract";
+import type { UiAttachment, UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot, UiBlobPreview, IncomingAttachment } from "../../shared/contract";
 import { checkAttachments, normalizeMediaType, planAttachment } from "./attachments";
+import { classifyBlob } from "./blobs";
 import { createDecisionHost } from "./host";
 import { createProjection } from "./projection";
 
@@ -30,6 +31,10 @@ export interface Session {
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   /** Ask the Server to export a Record/Report to the configured KB (ADR-005). */
   export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
+  /** Fetch a blob and decide how to show it (already sha256-verified). */
+  blobPreview(contentRef: string, mediaType: string): Promise<UiBlobPreview>;
+  /** Fetch a blob's raw bytes, e.g. for a save dialog. */
+  blobBytes(contentRef: string): Promise<Uint8Array>;
   /** List this user's finished Records (the Server filters by owner). */
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   /** One finished Record, by id. */
@@ -213,6 +218,17 @@ export function createSession(options: SessionOptions): Session {
         errorCode: typeof result.error_code === "string" ? result.error_code : null,
         message: typeof result.message === "string" ? result.message : null,
       };
+    },
+
+    async blobPreview(contentRef, mediaType) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const bytes = await downloadBlob({ connection: daemon.connection }, contentRef);
+      return classifyBlob(bytes, mediaType);
+    },
+
+    async blobBytes(contentRef) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      return downloadBlob({ connection: daemon.connection }, contentRef);
     },
 
     async records(cursor = null, pageSize = 100) {

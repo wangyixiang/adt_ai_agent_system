@@ -1,6 +1,6 @@
 import type { Answer } from "@adt/shared";
 
-import type { IncomingAttachment, MainEvent, RendererRequest, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
+import type { IncomingAttachment, MainEvent, RendererRequest, UiBlobPreview, UiExportResult, UiRecord, UiRecordList, UiReport, UiSaveResult, UiSnapshot } from "../../shared/contract";
 
 /**
  * The main-process side of the IPC contract. Pure logic on purpose: it takes the
@@ -16,6 +16,8 @@ export interface BridgeDeps {
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
   saveText(suggestedName: string, content: string): Promise<UiSaveResult>;
+  blobPreview(contentRef: string, mediaType: string): Promise<UiBlobPreview>;
+  blobSave(contentRef: string, mediaType: string, suggestedName?: string): Promise<UiSaveResult>;
   records(cursor: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   emit(event: MainEvent): void;
@@ -48,6 +50,10 @@ export function createBridge(deps: BridgeDeps): Bridge {
           return deps.export(request.recordId, request.object);
         case "save_text":
           return deps.saveText(request.suggestedName, request.content);
+        case "blob_preview":
+          return deps.blobPreview(request.contentRef, request.mediaType);
+        case "blob_save":
+          return deps.blobSave(request.contentRef, request.mediaType, request.suggestedName);
         case "records":
           return deps.records(request.cursor ?? null, request.pageSize);
         case "record":

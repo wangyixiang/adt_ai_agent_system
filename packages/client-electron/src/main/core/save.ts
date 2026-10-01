@@ -8,3 +8,8 @@ import { writeFile } from "node:fs/promises";
 export async function writeTextFile(path: string, content: string): Promise<void> {
   await writeFile(path, content, "utf8");
 }
+
+/** Writes raw bytes (a fetched blob) to a user-chosen path. */
+export async function writeBytesFile(path: string, bytes: Uint8Array): Promise<void> {
+  await writeFile(path, bytes);
+}

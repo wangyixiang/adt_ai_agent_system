@@ -31,6 +31,8 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
     report: async () => ({ ok: true, markdown: "" }),
     export: async () => ({ ok: true, errorCode: null, message: null }),
     saveText: async () => ({ saved: true, path: "x.md" }),
+    blobPreview: async () => ({ kind: "binary", mediaType: "application/octet-stream", size: 0 }),
+    blobSave: async () => ({ saved: true, path: "x.bin" }),
     records: async () => ({ records: [], nextCursor: null }),
     record: async () => {
       throw new Error("record is not used in this test");

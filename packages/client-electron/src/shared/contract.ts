@@ -23,6 +23,8 @@ export type RendererRequest =
   | { kind: "report"; recordId: string; detailLevel?: "summary" | "full" }
   | { kind: "export"; recordId: string; object: "record" | "report" }
   | { kind: "save_text"; suggestedName: string; content: string }
+  | { kind: "blob_preview"; contentRef: string; mediaType: string }
+  | { kind: "blob_save"; contentRef: string; mediaType: string; suggestedName?: string }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -106,6 +108,12 @@ export type UiAttachment = { name: string; media_type: string; size: number; sha
   | { mode: "blob"; content_ref: string }
 );
 
+/** How a blob's bytes can be shown: text, an image data-URL, or "offer a save". */
+export type UiBlobPreview =
+  | { kind: "text"; mediaType: string; text: string }
+  | { kind: "image"; mediaType: string; dataUrl: string }
+  | { kind: "binary"; mediaType: string; size: number };
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
@@ -118,6 +126,8 @@ export interface AdtBridge {
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
   saveText(suggestedName: string, content: string): Promise<UiSaveResult>;
+  blobPreview(contentRef: string, mediaType: string): Promise<UiBlobPreview>;
+  blobSave(contentRef: string, mediaType: string, suggestedName?: string): Promise<UiSaveResult>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;
