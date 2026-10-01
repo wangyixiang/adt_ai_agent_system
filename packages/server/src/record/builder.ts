@@ -30,6 +30,8 @@ export function renderNarrative(kind: RecordEntryKind, ref: Record<string, unkno
   switch (kind) {
     case "step_dispatched":
       return `下发了 ${String(ref.capability)}：${String(ref.objective)}。`;
+    case "step_status":
+      return `步骤 ${String(ref.step_id)} 进入终态 ${String(ref.state)}。`;
     case "evidence_received": {
       const evidence = ref.evidence as { source?: string; type?: string } | undefined;
       return `获得了 ${String(evidence?.type)} 证据（来源 ${String(evidence?.source)}）。`;
@@ -78,17 +80,20 @@ const TERMINAL_REASON_LABELS: Record<string, string> = {
 const terminalReasonText = (reason: string | null): string =>
   reason === null ? "未知原因" : (TERMINAL_REASON_LABELS[reason] ?? reason);
 
+const TERMINAL_STEP_STATES = new Set(["COMPLETED", "FAILED", "REJECTED", "UNKNOWN"]);
+
+/** One event can yield more than one entry (a derived one + the raw terminal state). */
 function toEntry(
   event: WorkflowEvent,
   stepsById: Map<string, StepSnapshot>,
-): RecordEntry | null {
+): RecordEntry[] {
   const payload = asPayload(event);
   const base = { entry_id: event.id, ts: event.ts };
 
   switch (event.kind) {
     case "step_dispatched": {
       const stepId = payload.stepId;
-      if (typeof stepId !== "string") return null; // the "starting" marker
+      if (typeof stepId !== "string") return []; // the "starting" marker
       const step = stepsById.get(stepId);
       const ref = {
         step_id: stepId,
@@ -96,11 +101,15 @@ function toEntry(
         objective: step?.objective ?? null,
         input: payload.input ?? {},
       };
-      return { ...base, kind: "step_dispatched", ref, narrative: renderNarrative("step_dispatched", ref) };
+      return [{ ...base, kind: "step_dispatched", ref, narrative: renderNarrative("step_dispatched", ref) }];
     }
     case "step_status": {
       const stepId = payload.stepId;
-      if (typeof stepId !== "string") return null;
+      if (typeof stepId !== "string") return [];
+
+      // The derived entry keeps the detail; the raw terminal state is appended
+      // separately so a UI can read a step's final state instead of inferring it.
+      let derived: RecordEntry | null = null;
 
       if (payload.reconciled === true) {
         const ref = {
@@ -108,85 +117,86 @@ function toEntry(
           resolved_to: payload.state,
           evidence_refs: (payload.evidenceRefs as string[] | undefined) ?? [],
         };
-        return { ...base, kind: "reconciliation_resolved", ref, narrative: renderNarrative("reconciliation_resolved", ref) };
-      }
-
-      if (payload.state === "UNKNOWN") {
+        derived = { ...base, kind: "reconciliation_resolved", ref, narrative: renderNarrative("reconciliation_resolved", ref) };
+      } else if (payload.state === "UNKNOWN") {
         const step = stepsById.get(stepId);
         const ref = {
           step_id: stepId,
           capability: step?.capability ?? null,
           idempotency_key: step?.idempotencyKey ?? null,
         };
-        return { ...base, kind: "step_outcome_unknown", ref, narrative: renderNarrative("step_outcome_unknown", ref) };
-      }
-
-      // A rejection is a decision that happened. Only `user_declined` is a
-      // human decision; other reject reasons get their own, non-human entry.
-      if (payload.state === "REJECTED") {
+        derived = { ...base, kind: "step_outcome_unknown", ref, narrative: renderNarrative("step_outcome_unknown", ref) };
+      } else if (payload.state === "REJECTED") {
+        // A rejection is a decision that happened. Only `user_declined` is a
+        // human decision; other reject reasons get their own, non-human entry.
         const rejectReason = payload.rejectReason as { code?: unknown } | undefined;
         const code = typeof rejectReason?.code === "string" ? rejectReason.code : "user_declined";
         if (code === "user_declined") {
           const ref = { step_id: stepId, decision: "declined" };
-          return { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
+          derived = { ...base, kind: "user_confirmation", ref, narrative: renderNarrative("user_confirmation", ref) };
+        } else {
+          const step = stepsById.get(stepId);
+          const ref = {
+            step_id: stepId,
+            capability: step?.capability ?? null,
+            reject_reason: payload.rejectReason ?? null,
+          };
+          derived = { ...base, kind: "step_rejected", ref, narrative: renderNarrative("step_rejected", ref) };
         }
-        const step = stepsById.get(stepId);
-        const ref = {
-          step_id: stepId,
-          capability: step?.capability ?? null,
-          reject_reason: payload.rejectReason ?? null,
-        };
-        return { ...base, kind: "step_rejected", ref, narrative: renderNarrative("step_rejected", ref) };
+      } else {
+        // Engineer-supplied evidence is a `user_input`, not a Capability result
+        // (RECORD_SPEC.md §4; WORKFLOW_SPEC.md §6.1 advisory path).
+        const evidence = payload.evidence as { source?: unknown; result?: unknown } | undefined;
+        if (
+          (payload.state === "COMPLETED" || payload.state === "FAILED") &&
+          evidence?.source === "user_input"
+        ) {
+          const ref = { step_id: stepId, content: evidence.result ?? null };
+          derived = { ...base, kind: "user_input", ref, narrative: renderNarrative("user_input", ref) };
+        } else if (
+          (payload.state === "COMPLETED" || payload.state === "FAILED") &&
+          payload.evidence !== undefined &&
+          payload.evidence !== null
+        ) {
+          const ref = {
+            step_id: stepId,
+            evidence: payload.evidence,
+            ...(payload.failReason === undefined ? {} : { fail_reason: payload.failReason }),
+          };
+          derived = { ...base, kind: "evidence_received", ref, narrative: renderNarrative("evidence_received", ref) };
+        }
       }
 
-      // Engineer-supplied evidence is a `user_input`, not a Capability result
-      // (RECORD_SPEC.md §4; WORKFLOW_SPEC.md §6.1 advisory path).
-      const evidence = payload.evidence as { source?: unknown; result?: unknown } | undefined;
-      if (
-        (payload.state === "COMPLETED" || payload.state === "FAILED") &&
-        evidence?.source === "user_input"
-      ) {
-        const ref = { step_id: stepId, content: evidence.result ?? null };
-        return { ...base, kind: "user_input", ref, narrative: renderNarrative("user_input", ref) };
+      const entries: RecordEntry[] = [];
+      if (derived !== null) entries.push(derived);
+      if (TERMINAL_STEP_STATES.has(String(payload.state))) {
+        const ref = { step_id: stepId, state: payload.state };
+        entries.push({ ...base, kind: "step_status", ref, narrative: renderNarrative("step_status", ref) });
       }
-
-      if (
-        (payload.state === "COMPLETED" || payload.state === "FAILED") &&
-        payload.evidence !== undefined &&
-        payload.evidence !== null
-      ) {
-        const ref = {
-          step_id: stepId,
-          evidence: payload.evidence,
-          ...(payload.failReason === undefined ? {} : { fail_reason: payload.failReason }),
-        };
-        return { ...base, kind: "evidence_received", ref, narrative: renderNarrative("evidence_received", ref) };
-      }
-
-      return null;
+      return entries;
     }
     case "completion_response": {
       const ref = { resolution: payload.resolution, feedback: payload.feedback ?? null };
-      return { ...base, kind: "completion_response", ref, narrative: renderNarrative("completion_response", ref) };
+      return [{ ...base, kind: "completion_response", ref, narrative: renderNarrative("completion_response", ref) }];
     }
     case "cancel_requested": {
       const ref = { reason: payload.reason ?? null };
-      return { ...base, kind: "cancellation_requested", ref, narrative: renderNarrative("cancellation_requested", ref) };
+      return [{ ...base, kind: "cancellation_requested", ref, narrative: renderNarrative("cancellation_requested", ref) }];
     }
     case "completion_candidate": {
       const ref = {
         summary: payload.summary ?? null,
         evidence_refs: payload.evidenceRefs ?? [],
       };
-      return { ...base, kind: "completion_candidate", ref, narrative: renderNarrative("completion_candidate", ref) };
+      return [{ ...base, kind: "completion_candidate", ref, narrative: renderNarrative("completion_candidate", ref) }];
     }
     case "guardrail_triggered": {
       const ref = { guardrail: payload.reason, threshold: payload.threshold ?? null };
-      return { ...base, kind: "guardrail_triggered", ref, narrative: renderNarrative("guardrail_triggered", ref) };
+      return [{ ...base, kind: "guardrail_triggered", ref, narrative: renderNarrative("guardrail_triggered", ref) }];
     }
     default:
       // workflow_created / criteria_revised / workflow_terminated are not entries.
-      return null;
+      return [];
   }
 }
 
@@ -213,9 +223,7 @@ export function buildRecord(input: BuildRecordInput): RecordDocument {
   const { workflow, steps, events, userRequest, recordId } = input;
   const stepsById = new Map(steps.map((step) => [step.id, step]));
 
-  const entries = events
-    .map((event) => toEntry(event, stepsById))
-    .filter((entry): entry is RecordEntry => entry !== null);
+  const entries = events.flatMap((event) => toEntry(event, stepsById));
 
   const unresolved: UnresolvedSideEffect[] = steps
     .filter((step) => step.state === "UNKNOWN")

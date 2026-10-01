@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.8（新增 §6.1 时间基准：结论性时间（`created_at`/`ended_at`/`duration_ms`）是墙钟，过程性时间（entry `ts`）是单调读数、排序按条目顺序；与 `PROTOCOL_SPEC.md` v0.10 对齐，取代 v0.7）
+- **Version:** v0.9（§4 新增 `step_status` entry：记录某个 Step 进入**终态**（`COMPLETED`/`FAILED`/`REJECTED`/`UNKNOWN`）；中间态与进度保活**不记**——让"回看往期"能**读**出步骤终态，而不是从其它 entry 推断；取代 v0.8）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -117,6 +117,7 @@ Entry
 | kind | 说明 | ref 包含 |
 |---|---|---|
 | `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增） |
+| `step_status`（v0.9 新增） | 某个 Step 进入**终态**（只记 `COMPLETED`/`FAILED`/`REJECTED`/`UNKNOWN`，中间态与进度保活不记） | `step_id`, `state` |
 | `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构）, `fail_reason`（v0.6，仅当该证据被校验拒绝时，见 `WORKFLOW_SPEC.md` §2 的 `invalid_output`） |
 | `user_confirmation` | 工程师对一个有副作用的动作做了确认/拒绝（对齐 `WORKFLOW_SPEC.md` §4.2） | `step_id`, `decision`（confirmed \| declined） |
 | `step_rejected`（v0.7 新增） | 某个 Step 未被执行，但**不是**工程师的决定（例如引用了未声明能力 `capability_unavailable`） | `step_id`, `capability`, `reject_reason` |

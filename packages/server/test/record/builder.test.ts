@@ -88,6 +88,7 @@ describe("record builder", () => {
     expect(record.entries.map((e) => e.kind)).toEqual([
       "step_dispatched",
       "evidence_received",
+      "step_status",
       "completion_response",
     ]);
     expect(record.entries[1]!.ref.evidence).toEqual({
@@ -209,7 +210,7 @@ describe("record builder", () => {
       recordId: "rec_5",
     });
 
-    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "user_confirmation"]);
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "user_confirmation", "step_status"]);
     expect(record.entries[1]!.ref).toEqual({ step_id: "step_7", decision: "declined" });
   });
 
@@ -229,7 +230,7 @@ describe("record builder", () => {
       userRequest: { text: "x" },
       recordId: "rec_rej",
     });
-    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "step_rejected"]);
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "step_rejected", "step_status"]);
     expect(record.entries[1]!.ref.reject_reason).toEqual({ code: "capability_unavailable" });
   });
 
@@ -246,7 +247,7 @@ describe("record builder", () => {
       recordId: "rec_6",
     });
 
-    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched"]);
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched", "step_status"]);
   });
 
   it("records the completion candidate the system proposed", () => {
@@ -335,12 +336,12 @@ describe("record builder", () => {
       recordId: "rec_ui",
     });
 
-    expect(record.entries.map((e) => e.kind)).toEqual(["user_input", "guardrail_triggered"]);
+    expect(record.entries.map((e) => e.kind)).toEqual(["user_input", "step_status", "guardrail_triggered"]);
     expect(record.entries[0]!.ref).toEqual({
       step_id: "step_1",
       content: { outcome: "succeeded", observation: "换了电源线" },
     });
-    expect(record.entries[1]!.ref.threshold).toBe(50);
+    expect(record.entries.find((e) => e.kind === "guardrail_triggered")!.ref.threshold).toBe(50);
   });
 
   it("keeps capability evidence as evidence_received", () => {
@@ -358,7 +359,7 @@ describe("record builder", () => {
       userRequest: { text: "x" },
       recordId: "rec_cap",
     });
-    expect(record.entries.map((e) => e.kind)).toEqual(["evidence_received"]);
+    expect(record.entries.map((e) => e.kind)).toEqual(["evidence_received", "step_status"]);
   });
 
   it("explains a resource conflict in the engineer's terms", () => {    const record = buildRecord({
@@ -401,5 +402,55 @@ describe("record builder", () => {
 
     const rejected = record.entries.find((entry) => entry.kind === "step_rejected")!;
     expect(rejected.narrative).toContain("capability_unavailable");
+  });
+
+  it("records a terminal step_status next to the derived entry", () => {
+    const record = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics" }, "ev_d"),
+        ev(
+          "step_status",
+          {
+            stepId: "step_1",
+            state: "COMPLETED",
+            evidence: { source: "capability", type: "git_status", result: { branch: "main" } },
+          },
+          "ev_s",
+        ),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_ss",
+    });
+
+    // The derived entry keeps its detail; the step_status entry makes the state
+    // readable (not inferred) when the UI reconstructs a past conversation.
+    expect(record.entries.map((e) => e.kind)).toEqual([
+      "step_dispatched",
+      "evidence_received",
+      "step_status",
+    ]);
+    const status = record.entries.find((e) => e.kind === "step_status")!;
+    expect(status.ref).toEqual({ step_id: "step_1", state: "COMPLETED" });
+    expect(status.narrative.length).toBeGreaterThan(0);
+  });
+
+  it("does not record step_status for intermediate or keepalive states", () => {
+    const record = buildRecord({
+      workflow: { ...workflow, state: "RUNNING" },
+      steps: [step({ state: "RUNNING" })],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics" }, "ev_d"),
+        ev("step_status", { stepId: "step_1", state: "RUNNING" }, "ev_r"),
+        ev("step_status", { stepId: "step_1", state: "WAITING", waitClass: "confirmation" }, "ev_w"),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_ss2",
+    });
+
+    expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched"]);
   });
 });

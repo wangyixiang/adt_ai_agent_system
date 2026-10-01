@@ -3,6 +3,7 @@ import type { CompletionCriteria } from "../workflow/criteria";
 /** RECORD_SPEC.md §4 kinds. */
 export type RecordEntryKind =
   | "step_dispatched"
+  | "step_status"
   | "evidence_received"
   | "user_confirmation"
   | "step_rejected"
