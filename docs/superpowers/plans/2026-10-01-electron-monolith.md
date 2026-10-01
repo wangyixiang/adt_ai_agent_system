@@ -60,6 +60,8 @@ Run: `pnpm install && pnpm -C packages/client-electron build && pnpm -C packages
 Expected: 打印 **Electron 版本 + Node 版本**，台账 `markInFlight/markDone/get` 全通过，进程 `app.exit(0)`。
 **把这两个版本号记进计划下方（作为"Electron 最低版本"依据）**：Electron ≥ 44 / Node ≥ 24（`node:sqlite` 免开关）。
 
+> **探针结果（2026-10-01）**：`electron=44.5.0 node=24.21.0 ledger=ok` —— `node:sqlite` 在 Electron 的 Node 里可用且免开关；台账 `markInFlight/markDone/get` 全过。**最低基线定死：Electron ≥ 44（Node ≥ 24）**。
+
 - [ ] **Step 4: 提交**
 
 ```bash

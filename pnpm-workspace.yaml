@@ -3,6 +3,8 @@ packages:
 
 allowBuilds:
   esbuild: true
+  electron: true
 
 onlyBuiltDependencies:
   - esbuild
+  - electron
