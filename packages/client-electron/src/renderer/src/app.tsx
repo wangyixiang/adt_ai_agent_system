@@ -43,7 +43,7 @@ export function App({ client }: { client: AdtClient }) {
   const [selected, setSelected] = useState<string | null>(null);
   /** The open Report viewer: markdown on success, an error otherwise (never both). */
   const [report, setReport] = useState<{ markdown: string | null; error: string | null } | null>(null);
-  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   /** Records this session has generated a report for (enables exporting it). */
   const [reportReady, setReportReady] = useState<Set<string>>(new Set());
   /** The open blob viewer (an attachment or an evidence blob). */
@@ -138,7 +138,7 @@ export function App({ client }: { client: AdtClient }) {
   // An export result or an open report belongs to the conversation it came from;
   // switching conversations must not leave a stale "received" line under another.
   useEffect(() => {
-    setExportNotice(null);
+    setNotice(null);
     setReport(null);
     setBlob(null);
   }, [effectiveSelected]);
@@ -197,7 +197,14 @@ export function App({ client }: { client: AdtClient }) {
     });
   };
 
-  const selectedRecordId = selectedConversation?.recordId ?? null;
+  const selectedSummaryRecordId =
+    effectiveSelected === null
+      ? null
+      : (allItems.find(
+          (item): item is Extract<TranscriptItem, { kind: "summary" }> =>
+            item.kind === "summary" && item.workflowId === effectiveSelected,
+        )?.recordId ?? null);
+  const selectedRecordId = selectedConversation?.recordId ?? selectedSummaryRecordId;
 
   const handleGenerateReport = (detailLevel: "summary" | "full"): void => {
     if (selectedRecordId === null) return;
@@ -220,18 +227,18 @@ export function App({ client }: { client: AdtClient }) {
   const handleExport = (object: "record" | "report"): void => {
     if (selectedRecordId === null) return;
     setError(null);
-    setExportNotice(null);
+    setNotice(null);
     client
       .export(selectedRecordId, object)
       .then((result) => {
         if (result.ok) {
           // Honest: accepted by the endpoint is not the same as indexed (ADR-005 §4).
-          setExportNotice("导出：端点已接收（≠ 已被收录；是否收录由 KB 审核人员决定）");
+          setNotice("导出：端点已接收（≠ 已被收录；是否收录由 KB 审核人员决定）");
         } else if (result.errorCode === "export_unavailable") {
-          setExportNotice("导出失败：未配置 KB 端点");
+          setNotice("导出失败：未配置 KB 端点");
         } else {
           const detail = result.message === null ? "" : ` · ${result.message}`;
-          setExportNotice(`导出失败：${result.errorCode ?? "export_failed"}${detail}`);
+          setNotice(`导出失败：${result.errorCode ?? "export_failed"}${detail}`);
         }
       })
       .catch((cause: unknown) => setError(messageOf(cause)));
@@ -239,15 +246,24 @@ export function App({ client }: { client: AdtClient }) {
 
   const handleCopyReport = (): void => {
     if (report === null || report.markdown === null) return;
-    void navigator.clipboard?.writeText(report.markdown);
+    const clipboard = navigator.clipboard;
+    if (clipboard === undefined) {
+      setNotice("复制不可用，请手动选择文本");
+      return;
+    }
+    clipboard.writeText(report.markdown).then(
+      () => setNotice("已复制报告"),
+      () => setNotice("复制失败，请手动选择文本"),
+    );
   };
 
   const handleSaveReport = (): void => {
     if (report === null || report.markdown === null) return;
+    const name = selectedRecordId === null ? "report.md" : `report-${selectedRecordId}.md`;
     client
-      .saveText("report.md", report.markdown)
+      .saveText(name, report.markdown)
       .then((result) => {
-        if (result.saved) setExportNotice(`已保存报告：${result.path ?? ""}`);
+        if (result.saved) setNotice(`已保存报告：${result.path ?? ""}`);
       })
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
@@ -265,7 +281,7 @@ export function App({ client }: { client: AdtClient }) {
     client
       .blobSave(contentRef, mediaType, name)
       .then((result) => {
-        if (result.saved) setExportNotice(`已保存：${result.path ?? ""}`);
+        if (result.saved) setNotice(`已保存：${result.path ?? ""}`);
       })
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
@@ -276,7 +292,7 @@ export function App({ client }: { client: AdtClient }) {
       <main className="thread">
         <ProgressHeader items={viewItems} connection={ui.snapshot.connection} />
         {error !== null && <p role="alert">{error}</p>}
-        {exportNotice !== null && <p role="status">{exportNotice}</p>}
+        {notice !== null && <p role="status">{notice}</p>}
         {selectedConversation !== null && !selectedConversation.live && (
           <p className="past-note">往期记录</p>
         )}

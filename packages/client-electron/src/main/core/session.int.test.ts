@@ -397,6 +397,8 @@ describe("the in-process session", () => {
         dataBase64: Buffer.alloc(70 * 1024, 65).toString("base64"),
       };
       await f.session.submit("看附件", [small, big]);
+      // The snapshot keeps the attachments, so a reloading window still shows them.
+      expect(f.session.snapshot().workflows[0]!.attachments).toHaveLength(2);
       const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
       f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
       const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");

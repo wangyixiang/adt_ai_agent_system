@@ -101,11 +101,12 @@
 
 | 请求 | 响应 | 协议落点 |
 |---|---|---|
-| `{ kind:"report"; recordId:string; detailLevel?:"summary"\|"full" }` | `UiReportResult` | `report.generate_request/result` |
+| `{ kind:"report"; recordId:string; detailLevel?:"summary"\|"full" }` | `UiReport` | `report.generate_request/result` |
 | `{ kind:"export"; recordId:string; object:"record"\|"report" }` | `UiExportResult` | `record.export_request/result` |
 | `{ kind:"cancel"; workflowId:string }` | `void`（等 `cancel_ack`） | `workflow.cancel_request/ack` |
-| `{ kind:"blob_preview"; contentRef:string }` | `UiBlobPreview` | `blob.allocate_request`(download) + HTTP GET |
-| `{ kind:"blob_save"; contentRef:string; suggestedName?:string }` | `{ saved:boolean; path?:string }` | 同上 |
+| `{ kind:"save_text"; suggestedName:string; content:string }` | `UiSaveResult` | 无（main 弹保存对话框 + 落盘） |
+| `{ kind:"blob_preview"; contentRef:string; mediaType:string }` | `UiBlobPreview` | `blob.allocate_request`(download) + HTTP GET |
+| `{ kind:"blob_save"; contentRef:string; mediaType:string; suggestedName?:string }` | `UiSaveResult` | 同上 |
 | `{ kind:"submit"; text:string; attachments:IncomingAttachment[] }` | `string`（`workflowId`） | `workflow.request`（扩展 `attachments`） |
 
 `IncomingAttachment = { name: string; mediaType: string; dataBase64: string }` —— renderer → main 的**入站**形状；main 计算 `size`/`sha256`、判内联/走 blob。
@@ -122,17 +123,21 @@ export type UiAttachment = { name: string; media_type: string; size: number; sha
 /** live 步骤上的证据 blob 引用（只有引用，不含字节）。 */
 export interface UiEvidenceBlob { content_ref: string; media_type: string; size: number; name?: string }
 
-export interface UiReportResult {
-  ok: boolean;
-  markdown?: string;
-  errorCode?: string;
-  message?: string;
-}
+/** 一份生成的 Report（判别联合；失败时**没有正文**）。 */
+export type UiReport =
+  | { ok: true; markdown: string }
+  | { ok: false; errorCode: string; message: string };
 
 export interface UiExportResult {
   ok: boolean;
-  errorCode?: "export_unavailable" | "export_failed" | "invalid_object" | null;
-  message?: string | null;
+  errorCode: string | null; // export_unavailable | export_failed | invalid_object
+  message: string | null;
+}
+
+/** 「另存为」的结果：`saved:false` 表示人取消了对话框。 */
+export interface UiSaveResult {
+  saved: boolean;
+  path?: string;
 }
 
 export type UiBlobPreview =
@@ -140,6 +145,8 @@ export type UiBlobPreview =
   | { kind: "image"; mediaType: string; dataUrl: string }
   | { kind: "binary"; mediaType: string; size: number };
 ```
+
+> **实现口径（实施时定稿，取代本节早先的草稿）：** 类型名为 `UiReport`（判别联合，比 `{ok,markdown?}` 更能保证"失败无正文"）；`blob_preview`/`blob_save` 都带 `mediaType`（分类需要它）；分流函数签名是 `planAttachment(bytes)`（阈值只看字节数）；renderer 的附件入口是 `textToIncoming` / `fileToIncoming`（没有单独的 `PendingAttachment` 中间类型）。
 
 - `UiStep` 增 `evidenceBlob: UiEvidenceBlob | null`。
 - `UiWorkflow` 增 `cancelling: boolean`。

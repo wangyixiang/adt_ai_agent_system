@@ -285,7 +285,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
 
   for (const workflow of snapshot.workflows) {
     rankOf(workflow.workflowId);
-    putUser(workflow.workflowId, workflow.userRequest.text, []);
+    putUser(workflow.workflowId, workflow.userRequest.text, workflow.attachments);
     workflow.steps.forEach((step, index) => putStep(workflow.workflowId, step.stepId, step, index));
     if (workflow.pendingAsk !== null) {
       putAsk(workflow.workflowId, workflow.pendingAsk.askId, { ask: workflow.pendingAsk }, workflow.steps.length + 0.5);

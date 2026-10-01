@@ -29,6 +29,8 @@ export interface UiStep {
 export interface UiWorkflow {
   workflowId: string;
   userRequest: { text: string };
+  /** The request's attachments, so a reloading window can still show them. */
+  attachments: UiAttachment[];
   terminalState: TerminalState | null;
   terminalReason: string | null;
   recordId: string | null;

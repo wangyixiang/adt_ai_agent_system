@@ -580,7 +580,8 @@ describe("the app", () => {
     expect(screen.queryByText(/已保存报告/)).toBeNull();
   });
 
-  it("confirms a successful save", async () => {
+  it("confirms a successful save, naming the file after the Record", async () => {
+    const saved: string[] = [];
     const client = fakeClient({
       records: async () => ({
         records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
@@ -588,7 +589,10 @@ describe("the app", () => {
       }),
       record: async () => pastRecord("rec_9", "wf_9", "第九"),
       report: async () => ({ ok: true, markdown: "# 结论" }),
-      saveText: async () => ({ saved: true, path: "/tmp/report.md" }),
+      saveText: async (name) => {
+        saved.push(name);
+        return { saved: true, path: "/tmp/report.md" };
+      },
     });
     render(<App client={client} />);
     await screen.findByTestId("app");
@@ -597,6 +601,7 @@ describe("the app", () => {
     const viewer = await screen.findByTestId("report-viewer");
     await user.click(within(viewer).getByRole("button", { name: /另存为/ }));
     expect(await screen.findByText(/已保存报告/)).toBeTruthy();
+    expect(saved).toEqual(["report-rec_9.md"]);
   });
 
   it("says the KB endpoint is unconfigured, distinctly", async () => {
@@ -813,5 +818,59 @@ describe("the app", () => {
 
     const body = (answers[0] as { body: { details?: { attachments?: unknown[] } } }).body;
     expect(body.details?.attachments).toHaveLength(1);
+  });
+
+  it("offers report and export as soon as a run terminates, before the list refetches", async () => {
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => {
+        push = l;
+        return () => undefined;
+      },
+      records: async () => ({ records: [], nextCursor: null }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "跑一下" } });
+      pushUi(push, { id: 2, type: "step.dispatched", workflowId: "wf_1", stepId: "st_1", capability: "c", objective: "做", input: {}, requiresConfirmation: false });
+      pushUi(push, { id: 3, type: "workflow.terminated", workflowId: "wf_1", terminalState: "COMPLETED", terminalReason: null, recordId: "rec_x" });
+    });
+    const wb = within(await screen.findByTestId("workbench"));
+    expect(await wb.findByRole("button", { name: /生成报告/ })).toBeTruthy();
+  });
+
+  it("confirms a copy of the report", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      report: async () => ({ ok: true, markdown: "# 结论" }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /生成报告/ }));
+    const viewer = await screen.findByTestId("report-viewer");
+    await user.click(within(viewer).getByRole("button", { name: "复制" }));
+    expect(await screen.findByText(/已复制报告/)).toBeTruthy();
+  });
+
+  it("surfaces an export failure with its code", async () => {
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: pastRecord("rec_9", "wf_9", "第九").summary }],
+        nextCursor: null,
+      }),
+      record: async () => pastRecord("rec_9", "wf_9", "第九"),
+      export: async () => ({ ok: false, errorCode: "export_failed", message: "boom" }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /导出到知识库/ }));
+    expect(await screen.findByText(/export_failed/)).toBeTruthy();
   });
 });

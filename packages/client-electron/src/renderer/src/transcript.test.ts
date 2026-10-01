@@ -122,6 +122,7 @@ describe("deriveTranscript", () => {
         {
           workflowId: "wf_1",
           userRequest: { text: "刷新前的请求" },
+          attachments: [],
           terminalState: null,
           terminalReason: null,
           recordId: null,
@@ -141,6 +142,32 @@ describe("deriveTranscript", () => {
     const items = deriveTranscript(only, []);
     expect(kinds(items)).toEqual(["user", "ask"]);
     expect(items[1]).toMatchObject({ kind: "ask", askId: "ask_9", askKind: "completion", answered: false });
+  });
+
+  it("seeds a workflow's attachments from the snapshot (a reload must not lose them)", () => {
+    const withAttachments: UiSnapshot = {
+      connection: "connected",
+      userId: "usr_1",
+      capabilities: [],
+      workflows: [
+        {
+          workflowId: "wf_1",
+          userRequest: { text: "看附件" },
+          attachments: [
+            { name: "a.log", media_type: "text/plain", size: 3, sha256: "x", mode: "blob", content_ref: "blob_1" },
+          ],
+          terminalState: null,
+          terminalReason: null,
+          recordId: null,
+          cancelling: false,
+          pendingAskId: null,
+          pendingAsk: null,
+          steps: [],
+        },
+      ],
+    };
+    const user = deriveTranscript(withAttachments, []).find((item) => item.kind === "user");
+    expect(user).toMatchObject({ kind: "user", attachments: [{ name: "a.log" }] });
   });
 });
 

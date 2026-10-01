@@ -1,7 +1,7 @@
 import type { Answer, Ask, StepState, TerminalState } from "@adt/shared";
 import type { ClientDaemon, StepStatusUpdate } from "@adt/client-daemon";
 
-import type { UiEventInput, UiSnapshot, UiStep, UiWorkflow } from "../../shared/contract";
+import type { UiAttachment, UiEventInput, UiSnapshot, UiStep, UiWorkflow } from "../../shared/contract";
 
 /**
  * The daemon's own view of its workflows, projected for the renderer. The daemon
@@ -10,7 +10,7 @@ import type { UiEventInput, UiSnapshot, UiStep, UiWorkflow } from "../../shared/
  * second one) can rebuild it.
  */
 export interface Projection {
-  noteRequest(workflowId: string, text: string): void;
+  noteRequest(workflowId: string, text: string, attachments: UiAttachment[]): void;
   observe(
     type: string,
     env: { workflow_id: string | null; payload: unknown },
@@ -36,6 +36,7 @@ export function createProjection(): Projection {
       workflow = {
         workflowId,
         userRequest: { text: "" },
+        attachments: [],
         terminalState: null,
         terminalReason: null,
         recordId: null,
@@ -53,8 +54,10 @@ export function createProjection(): Projection {
     workflow.steps.find((step) => step.stepId === stepId);
 
   return {
-    noteRequest(workflowId, text) {
-      ensure(workflowId).userRequest = { text };
+    noteRequest(workflowId, text, attachments) {
+      const workflow = ensure(workflowId);
+      workflow.userRequest = { text };
+      workflow.attachments = attachments;
     },
 
     observe(type, env) {
