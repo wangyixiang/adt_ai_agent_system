@@ -10,7 +10,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "adm": "tsx src/cli/adm.ts"
   },
   "dependencies": {
     "@adt/shared": "workspace:*",

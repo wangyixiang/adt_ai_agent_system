@@ -37,4 +37,23 @@ describe("UserRepository", () => {
     expect(await repo.verifyCredentials("alice", "wrong")).toBeNull();
     expect(await repo.verifyCredentials("ghost", "x")).toBeNull();
   });
+
+  it("lists users without hashes, and a disabled user cannot log in", async () => {
+    await repo.create("adm_probe", "pw-old");
+    const listed = await repo.list();
+    const probe = listed.find((u) => u.username === "adm_probe");
+    expect(probe).toEqual({ username: "adm_probe", disabled: false });
+    expect(Object.keys(listed[0]!)).toEqual(["username", "disabled"]);
+
+    expect(await repo.setDisabled("adm_probe", true)).toBe(true);
+    expect(await repo.verifyCredentials("adm_probe", "pw-old")).toBeNull();
+    expect(await repo.setDisabled("adm_probe", false)).toBe(true);
+
+    expect(await repo.changePassword("adm_probe", "pw-new")).toBe(true);
+    expect(await repo.verifyCredentials("adm_probe", "pw-old")).toBeNull();
+    expect(await repo.verifyCredentials("adm_probe", "pw-new")).not.toBeNull();
+
+    expect(await repo.setDisabled("nobody", true)).toBe(false);
+    expect(await repo.changePassword("nobody", "x")).toBe(false);
+  });
 });

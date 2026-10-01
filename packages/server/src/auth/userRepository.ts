@@ -63,4 +63,31 @@ export class UserRepository {
     if (!user || user.disabled || !ok) return null;
     return user;
   }
+
+  /** Usernames and their enabled/disabled state — never the hash. */
+  async list(): Promise<Array<{ username: string; disabled: boolean }>> {
+    const result = await this.pool.query<{ username: string; disabled: boolean }>(
+      "SELECT username, disabled FROM users ORDER BY username",
+    );
+    return result.rows;
+  }
+
+  /** Enables/disables an account. `true` when a row was changed. */
+  async setDisabled(username: string, disabled: boolean): Promise<boolean> {
+    const result = await this.pool.query("UPDATE users SET disabled = $2 WHERE username = $1", [
+      username,
+      disabled,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /** Replaces an account's password. `true` when a row was changed. */
+  async changePassword(username: string, secret: string): Promise<boolean> {
+    const passwordHash = await hashPassword(secret);
+    const result = await this.pool.query("UPDATE users SET password_hash = $2 WHERE username = $1", [
+      username,
+      passwordHash,
+    ]);
+    return (result.rowCount ?? 0) > 0;
+  }
 }
