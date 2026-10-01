@@ -406,3 +406,27 @@ docker compose up -d && docker compose exec -T server pnpm --silent -C packages/
 **4. Review Focus：** 五条都落到测试——env 优先级（T1 第 1 例）、不泄露口令（T2 第 2 例 + `list` 无 hash）、disable 挡登录（T2 的 auth 例）、退出不挂死（T3 三例）、数据持久化（T4 手工验收）。
 
 **5. Proportion：** 计划只钉接口、命令与断言；Dockerfile 行文以要点给，不贴整份文件。
+
+---
+
+## 评审裁决表（整分支评审）
+
+评审：`opencode-go/deepseek-v4.1-flash`，范围 `c6108a8..ff1cfd8`（6 提交）。结论 **With fixes**（**1 Critical / 5 Important / 若干 Minor**）。一轮修复（提交 `b265bea`）后全绿：`client-electron` 外整仓 `pnpm -r --if-present test` exit 0（server 347+1skip）、`typecheck` exit 0；Docker 手工验收重跑通过（`/health` 200；`adm user add` 重建镜像后**对已存在账号回 exit 1**）。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **C1（Critical）** `adm user add` 对已存在账号**静默重置口令**并报成功：`UserRepository.create` 是 upsert、**从不抛异常**，所以"已存在 → 报错 1（除非 `--force`）"的 `catch` 分支用真仓库**根本走不到**（假仓库的 `create` 会抛，掩盖了它） | **已修** | 新增 `UserRepository.exists()`；`runAdm` **显式先查存在**再决定（存在且无 `--force` → 1；有 `--force` → `changePassword`）；假仓库改成**镜像真实现（upsert 不抛）**；新增 `auth.test.ts`「adm user add refuses an existing account, against the real repository」（真 DB 回归）。容器内实测 `adm exit=1` |
+| **I2（Important）** `--secret` 的值被 **pnpm 命令回显**到 stderr（`$ tsx src/cli/adm.ts … --secret X`） | **已修** | 文档一律用 `pnpm --silent -C packages/server adm …`（实测无回显）；`DEPLOY.md` 更正"口令不会出现在任何输出/日志"的说法并推荐 `ADT_SECRET`；计划里的手工验收命令同步加 `--silent` |
+| **I3（Important）** 仓库根 `.env` **从未被加载**：所有命令都在 `pnpm -C packages/server` 下跑（cwd 变成 packages/server），`loadServerEnv` 找的是 `packages/server/.env` | **已修** | `config.ts` 用**模块 URL** 解析仓库根（`REPO_ROOT`），`loadServerEnv(root = REPO_ROOT)`；新增测试（`REPO_ROOT/package.json` 名字、`loadServerEnv(root)` 生效）；`DEPLOY.md` 说明"compose 用 `db`、宿主用 `localhost`，别混用同一份 `.env`"。实测：`adm` 现在真的读到了仓库根 `.env` |
+| **I4（Important）** 不回显提示在 **EOF / 非 TTY 下永久挂死**（`rl.question` 回调不触发） | **已修** | `promptSecret` 在 `rl.on("close")` 时也 resolve（返回 `""` → 视作缺口令 → 退出码 2），不再挂死 |
+| **I5（Important）** spec §4.1 要求的**启动脱敏摘要缺失**，而 `DEPLOY.md` 声称有 | **已修** | `config.ts` 新增 `formatStartupSummary()`（db 主机:端口 / 端口 / LLM 是否启用 / KB 是否配置 / blob 目录，**绝不含 secret**）；`index.ts` 的 `isMain` 打印；新增测试断言不含各类 secret |
+| **M1** blob 落盘目录取决于环境（不设 `BLOB_DATA_DIR` 会落到卷外） | **已修** | compose 的 `server.environment` 固定 `BLOB_DATA_DIR: /app/.adt/blobs` |
+| **M2** `.env.example` 不全（缺 `BLOB_TOKEN_TTL_MS`/`BLOB_RETENTION_MS`/`BLOB_MAX_BYTES`/`KB_TIMEOUT_MS`/`KB_MAX_RETRIES`）；`BLOB_BASE_URL` 是可被照抄的活动占位值 | **已修** | 补齐这些变量；`BLOB_BASE_URL` 改为**注释**并注明必须内网可达 |
+| **M3** 不支持 `--secret=<值>`；空 `--secret ""` 会建出空口令账号；`create` 的失败被一律报成"已存在" | **已修** | `secretFrom` 支持两种形式；空口令视作缺口令（退出码 2）；存在性改为显式查询后，`create` 的异常不再被误报 |
+| **M4** `adm` 测试用假仓库（`create` 会抛），正是它掩盖了 C1 | **已修** | 假仓库改为镜像真实现；另加真 DB 回归（见 C1） |
+| **M5** `main()` 在校验命令前就提示口令（`adm add alice` 会先问口令再报用法错） | **已修** | 仅当 `argv[0]==="user"` 且 `add|passwd` 且无 `--secret*` 才提示 |
+| **M6** CLI 失败时原样打印错误文本，极端情况下可能回显 `DATABASE_URL` | **延后** | 触发条件窄（连接串被拼进 pg 错误）；记录在案，后续统一做错误脱敏 |
+
+**评审"Declined to judge"各行：维持**——客户端设置页（§5）、NSIS 打包（§6）、TLS/签名/自动更新（§9）、多租户/审计/SSO、把 Server 编译成产物、`ARCHITECTURE.md §6` 同步（核对后无需改）、`REQUIREMENTS.md §7`（无该行）、镜像含 devDeps（§11 有意）、容器以 root 运行、`55432` 端口暴露策略——均在本切片范围之外或已由 spec 有意接受。
+
+**RED 证据（如实）**：C1（真 DB 拒绝已存在）与 I3/I5（`REPO_ROOT`/`formatStartupSummary`）为**先写出的回归测试**（先红后绿）；I2/I4 为手动复现后修复（I4 用 `< /dev/null` 复现挂死，I2 用 `--secret` 观察到回显）。
