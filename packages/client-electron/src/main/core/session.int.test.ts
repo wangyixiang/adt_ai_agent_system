@@ -168,13 +168,13 @@ describe("the in-process session", () => {
       const asked = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "manual_action", "the manual action");
       const askId = asked.workflows[0]!.pendingAsk!.askId;
 
-      expect(() => f.session.answer(askId, { kind: "manual_action", outcome: "done", observation: "x" })).toThrow(
-        /malformed_payload/,
-      );
+      await expect(
+        f.session.answer(askId, { kind: "manual_action", outcome: "done", observation: "x" }),
+      ).rejects.toThrow(/malformed_payload/);
       // Still waiting for a real answer.
       expect(f.session.snapshot().workflows[0]!.pendingAskId).toBe(askId);
 
-      f.session.answer(askId, { kind: "manual_action", outcome: "succeeded", observation: "好了" });
+      await f.session.answer(askId, { kind: "manual_action", outcome: "succeeded", observation: "好了" });
       await waitFor(f, (s) => s.workflows[0]?.steps[0]?.state === "COMPLETED", "the step to complete");
     } finally {
       await f.close();
@@ -187,10 +187,10 @@ describe("the in-process session", () => {
       await f.session.submit("服务异常");
       const asked = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "confirmation", "the confirmation");
       const askId = asked.workflows[0]!.pendingAsk!.askId;
-      f.session.answer(askId, { kind: "confirmation", decision: "confirmed" });
-      expect(() => f.session.answer(askId, { kind: "confirmation", decision: "declined" })).toThrow(
-        /ask_already_answered/,
-      );
+      await f.session.answer(askId, { kind: "confirmation", decision: "confirmed" });
+      await expect(
+        f.session.answer(askId, { kind: "confirmation", decision: "declined" }),
+      ).rejects.toThrow(/ask_already_answered/);
     } finally {
       await f.close();
     }
@@ -199,9 +199,9 @@ describe("the in-process session", () => {
   it("refuses an unknown askId", async () => {
     const f = await fixture([resetStep, done]);
     try {
-      expect(() => f.session.answer("ask_nope", { kind: "confirmation", decision: "confirmed" })).toThrow(
-        /unknown_ask/,
-      );
+      await expect(
+        f.session.answer("ask_nope", { kind: "confirmation", decision: "confirmed" }),
+      ).rejects.toThrow(/unknown_ask/);
     } finally {
       await f.close();
     }

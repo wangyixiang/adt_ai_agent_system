@@ -16,7 +16,7 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     snapshot: () => emptySnapshot,
     login: async () => undefined,
     submit: async () => "wf_1",
-    answer: () => undefined,
+    answer: async () => undefined,
     records: async () => ({ records: [], nextCursor: null }),
     record: async () => {
       throw new Error("record is not used in this test");
@@ -56,7 +56,7 @@ describe("the main bridge", () => {
     const seen: unknown[] = [];
     const bridge = createBridge(
       deps({
-        answer: (askId, answer) => {
+        answer: async (askId, answer) => {
           seen.push({ askId, answer });
         },
       }),

@@ -11,7 +11,7 @@ export interface BridgeDeps {
   snapshot(): UiSnapshot;
   login(username: string, secret: string): Promise<void>;
   submit(text: string, attachments: IncomingAttachment[]): Promise<string>;
-  answer(askId: string, answer: Answer): void;
+  answer(askId: string, answer: Answer): Promise<void>;
   cancel(workflowId: string): Promise<void>;
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
@@ -39,7 +39,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
         case "submit":
           return deps.submit(request.text, request.attachments);
         case "answer":
-          deps.answer(request.askId, request.answer);
+          await deps.answer(request.askId, request.answer);
           return undefined;
         case "cancel":
           await deps.cancel(request.workflowId);

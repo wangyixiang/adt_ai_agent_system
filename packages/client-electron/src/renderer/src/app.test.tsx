@@ -681,6 +681,54 @@ describe("the app", () => {
     expect(seen[0]!.attachments[0]).toMatchObject({ name: "note.txt" });
   });
 
+  it("sends the manual action's note as details", async () => {
+    const answers: unknown[] = [];
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => {
+        push = l;
+        return () => undefined;
+      },
+      answer: async (askId, body) => {
+        answers.push({ askId, body });
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, {
+        id: 1,
+        type: "ask",
+        workflowId: "wf_1",
+        ask: {
+          askId: "ask_m",
+          kind: "manual_action",
+          stepId: "st_1",
+          capability: "human.manual_action",
+          objective: "换线",
+          instruction: "断电后更换电源线",
+          outcomes: ["succeeded", "failed", "partially", "unknown"],
+        },
+      });
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("radio", { name: "已成功" }));
+    await user.type(screen.getByPlaceholderText(/观察/), "换好了");
+    await user.type(screen.getByPlaceholderText(/补充说明/), "换了根新线");
+    await user.click(screen.getByRole("button", { name: /提交/ }));
+    expect(answers).toEqual([
+      {
+        askId: "ask_m",
+        body: {
+          kind: "manual_action",
+          outcome: "succeeded",
+          observation: "换好了",
+          details: { note: "换了根新线" },
+        },
+      },
+    ]);
+  });
+
   it("previews an evidence blob from a past run", async () => {
     const past: UiRecord = {
       ...pastRecord("rec_9", "wf_9", "第九"),

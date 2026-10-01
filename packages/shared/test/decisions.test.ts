@@ -41,4 +41,17 @@ describe("the four decisions", () => {
       validateAnswer("completion", { kind: "manual_action", outcome: "succeeded", observation: "x" }),
     ).toMatchObject({ ok: false, code: "malformed_payload" });
   });
+
+  it("accepts optional details on a manual action", () => {
+    const result = validateAnswer("manual_action", {
+      kind: "manual_action",
+      outcome: "succeeded",
+      observation: "好了",
+      details: { note: "换了线" },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok && result.value.kind === "manual_action") {
+      expect(result.value.details).toEqual({ note: "换了线" });
+    }
+  });
 });

@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import type { Answer, ManualOutcome } from "@adt/shared";
 
+import type { IncomingAttachment } from "../../../shared/contract";
+import { fileToIncoming } from "../attachments";
 import type { TranscriptItem } from "../transcript";
 
 type AskItem = Extract<TranscriptItem, { kind: "ask" }>;
@@ -24,6 +26,8 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
   const [observation, setObservation] = useState("");
   const [outcome, setOutcome] = useState<ManualOutcome>("succeeded");
   const [feedback, setFeedback] = useState("");
+  const [note, setNote] = useState("");
+  const [attachments, setAttachments] = useState<IncomingAttachment[]>([]);
 
   const header = (
     <header>
@@ -66,7 +70,15 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
           onSubmit={(event) => {
             event.preventDefault();
             if (observation.trim() === "") return;
-            onAnswer(ask.askId, { kind: "manual_action", outcome, observation });
+            const details: Record<string, unknown> = {};
+            if (note.trim() !== "") details["note"] = note;
+            if (attachments.length > 0) details["attachments"] = attachments;
+            onAnswer(ask.askId, {
+              kind: "manual_action",
+              outcome,
+              observation,
+              ...(Object.keys(details).length === 0 ? {} : { details }),
+            });
           }}
         >
           <p className="instruction">{ask.instruction}</p>
@@ -88,6 +100,39 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
             placeholder="观察到的结果（必填）"
             onChange={(event) => setObservation(event.target.value)}
           />
+          <textarea
+            value={note}
+            placeholder="补充说明（可选）"
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <input
+            type="file"
+            multiple
+            aria-label="添加证据附件"
+            onChange={(event) => {
+              const files = event.target.files;
+              event.target.value = "";
+              if (files === null || files.length === 0) return;
+              void Promise.all(Array.from(files).map(fileToIncoming)).then((incoming) =>
+                setAttachments((previous) => [...previous, ...incoming]),
+              );
+            }}
+          />
+          {attachments.length > 0 && (
+            <ul className="attachments">
+              {attachments.map((attachment, index) => (
+                <li key={`${attachment.name}-${index}`}>
+                  <span>{attachment.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((p) => p.filter((_, i) => i !== index))}
+                  >
+                    移除
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <button type="submit" disabled={observation.trim() === ""}>
             提交
           </button>

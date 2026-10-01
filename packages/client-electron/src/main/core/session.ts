@@ -24,7 +24,8 @@ export interface Session {
   snapshot(): UiSnapshot;
   login(username: string, secret: string): Promise<void>;
   submit(text: string, attachments?: IncomingAttachment[]): Promise<string>;
-  answer(askId: string, body: unknown): void;
+  /** Answer one of the four decisions (manual-action `details.attachments` are built here). */
+  answer(askId: string, body: unknown): Promise<void>;
   /** Ask the Server to cancel a run; resolves once the cancel is acknowledged. */
   cancel(workflowId: string): Promise<void>;
   /** Ask the Server to generate a Report from a Record; the content is the Server's. */
@@ -42,6 +43,56 @@ export interface Session {
   /** Is any workflow still live (not terminated)? */
   isRunning(): boolean;
   close(): Promise<void>;
+}
+
+/** Build wire attachments: inline at/below the threshold, over blob above it. */
+async function buildAttachments(
+  daemon: ClientDaemon,
+  incoming: readonly IncomingAttachment[],
+): Promise<UiAttachment[]> {
+  const built: UiAttachment[] = [];
+  for (const item of incoming) {
+    const bytes = Buffer.from(item.dataBase64, "base64");
+    const mediaType = normalizeMediaType(item.mediaType);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (planAttachment(bytes).mode === "inline") {
+      built.push({
+        name: item.name,
+        media_type: mediaType,
+        size: bytes.length,
+        sha256,
+        mode: "inline",
+        data_base64: item.dataBase64,
+      });
+    } else {
+      const ref = await uploadBlob(
+        { connection: daemon.connection },
+        { name: item.name, mediaType, bytes },
+      );
+      built.push({
+        name: ref.name ?? item.name,
+        media_type: ref.media_type,
+        size: ref.size,
+        sha256: ref.sha256,
+        mode: "blob",
+        content_ref: ref.content_ref,
+      });
+    }
+  }
+  return built;
+}
+
+/** A manual-action answer may carry `details.attachments`; build those bytes here. */
+async function prepareAnswer(daemon: ClientDaemon, body: unknown): Promise<unknown> {
+  if (body === null || typeof body !== "object") return body;
+  const answer = body as Record<string, unknown>;
+  if (answer["kind"] !== "manual_action") return body;
+  const details = answer["details"];
+  if (details === null || typeof details !== "object") return body;
+  const detail = details as Record<string, unknown>;
+  if (!Array.isArray(detail["attachments"])) return body;
+  const attachments = await buildAttachments(daemon, detail["attachments"] as IncomingAttachment[]);
+  return { ...answer, details: { ...detail, attachments } };
 }
 
 /**
@@ -120,35 +171,7 @@ export function createSession(options: SessionOptions): Session {
       const allowed = checkAttachments(attachments);
       if (!allowed.ok) throw new Error(`${allowed.code}: ${allowed.message}`);
 
-      const built: UiAttachment[] = [];
-      for (const incoming of attachments) {
-        const bytes = Buffer.from(incoming.dataBase64, "base64");
-        const mediaType = normalizeMediaType(incoming.mediaType);
-        const sha256 = createHash("sha256").update(bytes).digest("hex");
-        if (planAttachment(bytes).mode === "inline") {
-          built.push({
-            name: incoming.name,
-            media_type: mediaType,
-            size: bytes.length,
-            sha256,
-            mode: "inline",
-            data_base64: incoming.dataBase64,
-          });
-        } else {
-          const ref = await uploadBlob(
-            { connection: daemon.connection },
-            { name: incoming.name, mediaType, bytes },
-          );
-          built.push({
-            name: ref.name ?? incoming.name,
-            media_type: ref.media_type,
-            size: ref.size,
-            sha256: ref.sha256,
-            mode: "blob",
-            content_ref: ref.content_ref,
-          });
-        }
-      }
+      const built = await buildAttachments(daemon, attachments);
 
       const created = await daemon.connection.request(
         "workflow.request",
@@ -166,8 +189,9 @@ export function createSession(options: SessionOptions): Session {
       return workflowId;
     },
 
-    answer(askId, body) {
-      const outcome = host.answer(askId, body);
+    async answer(askId, body) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const outcome = host.answer(askId, await prepareAnswer(daemon, body));
       if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`);
       const event = projection.noteAnswered(askId, outcome.answer);
       if (event !== null) emitUi(event);
