@@ -128,6 +128,7 @@ pnpm -C packages/client-electron dev     # 开发（electron-vite 热更）
 pnpm -C packages/client-electron build   # 构建 out/{main,preload,renderer}
 pnpm -C packages/client-electron smoke   # 探针：Electron 里的 node:sqlite 台账
 pnpm -C packages/client-electron run pack  # 打包成单个 Windows portable exe（release/）
+pnpm -C packages/client-electron test:e2e  # 桌面冒烟：真 Electron + 真 Server，走完一条人在回路
 ```
 
 **它做什么**：登录（Server 地址是 `ADT_SERVER_URL`，默认 `ws://127.0.0.1:8080/ws`；工作区 `ADT_WORKSPACE`）→ 提交一次请求 → 看步骤卡 → **四种决策都在卡片上回答**（确认 / 手工动作 / 资源冲突 / 完成候选）→ 看到 `Record`。**关窗 = 最小化到托盘、运行继续**；只有托盘里的"退出"才真正收尾（`ADR-006` §Decision 4）。
