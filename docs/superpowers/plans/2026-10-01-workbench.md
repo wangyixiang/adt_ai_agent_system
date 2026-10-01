@@ -432,3 +432,21 @@ Expected: 既有 2 例 + 新断言全部通过。
 **4. Review Focus：** 五条都落到测试——真终止（T2 第 1 例）、`CANCELLING` 不误判 + 竞态（T1 第 2 例、T3 第 3 例、T4 第 5 例）、往期不可取消（T4 第 4 例 + app 用例）、空态（T3 第 4 例、T4 第 1 例）、只取消一次（T4 第 3 例）。
 
 **5. Proportion：** 计划只钉接口、断言与关键分支；组件长相细节留给实现。
+
+---
+
+## 评审裁决表（整分支评审）
+
+评审：`opencode-go/deepseek-v4.1-flash`，范围 `cad5ba9..2917859`（6 提交）。结论 **With fixes**（**0 Critical / 2 Important / 3 Minor**）。一轮修复（提交 `2e9f7fd`）后全绿：整仓 `pnpm -r --if-present test` exit 0（`client-electron` 63/63）、`typecheck` exit 0、桌面冒烟 2/2。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **I1（重要）** 取消态（`requested`/`confirming`）是组件全局、未按会话隔离：取消过一条后，后续 live 会话**不再出现取消按钮**（违反 Global Constraints"一次一条只活在输入框谓词里"）；陈旧 `confirming` 还可能误取消另一条 | **已修** | `app.tsx` 给 `<Workbench key={effectiveSelected ?? "none"}>` 按会话重挂载；`Workbench.confirmCancel` 失败时重置；新增 `app.test.tsx`「offers cancel again for a later run after one was cancelled」（RED→GREEN） |
+| **I2（重要）** 取消请求失败后 `requested` 永久为真，按钮不再出现、无法重试（spec §11 要求"不假定已取消"） | **已修** | `onCancel` 改为返回 `Promise<void>`；`Workbench.confirmCancel` catch 后重置 `requested`/`confirming`；`app.handleCancel` 记错误并 rethrow；新增 `Workbench.test.tsx`「restores the cancel button when the request fails」（RED→GREEN） |
+| **M3（次要）** spec §4 的两处工作台元素未渲染：完成候选的 `summary`/`evidenceRefs`；人工决定的行内小标 | **已记录（规格/计划）** | 属 **spec §4 与计划的有意收窄**（本计划把 `WorkbenchConclusion` 只留 terminal/record）。作为 **P-loop-end / 工作台打磨**那一份计划的输入，不属本切片 |
+| **M4（次要）** `WorkbenchStep.stepId`/`.text`、`WorkbenchConclusion.text` 是死字段 | **延后** | 忠实于计划的 Interfaces；下一个触碰工作台的计划里清理 |
+| **M5（次要）** `session.cancel` 忽略 `cancel_ack` 的 `workflow_status` | **已记录** | 依赖 Server 保证随后必发 `workflow.terminated`（`workflowProtocol.ts`）；今日非缺陷。Server 语义变化再处理 |
+
+**评审"Declined to judge"各行：维持**——Report/导出（P-loop-end）、附件/blob/`details`（P-attachments）、`cancelling` 必填 + 夹具更新、`fakeClient` 提前补 `cancel`、把既有断言收窄到 `main`/`navigation`、`terminal_reason` 保持 `null`、安全硬化/打包——均在本切片范围之外或已由裁决接受。
+
+**RED 证据（如实）**：I1/I2 为**先写出的回归测试**（评审复现 → 先红后绿），不是事后补的护栏。
