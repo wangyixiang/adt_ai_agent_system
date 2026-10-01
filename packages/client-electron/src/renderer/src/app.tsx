@@ -9,6 +9,7 @@ import { ConversationList } from "./components/ConversationList";
 import { Login } from "./components/Login";
 import { ProgressHeader } from "./components/ProgressHeader";
 import { Transcript } from "./components/Transcript";
+import { Workbench } from "./components/Workbench";
 import { conversations } from "./conversations";
 import { transcriptFromRecord } from "./recordTranscript";
 import {
@@ -163,6 +164,17 @@ export function App({ client }: { client: AdtClient }) {
         : (historyRecordId !== null ? (historyTranscripts.get(historyRecordId) ?? []) : []);
   const anyRunning = list.some((conversation) => conversation.state === "running");
 
+  const selectedCancelling =
+    effectiveSelected !== null &&
+    (ui.snapshot.workflows.find((workflow) => workflow.workflowId === effectiveSelected)?.cancelling ??
+      false);
+  const canCancel = selectedConversation?.live === true && selectedConversation.state === "running";
+
+  const handleCancel = (workflowId: string): void => {
+    setError(null);
+    client.cancel(workflowId).catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
   return (
     <div className="app" data-testid="app">
       <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
@@ -178,6 +190,12 @@ export function App({ client }: { client: AdtClient }) {
             list is empty or a past record is selected. */}
         <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
       </main>
+      <Workbench
+        items={viewItems}
+        cancelling={selectedCancelling}
+        canCancel={canCancel}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

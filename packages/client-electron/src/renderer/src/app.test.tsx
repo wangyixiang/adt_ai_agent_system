@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render, screen, act, waitFor } from "@testing-library/react";
+import { render, screen, act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { MainEvent, UiEvent, UiRecord, UiSnapshot } from "../../shared/contract";
@@ -70,10 +70,11 @@ describe("the app", () => {
       pushUi(push, { id: 4, type: "workflow.terminated", workflowId: "wf_1", terminalState: "COMPLETED", terminalReason: null, recordId: "rec_1" });
     });
 
-    expect(await screen.findByText("先收集诊断信息")).toBeTruthy();
-    expect(screen.getByText("完成")).toBeTruthy();
-    expect(screen.getByText(/maxLines/)).toBeTruthy();
-    expect(screen.getByText(/Record: rec_1/)).toBeTruthy();
+    const thread = within(screen.getByRole("main"));
+    expect(await thread.findByText("先收集诊断信息")).toBeTruthy();
+    expect(thread.getByText("完成")).toBeTruthy();
+    expect(thread.getByText(/maxLines/)).toBeTruthy();
+    expect(thread.getByText(/Record: rec_1/)).toBeTruthy();
   });
 
   it("answers a confirmation from the card", async () => {
@@ -237,8 +238,9 @@ describe("the app", () => {
     await screen.findByTestId("app");
 
     // The list shows the past run, and opening it reconstructs the transcript.
-    expect(await screen.findByText("查一下日志")).toBeTruthy();
-    expect(screen.getByText(/Record: rec_9/)).toBeTruthy();
+    const thread = within(screen.getByRole("main"));
+    expect(await thread.findByText("查一下日志")).toBeTruthy();
+    expect(thread.getByText(/Record: rec_9/)).toBeTruthy();
     expect(fetched).toEqual(["rec_9"]);
 
     // A re-render must not refetch the same (immutable) Record.
@@ -319,7 +321,7 @@ describe("the app", () => {
     });
 
     expect(screen.getAllByRole("button", { name: /跑一下/ })).toHaveLength(1);
-    expect(screen.getByText("进行中")).toBeTruthy();
+    expect(within(screen.getByRole("navigation")).getByText("进行中")).toBeTruthy();
     expect((screen.getByPlaceholderText(/请求/) as HTMLInputElement).disabled).toBe(true);
   });
 
@@ -340,5 +342,69 @@ describe("the app", () => {
     render(<App client={client} />);
     await screen.findByTestId("app");
     expect(await screen.findByText(/还没有对话/)).toBeTruthy();
+  });
+
+  it("cancels the selected live run from the workbench", async () => {
+    const cancelled: string[] = [];
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => {
+        push = l;
+        return () => undefined;
+      },
+      cancel: async (workflowId) => {
+        cancelled.push(workflowId);
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "跑一下" } });
+      pushUi(push, {
+        id: 2,
+        type: "step.dispatched",
+        workflowId: "wf_1",
+        stepId: "st_1",
+        capability: "git.collect_diagnostics",
+        objective: "做",
+        input: {},
+        requiresConfirmation: false,
+      });
+    });
+    const user = userEvent.setup();
+    const wb = within(screen.getByTestId("workbench"));
+    await user.click(wb.getByRole("button", { name: "取消" }));
+    await user.click(wb.getByRole("button", { name: "确定取消" }));
+    expect(cancelled).toEqual(["wf_1"]);
+  });
+
+  it("shows a past run's workbench without a cancel button", async () => {
+    const past: UiRecord = {
+      record_id: "rec_9",
+      workflow_id: "wf_9",
+      created_at: 0,
+      ended_at: 1,
+      terminal_state: "COMPLETED",
+      terminal_reason: null,
+      user_request: { text: "旧" },
+      summary: { problem_short: "旧", terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+      entries: [
+        { entry_id: "e1", ts: 1, kind: "step_dispatched", ref: { step_id: "st_1", capability: "git.collect_diagnostics", objective: "查日志", input: {} }, narrative: "n" },
+        { entry_id: "e2", ts: 2, kind: "step_status", ref: { step_id: "st_1", state: "COMPLETED" }, narrative: "n" },
+      ],
+      final_result: {},
+    };
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const wb = within(await screen.findByTestId("workbench"));
+    expect(wb.getByText("查日志")).toBeTruthy();
+    expect(wb.queryByRole("button", { name: "取消" })).toBeNull();
   });
 });
