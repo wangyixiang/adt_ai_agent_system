@@ -11,5 +11,9 @@ describe("the packaging icon", () => {
     expect(png.subarray(12, 16).toString("ascii")).toBe("IHDR");
     expect(png.readUInt32BE(16)).toBe(256);
     expect(png.readUInt32BE(20)).toBe(256);
+    // It must be a whole PNG, not just a valid header: IDAT present, IEND last.
+    expect(png.includes(Buffer.from("IDAT", "ascii"))).toBe(true);
+    expect(png.subarray(png.length - 8, png.length - 4).toString("ascii")).toBe("IEND");
+    expect(png.length).toBeGreaterThan(200);
   });
 });

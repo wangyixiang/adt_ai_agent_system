@@ -16,19 +16,23 @@ asar: true
 
 win:
   target:
-    - nsis
+    # `pack` builds the portable only; `dist` passes `--win nsis` to select the
+    # installer. Keeping `nsis` out of the default targets keeps the two exits
+    # (and the README) honest.
     - portable
   icon: build/icon.png
   # rcedit CANNOT commit on this machine: `Fatal error: Unable to commit
   # changes` (retried 4x). Rather than fail the whole build, we skip writing the
-  # exe's own icon/version metadata — the installer is still produced, but the
-  # app exe keeps Electron's default icon. This is a KNOWN, DOCUMENTED downgrade
-  # (client-packaging plan, Task 3), not a silent one: remove this line on a
-  # machine where rcedit works.
+  # exe's own icon/version metadata. Consequence: `win.icon` is set for the
+  # *installer*, but the app exe keeps Electron's default icon and has no custom
+  # version metadata. This is a KNOWN, DOCUMENTED downgrade (client-packaging
+  # plan, Task 3) — remove this line on a machine where rcedit works.
   signAndEditExecutable: false
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # So the doc's "卸载：应用和功能里的 ADT" is literally true (default is "ADT <version>").
+  uninstallDisplayName: ADT
   artifactName: ADT-${version}-setup.${ext}
