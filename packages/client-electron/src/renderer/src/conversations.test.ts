@@ -59,7 +59,7 @@ describe("conversations", () => {
   it("lists history when the projection is empty (after a restart)", () => {
     const list = conversations([], [rec("wf_9", "rec_9", "FAILED")]);
     expect(list).toEqual([
-      { workflowId: "wf_9", recordId: "rec_9", title: "p_wf_9", state: "FAILED", live: false },
+      { workflowId: "wf_9", recordId: "rec_9", title: "p_wf_9", state: "FAILED", live: false, durationMs: 1 },
     ]);
   });
 });

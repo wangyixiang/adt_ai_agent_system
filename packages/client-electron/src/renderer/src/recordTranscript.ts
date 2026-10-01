@@ -202,6 +202,11 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
   }
 
   const reason = record.terminal_reason === null ? "" : ` · ${record.terminal_reason}`;
+  const final = asRecord(record.final_result);
+  const conclusion =
+    (typeof final["resolution_summary"] === "string" ? final["resolution_summary"] : null) ??
+    (typeof final["failure_summary"] === "string" ? final["failure_summary"] : null) ??
+    (typeof final["cancelled_summary"] === "string" ? final["cancelled_summary"] : null);
   items.push({
     key: `hist:summary:${workflowId}`,
     kind: "summary",
@@ -209,7 +214,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
     terminalState: record.terminal_state as Extract<TranscriptItem, { kind: "summary" }>["terminalState"],
     terminalReason: record.terminal_reason,
     recordId: record.record_id,
-    text: `工作流已终止：${record.terminal_state}${reason}`,
+    text: `工作流已终止：${record.terminal_state}${reason}${conclusion === null ? "" : ` · ${conclusion}`}`,
   });
 
   return items;

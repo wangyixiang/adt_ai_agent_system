@@ -13,6 +13,8 @@ export interface UiConversation {
   title: string;
   state: "running" | "COMPLETED" | "FAILED" | "CANCELLED";
   live: boolean;
+  /** Elapsed time in ms, when the run's Record is known. */
+  durationMs?: number;
 }
 
 interface LiveInfo {
@@ -49,6 +51,7 @@ export function conversations(
       title: info.title !== "" ? info.title : (record?.summary.problem_short ?? "（未命名）"),
       state: info.state,
       live: true,
+      ...(record === undefined ? {} : { durationMs: record.summary.duration_ms }),
     };
     if (info.state === "running") running.push(conversation);
     else finished.push(conversation);
@@ -62,6 +65,7 @@ export function conversations(
       title: record.summary.problem_short,
       state: record.summary.terminal_state as UiConversation["state"],
       live: false,
+      durationMs: record.summary.duration_ms,
     }));
 
   return [...running, ...finished, ...history];

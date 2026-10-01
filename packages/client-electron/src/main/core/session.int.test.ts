@@ -271,4 +271,23 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("refuses record queries before login", async () => {
+    const srv = await startTestServer({ planner: [readStep, done] as never });
+    const session = createSession({
+      serverUrl: srv.url,
+      workspaceRoot: process.cwd(),
+      clientInfo: { name: "session-int-test", platform: "test" },
+      ledgerPath: ":memory:",
+      sessionPath: ":memory:",
+      emit: () => undefined,
+    });
+    try {
+      await expect(session.records()).rejects.toThrow(/not_logged_in/);
+      await expect(session.record("rec_x")).rejects.toThrow(/not_logged_in/);
+    } finally {
+      await session.close();
+      await srv.close();
+    }
+  });
 });

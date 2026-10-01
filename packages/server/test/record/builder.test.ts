@@ -435,6 +435,8 @@ describe("record builder", () => {
     const status = record.entries.find((e) => e.kind === "step_status")!;
     expect(status.ref).toEqual({ step_id: "step_1", state: "COMPLETED" });
     expect(status.narrative.length).toBeGreaterThan(0);
+    // Two entries from one event must not share an `entry_id`.
+    expect(new Set(record.entries.map((e) => e.entry_id)).size).toBe(record.entries.length);
   });
 
   it("does not record step_status for intermediate or keepalive states", () => {

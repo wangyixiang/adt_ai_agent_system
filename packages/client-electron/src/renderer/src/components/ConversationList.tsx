@@ -1,5 +1,12 @@
 import type { UiConversation } from "../conversations";
 
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+}
+
 export interface ConversationListProps {
   conversations: UiConversation[];
   selected: string | null;
@@ -26,6 +33,9 @@ export function ConversationList({ conversations, selected, onSelect }: Conversa
           <span className="conversation-state">
             {conversation.state === "running" ? "进行中" : conversation.state}
           </span>
+          {conversation.durationMs !== undefined && (
+            <span className="conversation-duration">{formatDuration(conversation.durationMs)}</span>
+          )}
         </button>
       ))}
     </nav>

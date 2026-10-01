@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { MainEvent, UiEvent, UiRecord, UiSnapshot } from "../../shared/contract";
@@ -194,6 +194,7 @@ describe("the app", () => {
 
   it("lists a past run and shows it reconstructed from its Record", async () => {
     const fetched: string[] = [];
+    let push!: (e: MainEvent) => void;
     const pastRecord: UiRecord = {
       record_id: "rec_9",
       workflow_id: "wf_9",
@@ -215,6 +216,7 @@ describe("the app", () => {
       final_result: { resolution_summary: "好了" },
     };
     const client = fakeClient({
+      onEvent: (l) => { push = l; return () => undefined; },
       records: async () => ({
         records: [
           {
@@ -237,6 +239,50 @@ describe("the app", () => {
     expect(await screen.findByText("查一下日志")).toBeTruthy();
     expect(screen.getByText(/Record: rec_9/)).toBeTruthy();
     expect(fetched).toEqual(["rec_9"]);
+
+    // A re-render must not refetch the same (immutable) Record.
+    act(() => {
+      pushUi(push, { id: 99, type: "notice", level: "info", message: "ping" });
+    });
+    expect(fetched).toEqual(["rec_9"]);
+  });
+
+  it("follows a newly submitted run even when a past record is in view", async () => {
+    let push!: (e: MainEvent) => void;
+    const past: UiRecord = {
+      record_id: "rec_9",
+      workflow_id: "wf_9",
+      created_at: 0,
+      ended_at: 1,
+      terminal_state: "COMPLETED",
+      terminal_reason: null,
+      user_request: { text: "旧" },
+      summary: { problem_short: "旧", terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+      entries: [],
+      final_result: {},
+    };
+    const client = fakeClient({
+      onEvent: (l) => { push = l; return () => undefined; },
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      submit: async () => "wf_new",
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    expect(await screen.findByText("往期记录")).toBeTruthy();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText(/请求/), "新的问题");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_new", userRequest: { text: "新的问题" } });
+    });
+
+    // The pane follows the new (live) run, not the past record.
+    await waitFor(() => expect(screen.queryByText("往期记录")).toBeNull());
   });
 
   it("keeps a live run in the list once, even when a Record already exists for it", async () => {

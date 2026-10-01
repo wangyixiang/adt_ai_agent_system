@@ -171,7 +171,15 @@ function toEntry(
       if (derived !== null) entries.push(derived);
       if (TERMINAL_STEP_STATES.has(String(payload.state))) {
         const ref = { step_id: stepId, state: payload.state };
-        entries.push({ ...base, kind: "step_status", ref, narrative: renderNarrative("step_status", ref) });
+        // A distinct id: `event.id` already identifies the derived entry, and
+        // `entry_id` must stay unique for traceability (RECORD_SPEC.md §4).
+        entries.push({
+          entry_id: `${event.id}:step_status`,
+          ts: event.ts,
+          kind: "step_status",
+          ref,
+          narrative: renderNarrative("step_status", ref),
+        });
       }
       return entries;
     }
