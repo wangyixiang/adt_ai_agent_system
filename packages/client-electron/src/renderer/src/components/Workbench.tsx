@@ -16,6 +16,12 @@ export interface WorkbenchProps {
   cancelling: boolean;
   canCancel: boolean;
   onCancel(workflowId: string): Promise<void> | void;
+  /** The selected run's Record, if it has one; enables report/export. */
+  recordId: string | null;
+  /** A report has already been generated this session (enables exporting it). */
+  reportReady: boolean;
+  onGenerateReport(detailLevel: "summary" | "full"): void;
+  onExport(object: "record" | "report"): void;
 }
 
 /**
@@ -24,9 +30,20 @@ export interface WorkbenchProps {
  * uses, so a live run and a past Record look alike. Cancellation is confirmed
  * inline (a second, explicit click) and requested at most once.
  */
-export function Workbench({ items, cancelling, canCancel, onCancel }: WorkbenchProps) {
+export function Workbench({
+  items,
+  cancelling,
+  canCancel,
+  onCancel,
+  recordId,
+  reportReady,
+  onGenerateReport,
+  onExport,
+}: WorkbenchProps) {
   const [confirming, setConfirming] = useState(false);
   const [requested, setRequested] = useState(false);
+  const [detailLevel, setDetailLevel] = useState<"summary" | "full">("full");
+  const [exportObject, setExportObject] = useState<"record" | "report">("record");
 
   if (items.length === 0) {
     return (
@@ -69,6 +86,40 @@ export function Workbench({ items, cancelling, canCancel, onCancel }: WorkbenchP
               </button>
               <button type="button" onClick={() => setConfirming(false)}>
                 返回
+              </button>
+            </>
+          )}
+
+          {recordId !== null && (
+            <>
+              <label className="detail-level">
+                报告
+                <select
+                  value={detailLevel}
+                  onChange={(event) => setDetailLevel(event.target.value as "summary" | "full")}
+                >
+                  <option value="full">完整</option>
+                  <option value="summary">摘要</option>
+                </select>
+              </label>
+              <button type="button" onClick={() => onGenerateReport(detailLevel)}>
+                生成报告
+              </button>
+
+              <label className="export-object">
+                导出
+                <select
+                  value={exportObject}
+                  onChange={(event) => setExportObject(event.target.value as "record" | "report")}
+                >
+                  <option value="record">Record</option>
+                  <option value="report" disabled={!reportReady}>
+                    Report
+                  </option>
+                </select>
+              </label>
+              <button type="button" onClick={() => onExport(exportObject)}>
+                导出到知识库
               </button>
             </>
           )}

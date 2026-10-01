@@ -461,4 +461,67 @@ describe("the app", () => {
     const wb = within(await screen.findByTestId("workbench"));
     expect(await wb.findByRole("button", { name: "取消" })).toBeTruthy();
   });
+
+  it("generates a report and shows it in the viewer", async () => {
+    const past: UiRecord = {
+      record_id: "rec_9",
+      workflow_id: "wf_9",
+      created_at: 0,
+      ended_at: 1,
+      terminal_state: "COMPLETED",
+      terminal_reason: null,
+      user_request: { text: "旧" },
+      summary: { problem_short: "旧", terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+      entries: [],
+      final_result: {},
+    };
+    const asked: Array<[string, string | undefined]> = [];
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      report: async (recordId, detailLevel) => {
+        asked.push([recordId, detailLevel]);
+        return { ok: true, markdown: "# 结论\n好了" };
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /生成报告/ }));
+    const viewer = await screen.findByTestId("report-viewer");
+    expect(within(viewer).getByText(/结论/)).toBeTruthy();
+    expect(asked).toEqual([["rec_9", "full"]]);
+  });
+
+  it("shows the export result honestly (received, not indexed)", async () => {
+    const past: UiRecord = {
+      record_id: "rec_9",
+      workflow_id: "wf_9",
+      created_at: 0,
+      ended_at: 1,
+      terminal_state: "COMPLETED",
+      terminal_reason: null,
+      user_request: { text: "旧" },
+      summary: { problem_short: "旧", terminal_state: "COMPLETED", result_short: "", duration_ms: 1 },
+      entries: [],
+      final_result: {},
+    };
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      export: async () => ({ ok: true, errorCode: null, message: null }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /导出/ }));
+    expect(await screen.findByText(/端点已接收/)).toBeTruthy();
+    expect(screen.getByText(/不表示已被收录|收录/)).toBeTruthy();
+  });
 });

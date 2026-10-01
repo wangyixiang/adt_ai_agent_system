@@ -8,6 +8,7 @@ import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
 import { Login } from "./components/Login";
 import { ProgressHeader } from "./components/ProgressHeader";
+import { ReportViewer } from "./components/ReportViewer";
 import { Transcript } from "./components/Transcript";
 import { Workbench } from "./components/Workbench";
 import { conversations } from "./conversations";
@@ -40,6 +41,11 @@ export function App({ client }: { client: AdtClient }) {
   const [records, setRecords] = useState<UiRecordListEntry[]>([]);
   const [recordsTick, setRecordsTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The open Report viewer: markdown on success, an error otherwise (never both). */
+  const [report, setReport] = useState<{ markdown: string | null; error: string | null } | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  /** Records this session has generated a report for (enables exporting it). */
+  const [reportReady, setReportReady] = useState<Set<string>>(new Set());
   /** Record transcripts are immutable, so this cache never needs invalidating. */
   const [historyTranscripts, setHistoryTranscripts] = useState<Map<string, TranscriptItem[]>>(
     new Map(),
@@ -178,12 +184,68 @@ export function App({ client }: { client: AdtClient }) {
     });
   };
 
+  const selectedRecordId = selectedConversation?.recordId ?? null;
+
+  const handleGenerateReport = (detailLevel: "summary" | "full"): void => {
+    if (selectedRecordId === null) return;
+    const recordId = selectedRecordId;
+    setError(null);
+    client
+      .report(recordId, detailLevel)
+      .then((result) => {
+        if (result.ok) {
+          setReport({ markdown: result.markdown, error: null });
+          setReportReady((previous) => new Set(previous).add(recordId));
+        } else {
+          const detail = result.message === "" ? "" : ` · ${result.message}`;
+          setReport({ markdown: null, error: `生成失败：${result.errorCode}${detail}` });
+        }
+      })
+      .catch((cause: unknown) => setReport({ markdown: null, error: messageOf(cause) }));
+  };
+
+  const handleExport = (object: "record" | "report"): void => {
+    if (selectedRecordId === null) return;
+    setError(null);
+    setExportNotice(null);
+    client
+      .export(selectedRecordId, object)
+      .then((result) => {
+        if (result.ok) {
+          // Honest: accepted by the endpoint is not the same as indexed (ADR-005 §4).
+          setExportNotice("导出：端点已接收（≠ 已被收录；是否收录由 KB 审核人员决定）");
+        } else if (result.errorCode === "export_unavailable") {
+          setExportNotice("导出失败：未配置 KB 端点");
+        } else {
+          const detail = result.message === null ? "" : ` · ${result.message}`;
+          setExportNotice(`导出失败：${result.errorCode ?? "export_failed"}${detail}`);
+        }
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
+  const handleCopyReport = (): void => {
+    if (report === null || report.markdown === null) return;
+    void navigator.clipboard?.writeText(report.markdown);
+  };
+
+  const handleSaveReport = (): void => {
+    if (report === null || report.markdown === null) return;
+    client
+      .saveText("report.md", report.markdown)
+      .then((result) => {
+        if (result.saved) setExportNotice(`已保存报告：${result.path ?? ""}`);
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
   return (
     <div className="app" data-testid="app">
       <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
       <main className="thread">
         <ProgressHeader items={viewItems} connection={ui.snapshot.connection} />
         {error !== null && <p role="alert">{error}</p>}
+        {exportNotice !== null && <p role="status">{exportNotice}</p>}
         {selectedConversation !== null && !selectedConversation.live && (
           <p className="past-note">往期记录</p>
         )}
@@ -199,7 +261,20 @@ export function App({ client }: { client: AdtClient }) {
         cancelling={selectedCancelling}
         canCancel={canCancel}
         onCancel={handleCancel}
+        recordId={selectedRecordId}
+        reportReady={selectedRecordId !== null && reportReady.has(selectedRecordId)}
+        onGenerateReport={handleGenerateReport}
+        onExport={handleExport}
       />
+      {report !== null && (
+        <ReportViewer
+          markdown={report.markdown}
+          error={report.error}
+          onCopy={handleCopyReport}
+          onSave={handleSaveReport}
+          onClose={() => setReport(null)}
+        />
+      )}
     </div>
   );
 }
