@@ -218,3 +218,26 @@ Expected: 3/3（它走 `electron .`，与安装包无关）。
 **4. Review Focus：** 五条都落到验证——产物（T3 Step 1）、版本一致（T1/T3）、图标 256×256（T1 测试）、冒烟不破（T3 Step 2）、文档对齐（T3 Step 4）。
 
 **5. Proportion：** 计划只给配置、命令与断言；唯一的大代码块是图标生成脚本（无依赖、必须逐字一致）。
+
+---
+
+## 评审裁决表（整分支评审）
+
+评审：`opencode-go/deepseek-v4.1-flash`，范围 `8caedb6..da05ecf`（4 提交）。结论 **With fixes**（**0 Critical / 2 Important / 若干 Minor**）。一轮修复（提交 `c3fcddc`）后全绿：整仓 `pnpm -r --if-present test` exit 0（`client-electron` 132/132）、`typecheck` exit 0、桌面冒烟 3/3；并**实跑**了打包出口。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **I1（重要）** 把 `nsis` 放进 `win.target` 后，`run pack` **也会出安装包**——与 README"pack = 单个 portable"及 spec §6 的两个出口相矛盾 | **已修** | `electron-builder.yml` 的 `win.target` 只留 `portable`；`dist` 的 `--win nsis` 自行选中安装包。实测：`run pack` → 只出 `ADT 0.1.0.exe`；`run dist` → 出 `ADT-0.1.0-setup.exe` |
+| **I2（重要）** spec §8 的打包出口含"**启动它能起来**"，计划把它收窄成"产物存在"，**没跑过**；"`pack` 仍出 portable"也未验证 | **已修** | 实跑 `run pack` 并在**打包后的**应用上执行 `release/win-unpacked/ADT.exe --smoke` → `electron=44.5.0 node=24.21.0 ledger=ok`，**退出码 0**；portable `ADT 0.1.0.exe` 确实产出 |
+| **M1** 文档说卸载项叫 "ADT"，实际默认是 "ADT <版本>" | **已修** | `nsis.uninstallDisplayName: ADT` |
+| **M3** 图标测试只查签名与 IHDR，截断文件也能过 | **已修** | 补 `IDAT` 存在、末尾 `IEND`、体积下限（并据实测把下限从 1000 调到 200——纯色 PNG 只有 857 字节） |
+| **M5** `signAndEditExecutable:false` 时 `win.icon` 对 **app exe** 是失效的，注释没点明 | **已修** | 注释写明：图标只对**安装包**生效；app exe 用 Electron 默认图标 + 无自定义元数据（在 rcedit 可用的机器上删掉该行） |
+| **M2** spec 说 `build/icon.ico`，实现用 `build/icon.png` | **已记录** | 计划即如此（electron-builder 会把 PNG 转成 ICO，且**实测** `release/.icon-ico/icon.ico` 是合法 256×256/32bpp） |
+| **M4** 占位图标是一块纯色方块 | **已记录** | 有意为占位；正式美术由提供方替换 `build/icon.png` 后重跑 `icon` 脚本 |
+| **M6** 打包前不清 `release/`，旧产物（`ADT 0.0.0.exe`）可能被误当新构建 | **已记录** | 本次验收前已清；`release/` 已 gitignore，日常发布前手工清理或后续加进脚本 |
+
+**评审"Declined to judge"各行：维持**——代码签名（§6/§9）、自动更新（§6/§9）、TLS（§9）、mac/linux、Server 侧（P-server-ops）、正式美术、NSIS 深度定制（许可页/协议注册/桌面快捷方式）——均在本切片范围之外。
+
+**已记录的降级（Task 3）**：本机 `rcedit` 失败 → 显式 `win.signAndEditExecutable:false`（含注释）；产物正常，app exe 保留 Electron 默认图标、无自定义版本元数据。**在 rcedit 可用的机器上删掉该行即可恢复。**
+
+**RED 证据（如实）**：图标断言（IDAT/IEND）为评审指出后**先写出的加固测试**（先红——因体积下限写太高——再调实；这一处是我自己把下限写错，已如实修正）；I1/I2 为实跑发现并验证的行为/出口缺口。
