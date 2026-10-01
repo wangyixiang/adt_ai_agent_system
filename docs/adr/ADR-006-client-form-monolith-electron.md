@@ -1,6 +1,6 @@
 # ADR-006: Client 形态——单体 Electron 应用
 
-- **Status:** ACCEPTED
+- **Status:** PROPOSED（待评审）
 - **日期:** 2026-10-01
 - **关联:** `ADR-003`（部署与信任模型）、`ADR-004`（技术栈；本 ADR 取代其 Client 形态一行）、`PROTOCOL_SPEC.md`（不变）、`CAPABILITY_SPEC.md`、`REQUIREMENTS.md` NFR-7、`docs/superpowers/specs/2026-09-29-mvp-scope.md`
 - **来源:** 桌面产品形态决定
@@ -47,7 +47,8 @@ client-electron/
 ### 4. 数据与生命周期
 
 * 幂等台账与会话存储落在 Electron 的 `app.getPath("userData")` 下（不再是工作目录里的 `.adt/…`）。
-* 应用退出时正在跑的 Workflow 如何处理（取消 / 等待收敛 / 托盘后台继续）见 §开放项。
+* **关窗 = 最小化到托盘，正在跑的 Workflow 继续**（应用不退出）——这是本形态下"长任务不因 UI 关闭而中断"的做法。
+* 从托盘**显式退出**时在跑的 Workflow 如何处理，见 §开放项。
 
 ---
 
@@ -79,7 +80,7 @@ client-electron/
 
 * 新增 `packages/client-electron`：main 内嵌 `client-daemon`、preload 的 `contextBridge` 面、renderer UI，以及**打包**（一条命令产出 exe）。
 * renderer 与 main 的通讯层：快照/事件（单向推送）/命令（提交请求、回答决策）。
-* `userData` 下的台账/会话路径；退出语义。
+* `userData` 下的台账/会话路径；**关窗到托盘**的行为；显式退出语义。
 * 打包、签名、自动更新。
 
 **风险 / 开放项：**
@@ -91,13 +92,12 @@ client-electron/
 **明确不做（本形态）：**
 
 * 只读旁观者、`curl`/脚本客户端（那是"daemon 独立进程"才有的东西）。
-* "UI 关闭后长任务继续"（除非显式决定做托盘/后台服务；见开放项）。
 * TLS、多实例、MinIO/S3 等（沿用 `ADR-004` §明确延后）。
 
 ---
 
 ## 开放项
 
-1. **退出语义**：应用退出时在跑的 Workflow 取消 / 等待收敛 / 托盘后台继续——三选一，写进实现计划。
+1. **显式退出（托盘 → 退出）时的语义**：取消 / 等待收敛——待定。（**关窗**已经定了：最小化到托盘、运行继续。）
 2. **实现计划**：`docs/superpowers/plans/2026-10-0x-electron-monolith.md`（新增 `packages/client-electron`；先做 IPC 通讯层与 `HostPort` 宿主，再打包）。
 3. **`node:sqlite` in Electron 的可行性实测**（先于打包）。
