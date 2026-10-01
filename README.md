@@ -71,6 +71,10 @@ pnpm -r --if-present typecheck
 
 Server 监听端口默认 `8080`，可用 `PORT` 覆盖；非法值（`abc` / `0` / `70000`）会**告警并回落默认**，而不是把 `NaN` 交给 Node 在 listen 时报一个难懂的 `ERR_SOCKET_BAD_PORT`。
 
+### 正式运行（部署到内网一台机器）
+
+见 **[`docs/DEPLOY.md`](docs/DEPLOY.md)**：用 `docker compose` 把 Server 常驻起来（数据持久化、`/health`、优雅退出）、用 `adm` 建账号、以及客户端连接与排障。
+
 ### LLM 规划（可选）
 
 Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 兼容）：
