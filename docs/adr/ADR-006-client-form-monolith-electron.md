@@ -1,6 +1,6 @@
 # ADR-006: Client 形态——单体 Electron 应用
 
-- **Status:** PROPOSED（待评审）
+- **Status:** ACCEPTED
 - **日期:** 2026-10-01
 - **关联:** `ADR-003`（部署与信任模型）、`ADR-004`（技术栈；本 ADR 取代其 Client 形态一行）、`PROTOCOL_SPEC.md`（不变）、`CAPABILITY_SPEC.md`、`REQUIREMENTS.md` NFR-7、`docs/superpowers/specs/2026-09-29-mvp-scope.md`
 - **来源:** 桌面产品形态决定
@@ -12,7 +12,7 @@
 
 Client 侧现在的代码：
 
-* `packages/client-daemon`：一个**库**——连接与握手、可插拔 Capability 适配器、`node:sqlite` 幂等台账、会话存储、blob 收发；对外入口是 `ClientDaemon.connect(...)` 与 `HostPort`（四个决策：确认 / 手工动作 / 资源冲突 / 完成候选）。
+* `packages/client-daemon`：一个**库**——连接与握手、可插拔 Capability 适配器、`node:sqlite` 幂等台账、会话存储、blob 收发。对外入口是 `ClientDaemon.connect(...)`；四个人的决策通过 `ClientDaemonOptions` 的 `onConfirmationRequired` / `onUserInput` / `onResourceConflict` 三个回调，加上调用方自己对 `workflow.completion_candidate` 的监听与 `workflow.completion_response` 应答，交给宿主。
 * `packages/client-cli`：终端控制台，**在同一个 Node 进程内** `import` `@adt/client-daemon` 使用它——进程内宿主，四个决策由终端回答。
 * `packages/server`、`packages/shared`：Server 与共享协议类型。
 
@@ -42,7 +42,7 @@ client-electron/
 
 ### 3. 四个决策的宿主
 
-`client-daemon` 已有 `HostPort`（确认 / 手工动作 / 资源冲突 / 完成候选）。单体里这个宿主由 **renderer 的卡片**回答：main 把问题经 IPC 推给 renderer，renderer 把人的点击经 IPC 送回 main 解析成 `HostPort` 的返回值。**没人回答时仍落安全默认**（拒绝 / `stop` / 无反馈 / `not_solved`）——这条由 daemon 定义，不随宿主形态变。
+`client-daemon` 把四个决策交给宿主：三个是 `ClientDaemonOptions` 的 `onConfirmationRequired` / `onUserInput` / `onResourceConflict` 回调，第四个"完成候选"由宿主自己监听 `workflow.completion_candidate` 并回 `workflow.completion_response`（`client-cli` 就是这么做的）。单体里这个宿主由 **main 实现**，答案来自 **renderer 的卡片**：main 把问题经 IPC 推给 renderer，renderer 把人的点击经 IPC 送回 main。**没人回答时仍落安全默认**（拒绝 / `stop` / 无反馈 / `not_solved`）——这条是既有的、不随宿主形态变。
 
 ### 4. 数据与生命周期
 
@@ -99,5 +99,5 @@ client-electron/
 ## 开放项
 
 1. **显式退出（托盘 → 退出）时的语义**：取消 / 等待收敛——待定。（**关窗**已经定了：最小化到托盘、运行继续。）
-2. **实现计划**：`docs/superpowers/plans/2026-10-0x-electron-monolith.md`（新增 `packages/client-electron`；先做 IPC 通讯层与 `HostPort` 宿主，再打包）。
+2. **实现计划**：`docs/superpowers/plans/2026-10-0x-electron-monolith.md`（新增 `packages/client-electron`；先做 main 的宿主与 IPC 通讯层，再打包）。
 3. **`node:sqlite` in Electron 的可行性实测**（先于打包）。
