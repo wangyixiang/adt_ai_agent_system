@@ -24,6 +24,7 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     cancel: async () => undefined,
     report: async () => ({ ok: true, markdown: "" }),
     export: async () => ({ ok: true, errorCode: null, message: null }),
+    saveText: async () => ({ saved: false }),
     emit: () => undefined,
     ...overrides,
   };
@@ -110,5 +111,12 @@ describe("the main bridge", () => {
     );
     await bridge.handle({ kind: "export", recordId: "rec_1", object: "report" });
     expect(seen).toEqual([["rec_1", "report"]]);
+  });
+
+  it("routes a save_text request, and reports a cancelled dialog", async () => {
+    const bridge = createBridge(deps({ saveText: async () => ({ saved: false }) }));
+    expect(await bridge.handle({ kind: "save_text", suggestedName: "r.md", content: "x" })).toEqual({
+      saved: false,
+    });
   });
 });

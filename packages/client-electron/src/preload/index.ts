@@ -8,6 +8,7 @@ import type {
   UiRecord,
   UiRecordList,
   UiReport,
+  UiSaveResult,
   UiSnapshot,
 } from "../shared/contract";
 import { IPC } from "../shared/contract";
@@ -49,6 +50,13 @@ const bridge: AdtBridge = {
       recordId,
       object,
     } satisfies RendererRequest) as Promise<UiExportResult>,
+
+  saveText: (suggestedName, content) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "save_text",
+      suggestedName,
+      content,
+    } satisfies RendererRequest) as Promise<UiSaveResult>,
 
   records: (cursor, pageSize) =>
     ipcRenderer.invoke(IPC.invoke, {

@@ -22,6 +22,7 @@ export type RendererRequest =
   | { kind: "cancel"; workflowId: string }
   | { kind: "report"; recordId: string; detailLevel?: "summary" | "full" }
   | { kind: "export"; recordId: string; object: "record" | "report" }
+  | { kind: "save_text"; suggestedName: string; content: string }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -83,6 +84,12 @@ export interface UiExportResult {
   message: string | null;
 }
 
+/** The outcome of a "save as": `saved: false` means the human cancelled. */
+export interface UiSaveResult {
+  saved: boolean;
+  path?: string;
+}
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
@@ -94,6 +101,7 @@ export interface AdtBridge {
   cancel(workflowId: string): Promise<void>;
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
+  saveText(suggestedName: string, content: string): Promise<UiSaveResult>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;

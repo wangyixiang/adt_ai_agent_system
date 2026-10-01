@@ -8,6 +8,7 @@ import { openLedger } from "@adt/client-daemon";
 import type { MainEvent, RendererRequest } from "../shared/contract";
 import { IPC } from "../shared/contract";
 import { createBridge } from "./core/bridge";
+import { writeTextFile } from "./core/save";
 import { createSession, type Session } from "./core/session";
 import { createLifecycle } from "./lifecycle";
 import { createTray } from "./tray";
@@ -89,6 +90,12 @@ app
       cancel: (workflowId) => session.cancel(workflowId),
       report: (recordId, detailLevel) => session.report(recordId, detailLevel),
       export: (recordId, object) => session.export(recordId, object),
+      saveText: async (suggestedName, content) => {
+        const { canceled, filePath } = await dialog.showSaveDialog(window, { defaultPath: suggestedName });
+        if (canceled || filePath === undefined) return { saved: false };
+        await writeTextFile(filePath, content);
+        return { saved: true, path: filePath };
+      },
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
       emit: broadcast,

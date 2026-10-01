@@ -30,6 +30,7 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
     cancel: async () => undefined,
     report: async () => ({ ok: true, markdown: "" }),
     export: async () => ({ ok: true, errorCode: null, message: null }),
+    saveText: async () => ({ saved: true, path: "x.md" }),
     records: async () => ({ records: [], nextCursor: null }),
     record: async () => {
       throw new Error("record is not used in this test");
