@@ -99,5 +99,5 @@ client-electron/
 ## 开放项
 
 1. **显式退出（托盘 → 退出）时的语义**：取消 / 等待收敛——待定。（**关窗**已经定了：最小化到托盘、运行继续。）
-2. **实现计划**：`docs/superpowers/plans/2026-10-0x-electron-monolith.md`（新增 `packages/client-electron`；先做 main 的宿主与 IPC 通讯层，再打包）。
+2. **实现计划**：`docs/superpowers/plans/2026-10-01-electron-monolith.md`（新增 `packages/client-electron`；先做 main 的宿主与 IPC 通讯层，再打包）。
 3. **`node:sqlite` in Electron 的可行性实测**（先于打包）。
