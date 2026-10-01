@@ -48,7 +48,14 @@ describe("the workbench", () => {
   it("confirms before cancelling, and cancels at most once", async () => {
     const cancelled: string[] = [];
     render(
-      <Workbench items={[tool]} cancelling={false} canCancel onCancel={(id) => cancelled.push(id)} />,
+      <Workbench
+        items={[tool]}
+        cancelling={false}
+        canCancel
+        onCancel={(id) => {
+          cancelled.push(id);
+        }}
+      />,
     );
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "取消" }));
@@ -68,5 +75,22 @@ describe("the workbench", () => {
     render(<Workbench items={[tool]} cancelling canCancel onCancel={() => undefined} />);
     expect(screen.getByText(/正在取消/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "取消" })).toBeNull();
+  });
+
+  it("restores the cancel button when the request fails", async () => {
+    render(
+      <Workbench
+        items={[tool]}
+        cancelling={false}
+        canCancel
+        onCancel={async () => {
+          throw new Error("cancel failed");
+        }}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    await user.click(screen.getByRole("button", { name: "确定取消" }));
+    expect(await screen.findByRole("button", { name: "取消" })).toBeTruthy();
   });
 });

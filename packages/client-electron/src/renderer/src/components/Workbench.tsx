@@ -15,7 +15,7 @@ export interface WorkbenchProps {
   items: TranscriptItem[];
   cancelling: boolean;
   canCancel: boolean;
-  onCancel(workflowId: string): void;
+  onCancel(workflowId: string): Promise<void> | void;
 }
 
 /**
@@ -41,9 +41,14 @@ export function Workbench({ items, cancelling, canCancel, onCancel }: WorkbenchP
 
   const confirmCancel = (): void => {
     if (model.workflowId === null) return;
+    const workflowId = model.workflowId;
     setConfirming(false);
     setRequested(true);
-    onCancel(model.workflowId);
+    void Promise.resolve(onCancel(workflowId)).catch(() => {
+      // The request failed; let the human try again (the error is surfaced by App).
+      setRequested(false);
+      setConfirming(false);
+    });
   };
 
   return (

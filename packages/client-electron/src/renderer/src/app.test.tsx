@@ -407,4 +407,55 @@ describe("the app", () => {
     expect(wb.getByText("查日志")).toBeTruthy();
     expect(wb.queryByRole("button", { name: "取消" })).toBeNull();
   });
+
+  it("offers cancel again for a later run after one was cancelled", async () => {
+    const cancelled: string[] = [];
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => {
+        push = l;
+        return () => undefined;
+      },
+      cancel: async (workflowId) => {
+        cancelled.push(workflowId);
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "第一条" } });
+      pushUi(push, {
+        id: 2,
+        type: "step.dispatched",
+        workflowId: "wf_1",
+        stepId: "st_1",
+        capability: "git.collect_diagnostics",
+        objective: "做",
+        input: {},
+        requiresConfirmation: false,
+      });
+    });
+    const user = userEvent.setup();
+    await user.click(within(screen.getByTestId("workbench")).getByRole("button", { name: "取消" }));
+    await user.click(within(screen.getByTestId("workbench")).getByRole("button", { name: "确定取消" }));
+    expect(cancelled).toEqual(["wf_1"]);
+
+    act(() => {
+      pushUi(push, { id: 3, type: "workflow.terminated", workflowId: "wf_1", terminalState: "CANCELLED", terminalReason: null, recordId: null });
+      pushUi(push, { id: 4, type: "workflow.created", workflowId: "wf_2", userRequest: { text: "第二条" } });
+      pushUi(push, {
+        id: 5,
+        type: "step.dispatched",
+        workflowId: "wf_2",
+        stepId: "st_2",
+        capability: "git.collect_diagnostics",
+        objective: "做2",
+        input: {},
+        requiresConfirmation: false,
+      });
+    });
+
+    const wb = within(await screen.findByTestId("workbench"));
+    expect(await wb.findByRole("button", { name: "取消" })).toBeTruthy();
+  });
 });

@@ -170,9 +170,12 @@ export function App({ client }: { client: AdtClient }) {
       false);
   const canCancel = selectedConversation?.live === true && selectedConversation.state === "running";
 
-  const handleCancel = (workflowId: string): void => {
+  const handleCancel = (workflowId: string): Promise<void> => {
     setError(null);
-    client.cancel(workflowId).catch((cause: unknown) => setError(messageOf(cause)));
+    return client.cancel(workflowId).catch((cause: unknown) => {
+      setError(messageOf(cause));
+      throw cause;
+    });
   };
 
   return (
@@ -191,6 +194,7 @@ export function App({ client }: { client: AdtClient }) {
         <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
       </main>
       <Workbench
+        key={effectiveSelected ?? "none"}
         items={viewItems}
         cancelling={selectedCancelling}
         canCancel={canCancel}
