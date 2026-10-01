@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ClientDaemon, openLedger, openSessionStore } from "@adt/client-daemon";
 
-import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiSnapshot } from "../../shared/contract";
+import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot } from "../../shared/contract";
 import { createDecisionHost } from "./host";
 import { createProjection } from "./projection";
 
@@ -27,6 +27,8 @@ export interface Session {
   cancel(workflowId: string): Promise<void>;
   /** Ask the Server to generate a Report from a Record; the content is the Server's. */
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
+  /** Ask the Server to export a Record/Report to the configured KB (ADR-005). */
+  export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
   /** List this user's finished Records (the Server filters by owner). */
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   /** One finished Record, by id. */
@@ -162,6 +164,20 @@ export function createSession(options: SessionOptions): Session {
         ok: false as const,
         errorCode: String(result.error_code ?? "generation_failed"),
         message: String(result.message ?? ""),
+      };
+    },
+
+    async export(recordId, object) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const result = (await daemon.connection.request(
+        "record.export_request",
+        { record_id: recordId, object, target: "knowledge_base" },
+        "record.export_result",
+      )) as { status?: unknown; error_code?: unknown; message?: unknown };
+      return {
+        ok: result.status === "ok",
+        errorCode: typeof result.error_code === "string" ? result.error_code : null,
+        message: typeof result.message === "string" ? result.message : null,
       };
     },
 

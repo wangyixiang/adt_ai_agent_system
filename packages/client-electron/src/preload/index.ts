@@ -4,6 +4,7 @@ import type {
   AdtBridge,
   MainEvent,
   RendererRequest,
+  UiExportResult,
   UiRecord,
   UiRecordList,
   UiReport,
@@ -41,6 +42,13 @@ const bridge: AdtBridge = {
       recordId,
       ...(detailLevel === undefined ? {} : { detailLevel }),
     } satisfies RendererRequest) as Promise<UiReport>,
+
+  export: (recordId, object) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "export",
+      recordId,
+      object,
+    } satisfies RendererRequest) as Promise<UiExportResult>,
 
   records: (cursor, pageSize) =>
     ipcRenderer.invoke(IPC.invoke, {

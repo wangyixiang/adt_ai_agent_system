@@ -23,6 +23,7 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     },
     cancel: async () => undefined,
     report: async () => ({ ok: true, markdown: "" }),
+    export: async () => ({ ok: true, errorCode: null, message: null }),
     emit: () => undefined,
     ...overrides,
   };
@@ -95,5 +96,19 @@ describe("the main bridge", () => {
       markdown: "# r",
     });
     expect(seen).toEqual([["rec_1", "summary"]]);
+  });
+
+  it("routes an export request to the session", async () => {
+    const seen: Array<[string, string]> = [];
+    const bridge = createBridge(
+      deps({
+        export: async (recordId, object) => {
+          seen.push([recordId, object]);
+          return { ok: false, errorCode: "export_unavailable", message: null };
+        },
+      }),
+    );
+    await bridge.handle({ kind: "export", recordId: "rec_1", object: "report" });
+    expect(seen).toEqual([["rec_1", "report"]]);
   });
 });

@@ -88,6 +88,7 @@ app
       answer: (askId, answer) => session.answer(askId, answer),
       cancel: (workflowId) => session.cancel(workflowId),
       report: (recordId, detailLevel) => session.report(recordId, detailLevel),
+      export: (recordId, object) => session.export(recordId, object),
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
       emit: broadcast,

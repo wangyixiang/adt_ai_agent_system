@@ -349,4 +349,23 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("exports a Record and reports an unconfigured endpoint honestly", async () => {
+    const f = await fixture([readStep, done]);
+    try {
+      await f.session.submit("读一下状态");
+      const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
+      f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      const recordId = settled.workflows[0]!.recordId!;
+
+      const result = await f.session.export(recordId, "record");
+      expect(result.ok).toBe(false);
+      expect(result.errorCode).toBe("export_unavailable");
+
+      await expect(f.session.export("rec_nope", "record")).rejects.toThrow(/unknown_record/);
+    } finally {
+      await f.close();
+    }
+  });
 });

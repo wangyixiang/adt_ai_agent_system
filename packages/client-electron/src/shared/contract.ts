@@ -21,6 +21,7 @@ export type RendererRequest =
   | { kind: "answer"; askId: string; answer: Answer }
   | { kind: "cancel"; workflowId: string }
   | { kind: "report"; recordId: string; detailLevel?: "summary" | "full" }
+  | { kind: "export"; recordId: string; object: "record" | "report" }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -72,6 +73,16 @@ export type UiReport =
   | { ok: true; markdown: string }
   | { ok: false; errorCode: string; message: string };
 
+/**
+ * The outcome of a KB export. `ok` means the endpoint **accepted** it — never
+ * that it was indexed (ADR-005 §4).
+ */
+export interface UiExportResult {
+  ok: boolean;
+  errorCode: string | null;
+  message: string | null;
+}
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
@@ -82,6 +93,7 @@ export interface AdtBridge {
   answer(askId: string, answer: Answer): Promise<void>;
   cancel(workflowId: string): Promise<void>;
   report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
+  export(recordId: string, object: "record" | "report"): Promise<UiExportResult>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;
