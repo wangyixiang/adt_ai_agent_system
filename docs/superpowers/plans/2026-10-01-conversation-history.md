@@ -241,6 +241,29 @@ git commit -m "test+docs(electron): the history path in the desktop smoke"
 
 ---
 
+## Review 修复轮
+
+整体评审：`opencode-go/deepseek-v4.1-flash`，范围 `1473cb7..a9a06fa`。**1 Critical + 3 Important + 6 Minor**；Critical/Important 一轮修复（提交 `340aa61`），Minor 延后。修复后全绿（`test` / `typecheck` / `client-electron build` / 桌面冒烟 2 例）。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **C1（阻塞）** 一条 `step_status` 事件产出两条 entry，**共用同一个 `entry_id`**（= `event.id`）→ Record 里永久重复 id，破坏可追溯性 | **已修** | `builder.ts` 给追加的 `step_status` entry 用**独立 id**（`` `${event.id}:step_status` ``）；builder 测试加"entry_id 唯一"断言 |
+| **I1（重要）** 在别的会话下**发起新对话，主视图不跟随新会话**（`handleSubmit` 不更新选中） | **已修** | `app.tsx` 的 `handleSubmit` `.then((workflowId) => setSelected(workflowId))`；新增组件测"往期在视图中发起新对话 → 跟随新会话" |
+| **I2（重要）** 左栏**缺"耗时"列**（design §6 要求标题 + 状态 + 耗时） | **已修** | `UiConversation` 加 `durationMs`；`conversations` 从 Record 的 `summary.duration_ms` 填；`ConversationList` 渲染；测试同步 |
+| **I3（重要）** Review Focus #3/#5 要求的测试**缺失**：`not_logged_in` 与"记忆化不重取" | **已修** | `session.int.test` 加"未登录时 record 查询 → `not_logged_in`"；`app.test` 加"重渲染不重取同一 Record"（`fetched` 不变） |
+| **M（重定级为目标相关）** 重建的总结**不显示结论**（`final_result` 的 `resolution_summary`/`failure_summary`），而目标是"看懂结论是什么" | **已修** | `recordTranscript` 的 summary 文本带上 `final_result` 的结论；测试断言含结论文本 |
+| **M** `records()`/`record()` 失败后**不清理错误条**（成功拉取不清 `error`） | **延后** | 只是残留一条提示；等 UI 打磨轮 |
+| **M** live 视图**把各 workflow 的 notice 都带上**（notice 无 workflowId） | **延后** | 当前单会话下不可见；多并行（B）时一并处理 |
+| **M** 已终止的 live 会话**排在 history 之前**（未严格按 Server 顺序） | **延后** | 会话内影响很小；排序规则在多并行时再定 |
+| **M** 冒烟**用例 2 依赖用例 1 先造出 Record**（单独跑用例 2 会失败） | **延后** | 同一 `beforeAll` Server 下顺序执行；把依赖写明即可 |
+| **M** 错误文案**带着 Electron IPC 包装**（`Error invoking remote method …`） | **延后** | 诚实但啰嗦；显示层做一次剥离即可 |
+
+**评审"Declined to judge"各行**：**维持**——Report `full` 不显示 `ts`（既有、不在本 diff）；history 拉取瞬间的"还没有内容"闪烁；多并行/取消/旁观者（明确不做）；分页 UI（明确延后）；`UiRecord` 只取 UI 需要的子集（renderer 不 import Server 类型）；`step_status` 的 narrative 措辞（计划写"例："）；"请求他人 Record"未测（owner 过滤在 Server，计划只要求"不存在"那条）；`session.record` 不做运行时校验（受信内部 IPC）；`user_confirmation`/`user_input` 重建缺卡片原文（design §11 已接受的边界）。
+
+**RED 证据（如实）**：C1 的"先失败"是**评审的复现**（可重跑）；I1/I2/I3 与 M（结论）的测试随修复写出，为**回归护栏**。
+
+---
+
 ## Self-Review
 
 **1. Spec coverage：** Spec §3（IPC/类型）→ T2；§4（`transcriptFromRecord`）→ T3；§5（`step_status`）→ T1；§6（布局/组件）→ T4；§7（确定性/记忆化/保真度）→ T3（纯函数）+ T4（memo）；§8（多并行留形）→ T4（谓词）；§9（测试）→ 各任务 + T5；§10（不做）→ 全局约束与 T5 的范围。**刻意不做**：Report/导出/blob、工作台、多并行、取消、旁观者、逐字还原、跨会话检索、分页 UI。
