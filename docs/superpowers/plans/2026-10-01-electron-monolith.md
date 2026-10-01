@@ -234,6 +234,32 @@ Expected: 产出 exe；用 `--smoke` 启动它 → 退出码 0。
 
 ---
 
+## Review 修复轮
+
+整体评审：`opencode-go/deepseek-v4.1-flash`，范围 `74c6300..9971b8d`。**0 Critical + 4 Important + 8 Minor**；Important 一轮修复（提交 `a98d299`），Minor 延后。修复后全绿（`test` / `typecheck` / `client-electron build` / 打包冒烟）。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **I1（重要）** 完成候选的 **`feedback` 被收集、校验后又被丢掉**：`host.completion` 只回 `"solved"|"not_solved"`，`session` 只发 `{workflow_id, resolution}`——但 `PROTOCOL_SPEC` §7.2 规定 `{resolution, feedback}`，`not_solved` 时 Server 用 `feedback` 触发重规划。后果：答"没解决 + 原因"却被无视，重规划看不到原因 | **已修** | `host.completion` 改为回 `CompletionDecision = {resolution, feedback?}`（**计划的签名是 `Promise<"solved"|"not_solved">`，这是一处计划偏离**）；`session` 把 `feedback` 一并发进 `workflow.completion_response`；`host.test.ts` 断言 feedback 被带出 |
+| **I2（重要）** `SAFE_DEFAULTS` 是**摆设**（生产代码不用它），且计划要求的"不答 → 不产生同意"测试**缺失** | **已修** | `host.ts` 的四个映射**引用 `SAFE_DEFAULTS`**；新增 `host.test.ts`：`abandon()` 后 answer → `unknown_ask`、且挂起的 promise **不被 resolve**（无意外同意）；畸形回答保持打开；单次；完成反馈 |
+| **I3（重要）** `onStepStatus` 钩子**能抛进 daemon 的发送路径**（窗口销毁 / 证据不可序列化），未捕获会在 main 里变成 unhandled rejection | **已修** | `daemon.ts` 的钩子调用包 `try/catch` + `console.warn`（在 `stepRunner` 的 send 路径里失败要"关得住"）；`session.int.test.ts` 新增用例：`emit` 对 `step.status` 抛错，Workflow **仍然跑完**（COMPLETED） |
+| **I4（重要）** T6 说"有进行中的 Workflow **先确认**"，实现却**直接关**（无确认、无记录） | **已修** | `lifecycle.ts` 加 `hasRunningWorkflow()` + `confirmQuit()`：有活的 Workflow 先问，取消则不退；`main` 接 Electron `dialog`；`lifecycle.test.ts` 覆盖"无运行→不弹窗""取消→不退""确认→收尾退出" |
+| **（基础设施）** 根 `test` 脚本 `pnpm -r --if-present test` **默认并发 4**，与 `WORKFLOW` §7"共享 `adt_test` 的包不能并行跑"冲突；新增的 client-electron 让 `client-cli` 的 e2e 在整包下超时 | **已修** | 根 `package.json` 的 `test` 改为 `pnpm -r --workspace-concurrency=1 --if-present test`；`WORKFLOW` §7 补一句；整包 `pnpm test` 复跑全绿 |
+| **M1** 恢复（resume）时在跑的 step 渲染成光卡（投影没见过它） | **延后** | 与 `session.resume` 的可视化一起；首个 exe 不依赖 resume |
+| **M2** `bridge.emit` 是死参数、`handle` 非穷尽 | **延后** | 无害；下个计划清 |
+| **M3** `tsconfig.web.json` 仍带 `"types": ["node"]`（renderer 能引用 Node 类型） | **延后** | 收紧"renderer 不碰 Node"需要把测试用的 Node 类型挪走；下个计划 |
+| **M4** 台账/会话句柄不关（重复登录会多开一份） | **延后** | 进程退出即释放；做登出/重登时一并收 |
+| **M5** 拒绝/等待的 step 不显示原因（只读 `fail_reason`） | **延后** | 计划里工具卡只要求状态；原因是打磨 |
+| **M6** `StepState`/`TerminalState` 在 shared 与 server 各有一份 | **延后** | 潜在漂移；让 server 复用 shared 是独立重构 |
+| **M7** `resource_conflict` 无端到端用例（只有 daemon 级） | **延后** | 与确认同一条 `ask()` 路径；端到端需给 session 注入自定义 registry |
+| **M8** README 没写 Electron 安装注意（二进制可能没下、需 `pnpm rebuild electron`） | **延后** | 记在这里；做文档轮时补 |
+
+**评审"Declined to judge"各行**：**维持**——自动重连/登出/多窗口（不在本计划）、CSP/`setWindowOpenHandler`/sender 校验（计划没要求）、图标/签名/自动更新（明确延后）、mac/linux（本线只做 Windows portable）、Record/Report/导出/blob/工作台（下个计划）、退出时 Server 侧孤儿回收语义（`ADR-006` 开放项）、`signAndEditExecutable:false` 连带关签名（同上"延后"）。
+
+**RED 证据（如实）**：I1（`host.test.ts` 完成反馈）、I2（`host.test.ts` abandon）、I4（`lifecycle.test.ts`）为**回归护栏**（先随修复写出）；I3 的 `session.int` emit-抛错用例同样是护栏——这四条的红是**评审的复现**。基础设施那条的"红"是整包 `pnpm test` 的真实失败（`client-cli` e2e 超时）。
+
+---
+
 ## Self-Review
 
 **1. Spec coverage：** ADR-006（单体 / main 内嵌 / IPC / 托盘 / 安全基线）→ T1–T7；设计 §6.2 的四决策 → T3/T4；`WORKFLOW_SPEC` §4.2/§4.3/§4.4/§6.1/§7.2 → T4；`CAPABILITY_SPEC` §6（schema 复用）→ T3；`PROTOCOL_SPEC` §7.2/§8.1/§8.3 → T4。**刻意不做（下一个计划）**：Record 历史/详情、Report、导出、blob 预览、工作台视图；多 Workflow / 旁观者；**签名 / 自动更新**（先要"能跑起来的 exe"）；浏览器/HTTP 那条线（在 `electron-wrapper`，不在本线）。
