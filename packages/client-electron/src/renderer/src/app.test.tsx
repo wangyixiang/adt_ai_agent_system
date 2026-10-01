@@ -662,4 +662,51 @@ describe("the app", () => {
     await user.click(screen.getByRole("button", { name: /第八/ }));
     await waitFor(() => expect(screen.queryByText(/端点已接收/)).toBeNull());
   });
+
+  it("submits the composer's attachment with the request", async () => {
+    const seen: Array<{ text: string; attachments: Array<{ name: string }> }> = [];
+    const client = fakeClient({
+      submit: async (text, attachments) => {
+        seen.push({ text, attachments });
+        return "wf_1";
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.upload(screen.getByLabelText("添加附件"), new File(["hi"], "note.txt", { type: "text/plain" }));
+    await user.type(screen.getByPlaceholderText(/请求/), "看附件");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.attachments[0]).toMatchObject({ name: "note.txt" });
+  });
+
+  it("previews an evidence blob from a past run", async () => {
+    const past: UiRecord = {
+      ...pastRecord("rec_9", "wf_9", "第九"),
+      entries: [
+        { entry_id: "e1", ts: 1, kind: "step_dispatched", ref: { step_id: "st_1", capability: "c", objective: "o", input: {} }, narrative: "n" },
+        { entry_id: "e2", ts: 2, kind: "evidence_received", ref: { step_id: "st_1", evidence: { type: "log", result: { content_ref: "blob_x", media_type: "text/plain", size: 5 } } }, narrative: "n" },
+      ],
+    };
+    const seen: string[] = [];
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      blobPreview: async (contentRef) => {
+        seen.push(contentRef);
+        return { kind: "text", mediaType: "text/plain", text: "log line" };
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /预览证据/ }));
+    const viewer = await screen.findByTestId("blob-viewer");
+    expect(within(viewer).getByText("log line")).toBeTruthy();
+    expect(seen).toEqual(["blob_x"]);
+  });
 });

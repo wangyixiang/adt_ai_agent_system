@@ -9,6 +9,7 @@ const userItem = (workflowId: string, text: string): TranscriptItem => ({
   kind: "user",
   workflowId,
   text,
+  attachments: [],
 });
 
 const summaryItem = (

@@ -8,7 +8,7 @@
  */
 import type { ManualOutcome } from "@adt/shared";
 
-import type { UiRecord, UiRecordEntry } from "../../shared/contract";
+import type { UiAttachment, UiRecord, UiRecordEntry } from "../../shared/contract";
 import { MANUAL_OUTCOME_TEXT, STEP_STATE_TEXT, type TranscriptItem } from "./transcript";
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
@@ -26,13 +26,44 @@ function asRecord(value: unknown): Record<string, unknown> {
   return (value ?? {}) as Record<string, unknown>;
 }
 
+/** A blob reference inside evidence, if any (mirrors RECORD_SPEC v0.10). */
+function blobRefOf(evidence: unknown): ToolItem["evidenceBlob"] {
+  const result = asRecord(asRecord(evidence)["result"]);
+  if (typeof result["content_ref"] !== "string") return null;
+  return {
+    content_ref: result["content_ref"],
+    media_type: typeof result["media_type"] === "string" ? result["media_type"] : "application/octet-stream",
+    size: typeof result["size"] === "number" ? result["size"] : 0,
+    ...(typeof result["name"] === "string" ? { name: result["name"] } : {}),
+  };
+}
+
+/** Attachments as they were kept in the Record, ignoring anything malformed. */
+function parseAttachments(value: unknown): UiAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is UiAttachment => {
+    const attachment = item as Record<string, unknown>;
+    return (
+      typeof attachment["name"] === "string" &&
+      typeof attachment["media_type"] === "string" &&
+      (attachment["mode"] === "inline" || attachment["mode"] === "blob")
+    );
+  });
+}
+
 export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
   const workflowId = record.workflow_id;
   const items: TranscriptItem[] = [];
   const toolIndex = new Map<string, number>();
   const askIndex = new Map<string, number>();
 
-  items.push({ key: `hist:user:${workflowId}`, kind: "user", workflowId, text: record.user_request.text });
+  items.push({
+    key: `hist:user:${workflowId}`,
+    kind: "user",
+    workflowId,
+    text: record.user_request.text,
+    attachments: parseAttachments(record.user_request["attachments"]),
+  });
 
   const putTool = (patch: Partial<ToolItem> & { stepId: string }): void => {
     const index = toolIndex.get(patch.stepId);
@@ -51,6 +82,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
         state,
         requiresConfirmation: patch.requiresConfirmation ?? false,
         evidenceSummary: patch.evidenceSummary ?? null,
+        evidenceBlob: patch.evidenceBlob ?? null,
         text: STEP_STATE_TEXT[state],
       });
       return;
@@ -103,7 +135,12 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
 
       case "evidence_received": {
         const stepId = String(ref.step_id ?? "");
-        putTool({ stepId, evidenceSummary: summarizeEvidence(ref.evidence) });
+        const blob = blobRefOf(ref.evidence);
+        putTool({
+          stepId,
+          evidenceSummary: summarizeEvidence(ref.evidence),
+          ...(blob === null ? {} : { evidenceBlob: blob }),
+        });
         break;
       }
 

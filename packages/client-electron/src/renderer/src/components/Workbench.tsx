@@ -22,6 +22,8 @@ export interface WorkbenchProps {
   reportReady: boolean;
   onGenerateReport(detailLevel: "summary" | "full"): void;
   onExport(object: "record" | "report"): void;
+  onPreviewBlob(contentRef: string, mediaType: string): void;
+  onSaveBlob(contentRef: string, mediaType: string, name?: string): void;
 }
 
 /**
@@ -39,6 +41,8 @@ export function Workbench({
   reportReady,
   onGenerateReport,
   onExport,
+  onPreviewBlob,
+  onSaveBlob,
 }: WorkbenchProps) {
   const [confirming, setConfirming] = useState(false);
   const [requested, setRequested] = useState(false);
@@ -145,10 +149,56 @@ export function Workbench({
                 ))}
               </div>
             )}
+            {step.evidenceBlob !== null && (
+              <div className="evidence-blob">
+                <button
+                  type="button"
+                  onClick={() => onPreviewBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type)}
+                >
+                  预览证据
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSaveBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type, step.evidenceBlob!.name)
+                  }
+                >
+                  另存证据
+                </button>
+              </div>
+            )}
             {step.evidenceSummary !== null && <pre className="evidence">{step.evidenceSummary}</pre>}
           </article>
         ))}
       </section>
+
+      {model.attachments.length > 0 && (
+        <section className="workbench-attachments">
+          <h4>附件</h4>
+          {model.attachments.map((attachment) => (
+            <div key={attachment.name} className="attachment">
+              <span className="attachment-name">{attachment.name}</span>
+              <span className="attachment-mode">{attachment.mode === "inline" ? "内联" : "blob"}</span>
+              {attachment.mode === "blob" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onPreviewBlob(attachment.content_ref, attachment.media_type)}
+                  >
+                    预览
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSaveBlob(attachment.content_ref, attachment.media_type, attachment.name)}
+                  >
+                    另存
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
 
       {model.completion !== null && (
         <section className="workbench-completion">

@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import type { TranscriptItem } from "../transcript";
 import { Workbench, type WorkbenchProps } from "./Workbench";
 
-const tool: TranscriptItem = {
+const tool: Extract<TranscriptItem, { kind: "tool" }> = {
   key: "tool:wf_1:st_1",
   kind: "tool",
   workflowId: "wf_1",
@@ -17,6 +17,7 @@ const tool: TranscriptItem = {
   state: "COMPLETED",
   requiresConfirmation: false,
   evidenceSummary: "git_status: clean",
+  evidenceBlob: null,
   text: "完成",
 };
 
@@ -39,6 +40,8 @@ const base: WorkbenchProps = {
   reportReady: false,
   onGenerateReport: () => undefined,
   onExport: () => undefined,
+  onPreviewBlob: () => undefined,
+  onSaveBlob: () => undefined,
 };
 const show = (over: Partial<WorkbenchProps> = {}) => render(<Workbench {...base} {...over} />);
 
@@ -149,5 +152,17 @@ describe("the workbench", () => {
   it("explains why Report export is unavailable before a report exists", () => {
     show({ recordId: "rec_1", reportReady: false });
     expect(screen.getByText(/生成一次报告后/)).toBeTruthy();
+  });
+
+  it("previews a step's evidence blob", async () => {
+    const previewed: string[] = [];
+    const withBlob: Extract<TranscriptItem, { kind: "tool" }> = {
+      ...tool,
+      evidenceBlob: { content_ref: "blob_x", media_type: "text/plain", size: 3 },
+    };
+    show({ items: [withBlob], onPreviewBlob: (contentRef) => previewed.push(contentRef) });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /预览证据/ }));
+    expect(previewed).toEqual(["blob_x"]);
   });
 });

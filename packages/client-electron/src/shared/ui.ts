@@ -5,6 +5,8 @@
  */
 import type { Ask, Answer, StepState, TerminalState } from "@adt/shared";
 
+import type { UiAttachment } from "./contract";
+
 export interface UiEvidenceBlob {
   content_ref: string;
   media_type: string;
@@ -54,7 +56,7 @@ interface UiEventBase {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 export type UiEvent =
-  | (UiEventBase & { type: "workflow.created"; workflowId: string; userRequest: { text: string } })
+  | (UiEventBase & { type: "workflow.created"; workflowId: string; userRequest: { text: string }; attachments?: UiAttachment[] })
   | (UiEventBase & {
       type: "step.dispatched";
       workflowId: string;

@@ -14,6 +14,7 @@ const tool = (): Extract<TranscriptItem, { kind: "tool" }> => ({
   state: "COMPLETED",
   requiresConfirmation: false,
   evidenceSummary: "git_status: clean",
+  evidenceBlob: null,
   text: "完成",
 });
 
@@ -53,6 +54,7 @@ describe("deriveWorkbench", () => {
       steps: [],
       conclusion: null,
       completion: null,
+      attachments: [],
     });
   });
 
@@ -70,6 +72,12 @@ describe("deriveWorkbench", () => {
     };
     const model = deriveWorkbench([tool(), candidate], false);
     expect(model.completion).toEqual({ summary: "看起来好了", evidenceRefs: ["st_1"] });
+  });
+
+  it("exposes a step's evidence blob", () => {
+    const withBlob = { ...tool(), evidenceBlob: { content_ref: "blob_x", media_type: "text/plain", size: 3 } };
+    const model = deriveWorkbench([withBlob], false);
+    expect(model.steps[0]!.evidenceBlob?.content_ref).toBe("blob_x");
   });
 
   it("attaches a decision to the step it belongs to", () => {

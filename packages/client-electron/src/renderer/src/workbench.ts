@@ -7,6 +7,7 @@
  */
 import type { Ask, StepState, TerminalState } from "@adt/shared";
 
+import type { UiAttachment, UiEvidenceBlob } from "../../shared/contract";
 import type { TranscriptItem } from "./transcript";
 
 /** `CANCELLING` is the convergence window, not a terminal state. */
@@ -18,6 +19,7 @@ export interface WorkbenchStep {
   objective: string;
   state: StepState;
   evidenceSummary: string | null;
+  evidenceBlob: UiEvidenceBlob | null;
   /** This step's human decisions, as short labels (answered) or "待你回答". */
   decisions: string[];
 }
@@ -40,6 +42,8 @@ export interface WorkbenchModel {
   conclusion: WorkbenchConclusion | null;
   /** The Server's "solved?" proposal, when one is on the table/answered. */
   completion: WorkbenchCompletion | null;
+  /** The request's attachments, if any. */
+  attachments: UiAttachment[];
 }
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
@@ -58,6 +62,7 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
       objective: item.objective,
       state: item.state,
       evidenceSummary: item.evidenceSummary,
+      evidenceBlob: item.evidenceBlob,
       decisions: asks
         .filter((ask) => ask.stepId !== null && ask.stepId === item.stepId && ask.askKind !== "completion")
         .map((ask) => (ask.answered ? ask.text : "待你回答")),
@@ -81,8 +86,10 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
 
   const first = items.find((item) => item.kind !== "notice");
   const workflowId = first === undefined ? null : first.workflowId;
+  const user = items.find((item): item is Extract<TranscriptItem, { kind: "user" }> => item.kind === "user");
+  const attachments = user?.attachments ?? [];
   // A terminal state wins: "cancelling" only tells the running case apart.
   const state: WorkbenchState = conclusion?.terminalState ?? (cancelling ? "CANCELLING" : "running");
 
-  return { workflowId, state, steps, conclusion, completion };
+  return { workflowId, state, steps, conclusion, completion, attachments };
 }

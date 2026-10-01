@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { Answer } from "@adt/shared";
 
-import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot } from "../../shared/contract";
+import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot, UiBlobPreview, IncomingAttachment } from "../../shared/contract";
 import type { AdtClient } from "./api";
 import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
@@ -46,6 +46,8 @@ export function App({ client }: { client: AdtClient }) {
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   /** Records this session has generated a report for (enables exporting it). */
   const [reportReady, setReportReady] = useState<Set<string>>(new Set());
+  /** The open blob viewer (an attachment or an evidence blob). */
+  const [blob, setBlob] = useState<UiBlobPreview | null>(null);
   /** Record transcripts are immutable, so this cache never needs invalidating. */
   const [historyTranscripts, setHistoryTranscripts] = useState<Map<string, TranscriptItem[]>>(
     new Map(),
@@ -138,6 +140,7 @@ export function App({ client }: { client: AdtClient }) {
   useEffect(() => {
     setExportNotice(null);
     setReport(null);
+    setBlob(null);
   }, [effectiveSelected]);
 
   const handleLogin = (username: string, secret: string): void => {
@@ -149,11 +152,11 @@ export function App({ client }: { client: AdtClient }) {
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
 
-  const handleSubmit = (text: string): void => {
+  const handleSubmit = (text: string, attachments: IncomingAttachment[]): void => {
     setError(null);
     setSubmitting(true);
     client
-      .submit(text, [])
+      .submit(text, attachments)
       .then((workflowId) => setSelected(workflowId))
       .catch((cause: unknown) => setError(messageOf(cause)))
       .finally(() => setSubmitting(false));
@@ -246,6 +249,24 @@ export function App({ client }: { client: AdtClient }) {
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
 
+  const handlePreviewBlob = (contentRef: string, mediaType: string): void => {
+    setError(null);
+    client
+      .blobPreview(contentRef, mediaType)
+      .then(setBlob)
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
+  const handleSaveBlob = (contentRef: string, mediaType: string, name?: string): void => {
+    setError(null);
+    client
+      .blobSave(contentRef, mediaType, name)
+      .then((result) => {
+        if (result.saved) setExportNotice(`已保存：${result.path ?? ""}`);
+      })
+      .catch((cause: unknown) => setError(messageOf(cause)));
+  };
+
   return (
     <div className="app" data-testid="app">
       <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
@@ -272,7 +293,22 @@ export function App({ client }: { client: AdtClient }) {
         reportReady={selectedRecordId !== null && reportReady.has(selectedRecordId)}
         onGenerateReport={handleGenerateReport}
         onExport={handleExport}
+        onPreviewBlob={handlePreviewBlob}
+        onSaveBlob={handleSaveBlob}
       />
+      {blob !== null && (
+        <div className="blob-viewer" data-testid="blob-viewer" role="dialog" aria-modal="true">
+          <header>
+            <span>附件 / 证据</span>
+            <button type="button" onClick={() => setBlob(null)}>
+              关闭
+            </button>
+          </header>
+          {blob.kind === "text" && <pre className="blob-text">{blob.text}</pre>}
+          {blob.kind === "image" && <img className="blob-image" src={blob.dataUrl} alt="证据" />}
+          {blob.kind === "binary" && <p>这是二进制内容（{blob.size} 字节），请用「另存」保存。</p>}
+        </div>
+      )}
       {report !== null && (
         <ReportViewer
           markdown={report.markdown}

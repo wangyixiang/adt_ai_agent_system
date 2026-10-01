@@ -6,10 +6,10 @@
  */
 import type { Answer, Ask, AskKind, StepState, TerminalState } from "@adt/shared";
 
-import type { UiEvent, UiSnapshot } from "../../shared/contract";
+import type { UiAttachment, UiEvidenceBlob, UiEvent, UiSnapshot } from "../../shared/contract";
 
 export type TranscriptItem =
-  | { key: string; kind: "user"; workflowId: string; text: string }
+  | { key: string; kind: "user"; workflowId: string; text: string; attachments: UiAttachment[] }
   | {
       key: string;
       kind: "assistant";
@@ -29,6 +29,7 @@ export type TranscriptItem =
       state: StepState;
       requiresConfirmation: boolean;
       evidenceSummary: string | null;
+      evidenceBlob: UiEvidenceBlob | null;
       text: string;
     }
   | {
@@ -110,6 +111,7 @@ interface StepPatch {
   state?: StepState;
   requiresConfirmation?: boolean;
   evidenceSummary?: string | null;
+  evidenceBlob?: UiEvidenceBlob | null;
 }
 
 function answerText(answer: Answer): string {
@@ -147,10 +149,10 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
 
   const get = (key: string): Ordered | undefined => ordered.get(key);
 
-  const putUser = (workflowId: string, text: string): void => {
+  const putUser = (workflowId: string, text: string, attachments: UiAttachment[]): void => {
     const key = `user:${workflowId}`;
     ordered.set(key, {
-      item: { key, kind: "user", workflowId, text },
+      item: { key, kind: "user", workflowId, text, attachments },
       workflowRank: rankOf(workflowId),
       userRank: 0,
       order: -1,
@@ -185,6 +187,8 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
       patch.requiresConfirmation ?? previous?.requiresConfirmation ?? false;
     const evidenceSummary =
       patch.evidenceSummary !== undefined ? patch.evidenceSummary : (previous?.evidenceSummary ?? null);
+    const evidenceBlob =
+      patch.evidenceBlob !== undefined ? patch.evidenceBlob : (previous?.evidenceBlob ?? null);
 
     ordered.set(assistantKey, {
       item: { key: assistantKey, kind: "assistant", workflowId, stepId, capability, text: objective },
@@ -205,6 +209,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
         state,
         requiresConfirmation,
         evidenceSummary,
+        evidenceBlob,
         text: STEP_STATE_TEXT[state],
       },
       workflowRank: rank,
@@ -280,7 +285,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
 
   for (const workflow of snapshot.workflows) {
     rankOf(workflow.workflowId);
-    putUser(workflow.workflowId, workflow.userRequest.text);
+    putUser(workflow.workflowId, workflow.userRequest.text, []);
     workflow.steps.forEach((step, index) => putStep(workflow.workflowId, step.stepId, step, index));
     if (workflow.pendingAsk !== null) {
       putAsk(workflow.workflowId, workflow.pendingAsk.askId, { ask: workflow.pendingAsk }, workflow.steps.length + 0.5);
@@ -305,7 +310,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
 
     switch (event.type) {
       case "workflow.created":
-        putUser(event.workflowId, event.userRequest.text);
+        putUser(event.workflowId, event.userRequest.text, event.attachments ?? []);
         break;
 
       case "step.dispatched":
@@ -329,6 +334,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
           {
             state: event.state,
             ...(event.evidenceSummary === undefined ? {} : { evidenceSummary: event.evidenceSummary }),
+            ...(event.evidenceBlob === undefined ? {} : { evidenceBlob: event.evidenceBlob }),
           },
           event.id,
         );
