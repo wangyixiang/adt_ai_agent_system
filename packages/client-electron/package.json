@@ -11,6 +11,7 @@
     "icon": "node scripts/make-placeholder-icon.mjs",
     "smoke": "electron . --smoke",
     "pack": "electron-vite build && electron-builder",
+    "dist": "electron-vite build && electron-builder --win nsis",
     "test": "vitest run --passWithNoTests",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
