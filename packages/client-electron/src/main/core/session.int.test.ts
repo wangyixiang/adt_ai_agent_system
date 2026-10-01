@@ -13,6 +13,15 @@ const resetStep = {
     interruptible: false,
   },
 };
+const readStep = {
+  kind: "step" as const,
+  step: {
+    objective: "读一下状态",
+    capability: "sim_rig.query_state",
+    sideEffect: false,
+    interruptible: true,
+  },
+};
 const manualStep = {
   kind: "step" as const,
   step: {
@@ -69,6 +78,20 @@ async function waitFor(
 
 const uiTypes = (f: Fixture): string[] =>
   f.events.flatMap((e) => (e.type === "ui" ? [e.event.type] : []));
+
+async function waitForSession(
+  session: Session,
+  predicate: (s: ReturnType<Session["snapshot"]>) => boolean,
+  what: string,
+): Promise<ReturnType<Session["snapshot"]>> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = session.snapshot();
+    if (predicate(current)) return current;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
 
 describe("the in-process session", () => {
   it("a confirmed side effect runs, then the run finishes", async () => {
@@ -181,6 +204,41 @@ describe("the in-process session", () => {
       );
     } finally {
       await f.close();
+    }
+  });
+
+  it("a failing UI push does not break the run (the onStepStatus hook is guarded)", async () => {
+    const srv = await startTestServer({ planner: [readStep, done] as never });
+    const session = createSession({
+      serverUrl: srv.url,
+      workspaceRoot: process.cwd(),
+      clientInfo: { name: "session-int-test", platform: "test" },
+      ledgerPath: ":memory:",
+      sessionPath: ":memory:",
+      // A closed window would make the push throw; the run must survive it.
+      emit: (event) => {
+        if (event.type === "ui" && event.event.type === "step.status") {
+          throw new Error("push failed");
+        }
+      },
+    });
+    await session.login("alice", "pw-alice");
+    try {
+      await session.submit("读一下状态");
+      const completion = await waitForSession(
+        session,
+        (s) => s.workflows[0]?.pendingAsk?.kind === "completion",
+        "the completion",
+      );
+      session.answer(completion.workflows[0]!.pendingAsk!.askId, {
+        kind: "completion",
+        resolution: "solved",
+      });
+      const settled = await waitForSession(session, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      expect(settled.workflows[0]!.terminalState).toBe("COMPLETED");
+    } finally {
+      await session.close();
+      await srv.close();
     }
   });
 });

@@ -23,6 +23,8 @@ export interface Session {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, body: unknown): void;
+  /** Is any workflow still live (not terminated)? */
+  isRunning(): boolean;
   close(): Promise<void>;
 }
 
@@ -48,6 +50,10 @@ export function createSession(options: SessionOptions): Session {
       return projection.snapshot(daemon);
     },
 
+    isRunning() {
+      return projection.snapshot(daemon).workflows.some((workflow) => workflow.terminalState === null);
+    },
+
     async login(username, secret) {
       const connected = await ClientDaemon.connect({
         url: options.serverUrl,
@@ -68,14 +74,17 @@ export function createSession(options: SessionOptions): Session {
       connected.connection.on("workflow.completion_candidate", (env) => {
         const payload = env.payload as { summary?: string; evidence_refs?: string[] };
         void (async () => {
-          const resolution = await host.completion({
+          const decision = await host.completion({
             workflowId: env.workflow_id ?? "",
             summary: payload.summary ?? "",
             evidenceRefs: payload.evidence_refs ?? [],
           });
+          // `feedback` must reach the Server: on `not_solved` it is the text the
+          // re-plan is built from (`PROTOCOL_SPEC.md` §7.2).
           connected.connection.send("workflow.completion_response", {
             workflow_id: env.workflow_id,
-            resolution,
+            resolution: decision.resolution,
+            ...(decision.feedback === undefined ? {} : { feedback: decision.feedback }),
           });
         })();
       });

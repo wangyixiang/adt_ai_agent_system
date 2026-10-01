@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type Tray } from "electron";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,6 +93,17 @@ app
     const window = await createWindow();
     const lifecycle = createLifecycle({
       hideWindow: () => window.hide(),
+      hasRunningWorkflow: () => session.isRunning(),
+      confirmQuit: async () => {
+        const { response } = await dialog.showMessageBox(window, {
+          type: "warning",
+          buttons: ["退出", "取消"],
+          defaultId: 1,
+          cancelId: 1,
+          message: "有正在进行的诊断。退出会在本机中断它（服务器侧稍后回收）。确定退出吗？",
+        });
+        return response === 0;
+      },
       closeDaemon: () => session.close(),
       quit: () => {
         isQuitting = true;

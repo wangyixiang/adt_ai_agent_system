@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { MANUAL_OUTCOMES, validateAnswer, type Answer, type Ask, type AskKind } from "@adt/shared";
+import { MANUAL_OUTCOMES, SAFE_DEFAULTS, validateAnswer, type Answer, type Ask, type AskKind } from "@adt/shared";
 import type {
   ConfirmationRequest,
   ManualActionFeedback,
@@ -16,11 +16,21 @@ export type AnswerOutcome =
       message: string;
     };
 
-/** The fourth decision: the Server proposes "solved?", the human disposes. */
+/** The fourth decision: the Server proposes "solved?", and the human disposes. */
 export interface CompletionRequest {
   workflowId: string;
   summary: string;
   evidenceRefs: string[];
+}
+
+/**
+ * The human's disposition of a completion candidate. `feedback` is **not**
+ * optional decoration: on `not_solved` the Server feeds it into the re-plan
+ * (`PROTOCOL_SPEC.md` §7.2), so dropping it makes a re-plan blind.
+ */
+export interface CompletionDecision {
+  resolution: "solved" | "not_solved";
+  feedback?: string;
 }
 
 /**
@@ -33,7 +43,7 @@ export interface DecisionHost {
   onConfirmationRequired(request: ConfirmationRequest): Promise<boolean>;
   onUserInput(request: UserInputRequest): Promise<ManualActionFeedback | undefined>;
   onResourceConflict(request: ResourceConflictRequest): Promise<"wait" | "stop">;
-  completion(request: CompletionRequest): Promise<"solved" | "not_solved">;
+  completion(request: CompletionRequest): Promise<CompletionDecision>;
   answer(askId: string, body: unknown): AnswerOutcome;
   abandon(): void;
 }
@@ -61,7 +71,7 @@ export function createDecisionHost(publish: (ask: Ask, workflowId: string) => vo
           input: request.input,
         },
         request.workflowId,
-        (answer) => answer.kind === "confirmation" && answer.decision === "confirmed",
+        (answer) => (answer.kind === "confirmation" ? answer.decision === "confirmed" : SAFE_DEFAULTS.confirmation),
       );
     },
 
@@ -79,7 +89,7 @@ export function createDecisionHost(publish: (ask: Ask, workflowId: string) => vo
         },
         request.workflowId,
         (answer): ManualActionFeedback | undefined => {
-          if (answer.kind !== "manual_action") return undefined;
+          if (answer.kind !== "manual_action") return SAFE_DEFAULTS.manualFeedback;
           return {
             outcome: answer.outcome,
             observation: answer.observation,
@@ -100,12 +110,12 @@ export function createDecisionHost(publish: (ask: Ask, workflowId: string) => vo
           ...(request.message === undefined ? {} : { message: request.message }),
         },
         request.workflowId,
-        (answer) => (answer.kind === "resource_conflict" ? answer.answer : "stop"),
+        (answer) => (answer.kind === "resource_conflict" ? answer.answer : SAFE_DEFAULTS.resourceConflict),
       );
     },
 
     completion(request) {
-      return ask<"solved" | "not_solved">(
+      return ask<CompletionDecision>(
         {
           askId: `ask_${randomUUID()}`,
           kind: "completion",
@@ -115,7 +125,12 @@ export function createDecisionHost(publish: (ask: Ask, workflowId: string) => vo
         },
         request.workflowId,
         (answer) =>
-          answer.kind === "completion" && answer.resolution === "solved" ? "solved" : "not_solved",
+          answer.kind === "completion"
+            ? {
+                resolution: answer.resolution,
+                ...(answer.feedback === undefined ? {} : { feedback: answer.feedback }),
+              }
+            : { resolution: SAFE_DEFAULTS.completion },
       );
     },
 

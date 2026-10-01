@@ -138,7 +138,17 @@ export class ClientDaemon {
               ready.send(type, payload);
               if (type === "step.status" && opts.onStepStatus) {
                 const update = toStepStatusUpdate(payload);
-                if (update !== null) opts.onStepStatus(update);
+                if (update !== null) {
+                  try {
+                    opts.onStepStatus(update);
+                  } catch (error) {
+                    // This runs inside the step runner's send path: a host's push
+                    // failure (a closed window, say) must not surface here.
+                    console.warn(
+                      `[daemon] onStepStatus hook threw: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  }
+                }
               }
             },
           };
