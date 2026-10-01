@@ -176,7 +176,7 @@ export function Workbench({
         <section className="workbench-attachments">
           <h4>附件</h4>
           {model.attachments.map((attachment) => (
-            <div key={attachment.name} className="attachment">
+            <div key={`${attachment.name}-${attachment.mode}`} className="attachment">
               <span className="attachment-name">{attachment.name}</span>
               <span className="attachment-mode">{attachment.mode === "inline" ? "内联" : "blob"}</span>
               {attachment.mode === "blob" && (

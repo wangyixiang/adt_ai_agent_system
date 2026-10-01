@@ -757,4 +757,61 @@ describe("the app", () => {
     expect(within(viewer).getByText("log line")).toBeTruthy();
     expect(seen).toEqual(["blob_x"]);
   });
+
+  it("keeps the composer's draft when the submit is rejected", async () => {
+    const client = fakeClient({
+      submit: async () => {
+        throw new Error("too_many: 最多 10 个附件");
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText(/请求/), "看附件");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText(/请求/) as HTMLInputElement).value).toBe("看附件");
+    });
+    expect(await screen.findByText(/too_many/)).toBeTruthy();
+  });
+
+  it("carries a manual action's attachment in details", async () => {
+    const answers: unknown[] = [];
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({
+      onEvent: (l) => {
+        push = l;
+        return () => undefined;
+      },
+      answer: async (askId, body) => {
+        answers.push({ askId, body });
+      },
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, {
+        id: 1,
+        type: "ask",
+        workflowId: "wf_1",
+        ask: {
+          askId: "ask_m",
+          kind: "manual_action",
+          stepId: "st_1",
+          capability: "human.manual_action",
+          objective: "换线",
+          instruction: "断电后更换电源线",
+          outcomes: ["succeeded", "failed", "partially", "unknown"],
+        },
+      });
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("radio", { name: "已成功" }));
+    await user.type(screen.getByPlaceholderText(/观察/), "换好了");
+    await user.upload(screen.getByLabelText("添加证据附件"), new File(["hi"], "ev.txt", { type: "text/plain" }));
+    await user.click(screen.getByRole("button", { name: /提交/ }));
+
+    const body = (answers[0] as { body: { details?: { attachments?: unknown[] } } }).body;
+    expect(body.details?.attachments).toHaveLength(1);
+  });
 });

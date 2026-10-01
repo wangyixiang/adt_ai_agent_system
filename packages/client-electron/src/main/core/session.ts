@@ -91,7 +91,11 @@ async function prepareAnswer(daemon: ClientDaemon, body: unknown): Promise<unkno
   if (details === null || typeof details !== "object") return body;
   const detail = details as Record<string, unknown>;
   if (!Array.isArray(detail["attachments"])) return body;
-  const attachments = await buildAttachments(daemon, detail["attachments"] as IncomingAttachment[]);
+  const incoming = detail["attachments"] as IncomingAttachment[];
+  // The same guardrail as `submit`: `details` reuses the attachment mechanism.
+  const allowed = checkAttachments(incoming);
+  if (!allowed.ok) throw new Error(`${allowed.code}: ${allowed.message}`);
+  const attachments = await buildAttachments(daemon, incoming);
   return { ...answer, details: { ...detail, attachments } };
 }
 

@@ -152,13 +152,16 @@ export function App({ client }: { client: AdtClient }) {
       .catch((cause: unknown) => setError(messageOf(cause)));
   };
 
-  const handleSubmit = (text: string, attachments: IncomingAttachment[]): void => {
+  const handleSubmit = (text: string, attachments: IncomingAttachment[]): Promise<void> => {
     setError(null);
     setSubmitting(true);
-    client
+    return client
       .submit(text, attachments)
       .then((workflowId) => setSelected(workflowId))
-      .catch((cause: unknown) => setError(messageOf(cause)))
+      .catch((cause: unknown) => {
+        setError(messageOf(cause));
+        throw cause;
+      })
       .finally(() => setSubmitting(false));
   };
 

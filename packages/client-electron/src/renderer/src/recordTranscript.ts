@@ -43,11 +43,12 @@ function parseAttachments(value: unknown): UiAttachment[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is UiAttachment => {
     const attachment = item as Record<string, unknown>;
-    return (
-      typeof attachment["name"] === "string" &&
-      typeof attachment["media_type"] === "string" &&
-      (attachment["mode"] === "inline" || attachment["mode"] === "blob")
-    );
+    const wellFormed =
+      typeof attachment["name"] === "string" && typeof attachment["media_type"] === "string";
+    if (!wellFormed) return false;
+    if (attachment["mode"] === "blob") return typeof attachment["content_ref"] === "string";
+    if (attachment["mode"] === "inline") return typeof attachment["data_base64"] === "string";
+    return false;
   });
 }
 

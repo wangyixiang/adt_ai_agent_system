@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, it, expect } from "vitest";
 
-import { writeTextFile } from "./save";
+import { writeBytesFile, writeTextFile } from "./save";
 
 describe("writeTextFile", () => {
   it("writes the exact bytes, in UTF-8, and creates the file", async () => {
@@ -13,6 +13,17 @@ describe("writeTextFile", () => {
       const path = join(dir, "report.md");
       await writeTextFile(path, "# 结论\n好了");
       expect(readFileSync(path, "utf8")).toBe("# 结论\n好了");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes raw bytes unchanged", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "adt-save-"));
+    try {
+      const path = join(dir, "a.bin");
+      await writeBytesFile(path, new Uint8Array([1, 2, 3]));
+      expect([...readFileSync(path)]).toEqual([1, 2, 3]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

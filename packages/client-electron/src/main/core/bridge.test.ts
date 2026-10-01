@@ -132,4 +132,18 @@ describe("the main bridge", () => {
       text: "x",
     });
   });
+
+  it("routes a blob_save to the session", async () => {
+    const seen: string[] = [];
+    const bridge = createBridge(
+      deps({
+        blobSave: async (contentRef) => {
+          seen.push(contentRef);
+          return { saved: true, path: "x" };
+        },
+      }),
+    );
+    await bridge.handle({ kind: "blob_save", contentRef: "blob_1", mediaType: "text/plain" });
+    expect(seen).toEqual(["blob_1"]);
+  });
 });

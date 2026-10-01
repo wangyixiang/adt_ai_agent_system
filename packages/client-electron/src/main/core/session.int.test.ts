@@ -416,4 +416,36 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("rejects an over-limit submit before creating a workflow", async () => {
+    const f = await fixture([readStep, done]);
+    try {
+      const many = Array.from({ length: 11 }, (_, i) => ({ name: `${i}`, mediaType: "text/plain", dataBase64: "" }));
+      await expect(f.session.submit("x", many)).rejects.toThrow(/too_many/);
+      expect(f.session.snapshot().workflows).toHaveLength(0);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("rejects an over-limit set of details attachments", async () => {
+    const f = await fixture([manualStep, done]);
+    try {
+      await f.session.submit("换根线");
+      const asked = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "manual_action", "the manual action");
+      const askId = asked.workflows[0]!.pendingAsk!.askId;
+      const many = Array.from({ length: 11 }, (_, i) => ({ name: `${i}`, mediaType: "text/plain", dataBase64: "" }));
+      await expect(
+        f.session.answer(askId, {
+          kind: "manual_action",
+          outcome: "succeeded",
+          observation: "x",
+          details: { attachments: many },
+        }),
+      ).rejects.toThrow(/too_many/);
+      expect(f.session.snapshot().workflows[0]!.pendingAskId).toBe(askId);
+    } finally {
+      await f.close();
+    }
+  });
 });

@@ -5,7 +5,8 @@ import { fileToIncoming, textToIncoming } from "../attachments";
 
 export interface ComposerProps {
   disabled: boolean;
-  onSubmit(text: string, attachments: IncomingAttachment[]): void;
+  /** Resolve to clear the draft; reject to keep it (e.g. an over-limit set). */
+  onSubmit(text: string, attachments: IncomingAttachment[]): Promise<void> | void;
 }
 
 export function Composer({ disabled, onSubmit }: ComposerProps) {
@@ -27,10 +28,16 @@ export function Composer({ disabled, onSubmit }: ComposerProps) {
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault();
     if (text.trim() === "") return;
-    onSubmit(text, attachments);
-    setText("");
-    setAttachments([]);
-    setPaste("");
+    // Clear only after the submit succeeds — a rejected set must not eat the draft.
+    void Promise.resolve(onSubmit(text, attachments))
+      .then(() => {
+        setText("");
+        setAttachments([]);
+        setPaste("");
+      })
+      .catch(() => {
+        // Keep the draft; the error is surfaced by App.
+      });
   };
 
   return (
