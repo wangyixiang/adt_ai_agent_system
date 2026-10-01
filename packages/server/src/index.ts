@@ -194,6 +194,8 @@ import { createLocalBlobStore } from "./blob/store";
 import { PostgresBlobRepository } from "./blob/repository";
 import { createBlobTokenSigner } from "./blob/token";
 import { UserRepository } from "./auth/userRepository";
+import { loadServerEnv } from "./config";
+import { installGracefulShutdown } from "./shutdown";
 
 export interface StartOptions {
   port?: number;
@@ -382,8 +384,19 @@ export async function start(opts: StartOptions = {}): Promise<RunningServer> {
 
 const isMain = Boolean(process.argv[1]) && /index\.(ts|js)$/.test(process.argv[1]!);
 if (isMain) {
+  loadServerEnv();
   start()
-    .then((s) => console.log(`server listening at ${s.url}`))
+    .then((running) => {
+      console.log(`server listening at ${running.url}`);
+      installGracefulShutdown({
+        target: {
+          close: () => running.close(),
+          on: (signal, handler) => process.on(signal, handler),
+        },
+        exit: (code) => process.exit(code),
+        error: (message) => console.error(message),
+      });
+    })
     .catch((error) => {
       console.error(error);
       process.exit(1);
