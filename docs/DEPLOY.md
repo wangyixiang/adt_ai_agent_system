@@ -27,14 +27,16 @@ docker compose up -d --build
 curl -i http://127.0.0.1:8080/health        # 期望 200
 
 # 4) 建第一个账号（口令交互输入、不回显）
-docker compose exec server pnpm -C packages/server adm user add alice
+docker compose exec server pnpm --silent -C packages/server adm user add alice
 ```
 
 `.env` 里的 `DATABASE_URL` 默认是 `postgres://adt:adt@db:5432/adt`——**容器网络里数据库的主机名是 compose 服务名 `db`**，不是 `localhost`。
 
+> 仓库根的 `.env` 会被 **Server 与 `adm` 都读取**（真实环境变量优先）。这带来一个必须注意的差别：**compose 用 `db`，宿主上用 `localhost`**。同一份 `.env` 两者不能通用——在宿主上开发时不要 `cp` 这份 compose 版 `.env`（或把 `DATABASE_URL` 改成 `postgres://adt:adt@localhost:55432/adt`）。
+
 ## 账号管理（`adm`）
 
-在宿主上跑 `docker compose exec server pnpm -C packages/server adm <子命令>`：
+在宿主上跑 `docker compose exec server pnpm --silent -C packages/server adm <子命令>`（`--silent` 很关键：否则 pnpm 会把整条命令——包括 `--secret` 的值——回显到 stderr）：
 
 | 命令 | 作用 |
 |---|---|
@@ -43,7 +45,7 @@ docker compose exec server pnpm -C packages/server adm user add alice
 | `user passwd <name> [--secret <s>]` | 改口令 |
 | `user disable <name>` / `user enable <name>` | 停用/启用（停用后无法登录） |
 
-**口令安全**：默认**交互式不回显**读入；`--secret`/`ADT_SECRET` 可注入（`--secret` 会被 `ps` 看见，不推荐）；口令**不会**出现在任何输出或日志里。直接往库里写 SQL 是行不通的——口令是 argon2 哈希，这正是 `adm` 存在的理由。
+**口令安全**：默认**交互式不回显**读入；`ADT_SECRET` 或 `--secret` 可注入。用 `--secret` 时**务必配合 `--silent`**（pnpm 会把命令行回显，`--secret` 的值因此可能进终端/日志）；更稳妥的是用 `ADT_SECRET`。口令**不会**出现在 Server 的任何输出或日志里。直接往库里写 SQL 是行不通的——口令是 argon2 哈希，这正是 `adm` 存在的理由。
 
 ## 配置项（`.env`）
 

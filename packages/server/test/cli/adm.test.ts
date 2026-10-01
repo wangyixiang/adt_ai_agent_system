@@ -6,10 +6,13 @@ function fakeUsers(): AdmUsers & { rows: Map<string, { disabled: boolean; secret
   const rows = new Map<string, { disabled: boolean; secret: string }>();
   return {
     rows,
+    // Mirrors the real repository: an upsert that does **not** throw on duplicates.
     create: async (username, secret) => {
-      if (rows.has(username)) throw new Error("exists");
-      rows.set(username, { disabled: false, secret });
+      const row = rows.get(username) ?? { disabled: false, secret };
+      row.secret = secret;
+      rows.set(username, row);
     },
+    exists: async (username) => rows.has(username),
     list: async () => [...rows].map(([username, row]) => ({ username, disabled: row.disabled })),
     setDisabled: async (username, disabled) => {
       const row = rows.get(username);
@@ -83,5 +86,17 @@ describe("adm", () => {
     await runAdm(["user", "add", "alice", "--secret", "one"], users, io);
     expect(await runAdm(["user", "add", "alice", "--secret", "two"], users, io)).toBe(1);
     expect(users.rows.get("alice")!.secret).toBe("one");
+    // …unless --force says so.
+    expect(await runAdm(["user", "add", "alice", "--secret", "three", "--force"], users, io)).toBe(0);
+    expect(users.rows.get("alice")!.secret).toBe("three");
+  });
+
+  it("accepts --secret=<value>, and treats an empty secret as missing", async () => {
+    const users = fakeUsers();
+    const { io } = capture();
+    expect(await runAdm(["user", "add", "alice", "--secret=eq"], users, io)).toBe(0);
+    expect(users.rows.get("alice")!.secret).toBe("eq");
+    expect(await runAdm(["user", "add", "bob", "--secret", ""], users, io)).toBe(2);
+    expect(users.rows.has("bob")).toBe(false);
   });
 });

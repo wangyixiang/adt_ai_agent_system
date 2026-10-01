@@ -81,6 +81,12 @@ export class UserRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
+  /** Does this username exist? (Used to refuse a silent password reset.) */
+  async exists(username: string): Promise<boolean> {
+    const result = await this.pool.query("SELECT 1 FROM users WHERE username = $1", [username]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** Replaces an account's password. `true` when a row was changed. */
   async changePassword(username: string, secret: string): Promise<boolean> {
     const passwordHash = await hashPassword(secret);

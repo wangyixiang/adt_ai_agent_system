@@ -194,7 +194,7 @@ import { createLocalBlobStore } from "./blob/store";
 import { PostgresBlobRepository } from "./blob/repository";
 import { createBlobTokenSigner } from "./blob/token";
 import { UserRepository } from "./auth/userRepository";
-import { loadServerEnv } from "./config";
+import { formatStartupSummary, loadServerEnv } from "./config";
 import { installGracefulShutdown } from "./shutdown";
 
 export interface StartOptions {
@@ -387,6 +387,7 @@ if (isMain) {
   loadServerEnv();
   start()
     .then((running) => {
+      console.log(formatStartupSummary());
       console.log(`server listening at ${running.url}`);
       installGracefulShutdown({
         target: {

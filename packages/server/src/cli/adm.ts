@@ -7,6 +7,7 @@ import { createPool } from "../db/pool";
 /** The slice of `UserRepository` the CLI needs; kept narrow so it is easy to fake. */
 export interface AdmUsers {
   create(username: string, secret: string): Promise<unknown>;
+  exists(username: string): Promise<boolean>;
   list(): Promise<Array<{ username: string; disabled: boolean }>>;
   setDisabled(username: string, disabled: boolean): Promise<boolean>;
   changePassword(username: string, secret: string): Promise<boolean>;
@@ -24,11 +25,20 @@ const USAGE = [
   "      adm user disable|enable <name>",
 ].join("\n");
 
-function flagValue(argv: readonly string[], flag: string): string | undefined {
-  const index = argv.indexOf(flag);
-  const value = index >= 0 ? argv[index + 1] : undefined;
-  return value === undefined || value.startsWith("--") ? undefined : value;
+/** Accepts both `--secret <s>` and `--secret=<s>`. */
+function secretFrom(argv: readonly string[], fallback?: string): string | undefined {
+  const equals = argv.find((arg) => arg.startsWith("--secret="));
+  if (equals !== undefined) return equals.slice("--secret=".length);
+  const index = argv.indexOf("--secret");
+  if (index >= 0) {
+    const value = argv[index + 1];
+    if (value !== undefined && !value.startsWith("--")) return value;
+  }
+  return fallback;
 }
+
+const hasSecret = (secret: string | undefined): secret is string =>
+  secret !== undefined && secret !== "";
 
 /**
  * The account-administration CLI's logic, separated from the database and the
@@ -47,7 +57,7 @@ export async function runAdm(
     return 2;
   }
   const rest = argv.slice(3);
-  const secret = flagValue(rest, "--secret") ?? fallbackSecret;
+  const secret = secretFrom(rest, fallbackSecret);
 
   switch (command) {
     case "list": {
@@ -62,14 +72,13 @@ export async function runAdm(
         io.err(USAGE);
         return 2;
       }
-      if (secret === undefined) {
+      if (!hasSecret(secret)) {
         io.err("缺少口令：--secret <s>、ADT_SECRET，或交互输入");
         return 2;
       }
-      try {
-        await users.create(name, secret);
-      } catch {
-        // An existing account is not silently reset — that would be a surprise.
+      // Existence is checked explicitly: `create` is an upsert, so relying on it
+      // to throw would silently reset an existing account's password.
+      if (await users.exists(name)) {
         if (!rest.includes("--force")) {
           io.err(`用户 ${name} 已存在（重置口令请用 user passwd，或加 --force）`);
           return 1;
@@ -78,6 +87,8 @@ export async function runAdm(
           io.err(`用户 ${name} 已存在但重置失败`);
           return 1;
         }
+      } else {
+        await users.create(name, secret);
       }
       io.out(`已创建用户 ${name}`);
       return 0;
@@ -88,7 +99,7 @@ export async function runAdm(
         io.err(USAGE);
         return 2;
       }
-      if (secret === undefined) {
+      if (!hasSecret(secret)) {
         io.err("缺少口令：--secret <s>、ADT_SECRET，或交互输入");
         return 2;
       }
@@ -120,7 +131,7 @@ export async function runAdm(
   }
 }
 
-/** Reads a secret from the terminal without echoing it. */
+/** Reads a secret from the terminal without echoing it; `""` on EOF (no hang). */
 async function promptSecret(): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
   // `_writeToOutput` is Node's own echo hook; muting it hides the keystrokes.
@@ -129,12 +140,18 @@ async function promptSecret(): Promise<string> {
   internal._writeToOutput = () => undefined;
   process.stderr.write("口令（不回显）：");
   return new Promise((resolve) => {
-    rl.question("", (answer) => {
+    let settled = false;
+    const finish = (answer: string): void => {
+      if (settled) return;
+      settled = true;
       internal._writeToOutput = original;
       process.stderr.write("\n");
       rl.close();
       resolve(answer);
-    });
+    };
+    rl.question("", finish);
+    // EOF / closed stdin (a scripted or `exec -T` call) must not hang forever.
+    rl.on("close", () => finish(""));
   });
 }
 
@@ -143,10 +160,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const pool = createPool(process.env.DATABASE_URL ?? "postgres://adt:adt@localhost:55432/adt");
   const io: AdmIo = { out: (line) => console.log(line), err: (line) => console.error(line) };
   try {
-    const command = argv[1];
-    const needsSecret = command === "add" || command === "passwd";
+    const needsSecret =
+      argv[0] === "user" && (argv[1] === "add" || argv[1] === "passwd") && !argv.some((arg) => arg.startsWith("--secret"));
     let fallback = process.env.ADT_SECRET;
-    if (needsSecret && !argv.includes("--secret") && (fallback === undefined || fallback === "")) {
+    if (needsSecret && !hasSecret(fallback)) {
       fallback = await promptSecret();
     }
     return await runAdm(argv, new UserRepository(pool), io, fallback);

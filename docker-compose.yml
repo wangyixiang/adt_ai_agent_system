@@ -27,6 +27,9 @@ services:
       - .env
     environment:
       PORT: "8080"
+      # Absolute, so blobs land inside the mounted volume regardless of cwd
+      # (`pnpm -C` makes the process cwd /app/packages/server).
+      BLOB_DATA_DIR: /app/.adt/blobs
     ports:
       - "8080:8080"
     restart: unless-stopped

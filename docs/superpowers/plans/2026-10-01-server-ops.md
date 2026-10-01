@@ -230,8 +230,8 @@ it("lists users without hashes, and a disabled user cannot log in", async () => 
 - [ ] **Step 3: 实现**（仓库三方法；`runAdm` 分派 + 退出码；`main` 组装 `createPool(loadServerEnv() 后的 DATABASE_URL)` + 不回显读入——**参照 `packages/client-cli/src/main.ts` 的不回显实现**）
 - [ ] **Step 4: 运行确认通过** — 同上 + `typecheck`
 - [ ] **Step 5: 手工冒烟（对真库）** — 起本地 Postgres 后：
-  `pnpm -C packages/server adm user add ops-smoke --secret x && pnpm -C packages/server adm user list`
-  Expected: 建号成功、列表里有 `ops-smoke`、**看不到任何 hash/明文**。
+  `pnpm --silent -C packages/server adm user add ops-smoke --secret x && pnpm --silent -C packages/server adm user list`
+  Expected: 建号成功、列表里有 `ops-smoke`、**看不到任何 hash/明文**。（`--silent` 关掉 pnpm 的命令回显，否则 `--secret` 的值会进终端。）
 - [ ] **Step 6: 提交** — `feat(server): an adm CLI to provision accounts`
 
 ---
@@ -368,10 +368,10 @@ describe("installGracefulShutdown", () => {
 cp .env.example .env            # 按需填入 LLM_API_KEY 等
 docker compose up -d --build
 curl -i http://127.0.0.1:8080/health          # 期望 200
-docker compose exec server pnpm -C packages/server adm user add ops --secret pw
-docker compose exec server pnpm -C packages/server adm user list   # 期望看到 ops
+docker compose exec -T server pnpm --silent -C packages/server adm user add ops --secret pw
+docker compose exec -T server pnpm --silent -C packages/server adm user list   # 期望看到 ops
 docker compose down                            # 不带 -v：保留数据
-docker compose up -d && docker compose exec server pnpm -C packages/server adm user list
+docker compose up -d && docker compose exec -T server pnpm --silent -C packages/server adm user list
 # 期望：ops 仍在（证明 pgdata 持久化）
 ```
   Expected: 每条如上；`/health` 200；`down` 后重起数据仍在。

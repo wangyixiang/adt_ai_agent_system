@@ -3,6 +3,7 @@ import { createPool } from "../src/db/pool";
 import { migrate } from "../src/db/migrate";
 import { UserRepository } from "../src/auth/userRepository";
 import { hashPassword, verifyPassword } from "../src/auth/password";
+import { runAdm } from "../src/cli/adm";
 
 const url =
   process.env.TEST_DATABASE_URL ?? "postgres://adt:adt@localhost:55432/adt_test";
@@ -55,5 +56,15 @@ describe("UserRepository", () => {
 
     expect(await repo.setDisabled("nobody", true)).toBe(false);
     expect(await repo.changePassword("nobody", "x")).toBe(false);
+  });
+
+  it("adm user add refuses an existing account, against the real repository", async () => {
+    // The fake catches this trivially; the real `create` is an upsert that does
+    // NOT throw, so only an explicit existence check prevents a silent reset.
+    await repo.create("adm_add_probe", "original");
+    const io = { out: () => undefined, err: () => undefined };
+    expect(await runAdm(["user", "add", "adm_add_probe", "--secret", "changed"], repo, io)).toBe(1);
+    expect(await repo.verifyCredentials("adm_add_probe", "original")).not.toBeNull();
+    expect(await repo.verifyCredentials("adm_add_probe", "changed")).toBeNull();
   });
 });
