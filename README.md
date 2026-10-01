@@ -4,7 +4,7 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 
 ## 当前状态
 
-已实现到 **D4+D5（超时语义 + LLM 有界重试）**：
+已实现到 **P4d + D7(b) + 单体 Electron 客户端（`ADR-006`）**：
 
 - **P1 骨架与协议层**：TypeScript monorepo、协议信封编解码、认证握手、能力同步、应用层心跳与协议错误处置。
 - **P2a Workflow 引擎与持久化**：Step/Workflow 状态机（含 `UNKNOWN` 与终态不可变）、取消与 `CANCELLING` 收敛、终止护栏、`completion_criteria`、PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
@@ -41,6 +41,7 @@ packages/
 ├── server          # Fastify + ws、认证、会话与重连、Workflow 引擎、Record/Report、LLM 规划器、blob 通道、KB 导出出站
 ├── client-daemon   # 连接/握手/能力声明/心跳 + 可插拔 Capability 适配器（只读 + 受控副作用）、幂等台账、blob 收发
 ├── client-cli      # 控制台客户端：client-daemon 的人类前端（确认 / 建议 / 资源冲突 / 读 Record·Report / 取 blob / 触发导出）
+├── client-electron # 单体 Electron 桌面应用（`ADR-006`）：daemon 内嵌 main，renderer 经 preload/IPC
 └── test-support    # 测试用 Server 启动器、WS 测试客户端、脚本化 LLM provider
 ```
 
@@ -151,7 +152,7 @@ Server 通过环境变量启用"把 Record/Report 导出到第三方 Knowledge B
 - 产品 / 需求：`docs/PRODUCT.md`、`docs/REQUIREMENTS.md`
 - 架构：`docs/architecture/ARCHITECTURE.md`、`CLIENT_SPEC.md`、`SERVER_SPEC.md`
 - 契约：`docs/specs/`（`WORKFLOW_SPEC.md`、`CAPABILITY_SPEC.md`、`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md`）
-- 架构决策：`docs/adr/ADR-001`~`ADR-005`
+- 架构决策：`docs/adr/ADR-001`~`ADR-006`
 - MVP 范围：`docs/superpowers/specs/2026-09-29-mvp-scope.md`
 - **阶段推进约定：`docs/superpowers/WORKFLOW.md`（先读它：流程、评审裁决表、验证口径、不 push）**
-- 实现计划：`docs/superpowers/plans/`（P1 → P4c）
+- 实现计划：`docs/superpowers/plans/`（P1 → P4d、单体 Electron）
