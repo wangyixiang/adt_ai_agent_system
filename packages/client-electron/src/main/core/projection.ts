@@ -73,6 +73,7 @@ export function createProjection(): Projection {
             state: "PENDING",
             requiresConfirmation: payload["requires_confirmation"] === true,
             evidenceSummary: null,
+            evidenceBlob: null,
           };
           workflow.steps = [...workflow.steps.filter((s) => s.stepId !== stepId), step];
           return {
@@ -133,6 +134,7 @@ export function createProjection(): Projection {
       if (step !== undefined) {
         step.state = update.state;
         if (update.evidenceSummary !== undefined) step.evidenceSummary = update.evidenceSummary;
+        if (update.evidenceRef !== undefined) step.evidenceBlob = update.evidenceRef;
       }
       // A step that moved on is no longer waiting for anyone.
       if (update.state !== "WAITING") {
@@ -146,6 +148,7 @@ export function createProjection(): Projection {
         stepId: update.stepId,
         state: update.state,
         ...(update.evidenceSummary === undefined ? {} : { evidenceSummary: update.evidenceSummary }),
+        ...(update.evidenceRef === undefined ? {} : { evidenceBlob: update.evidenceRef }),
         ...(update.failReason === undefined ? {} : { failReason: update.failReason }),
       };
     },

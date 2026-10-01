@@ -5,6 +5,13 @@
  */
 import type { Ask, Answer, StepState, TerminalState } from "@adt/shared";
 
+export interface UiEvidenceBlob {
+  content_ref: string;
+  media_type: string;
+  size: number;
+  name?: string;
+}
+
 export interface UiStep {
   stepId: string;
   capability: string;
@@ -13,6 +20,8 @@ export interface UiStep {
   state: StepState;
   requiresConfirmation: boolean;
   evidenceSummary: string | null;
+  /** The step's evidence blob, when the evidence was offloaded (not inline). */
+  evidenceBlob: UiEvidenceBlob | null;
 }
 
 export interface UiWorkflow {
@@ -61,6 +70,7 @@ export type UiEvent =
       stepId: string;
       state: StepState;
       evidenceSummary?: string;
+      evidenceBlob?: UiEvidenceBlob;
       failReason?: string;
     })
   | (UiEventBase & { type: "ask"; workflowId: string; ask: Ask })

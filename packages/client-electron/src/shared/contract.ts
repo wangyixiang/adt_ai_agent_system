@@ -107,4 +107,4 @@ export interface AdtBridge {
   onEvent(listener: (event: MainEvent) => void): () => void;
 }
 
-export type { UiEvent, UiEventInput, UiSnapshot, UiStep, UiWorkflow } from "./ui";
+export type { UiEvent, UiEventInput, UiSnapshot, UiStep, UiWorkflow, UiEvidenceBlob } from "./ui";

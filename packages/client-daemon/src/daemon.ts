@@ -59,7 +59,29 @@ export interface StepStatusUpdate {
   stepId: string;
   state: StepState;
   evidenceSummary?: string;
+  /** Set when the evidence `result` is a blob reference, so a UI can fetch it. */
+  evidenceRef?: { content_ref: string; media_type: string; size: number; name?: string };
   failReason?: string;
+}
+
+/**
+ * The blob an evidence object points at, if any (`PROTOCOL_SPEC.md` §7.5): an
+ * evidence whose `result` carries a `content_ref`. Inline evidence returns
+ * `undefined` — there is nothing to fetch.
+ */
+export function evidenceRefOf(
+  evidence: Record<string, unknown>,
+): NonNullable<StepStatusUpdate["evidenceRef"]> | undefined {
+  const result = evidence["result"];
+  if (result === null || typeof result !== "object") return undefined;
+  const ref = result as Record<string, unknown>;
+  if (typeof ref["content_ref"] !== "string") return undefined;
+  return {
+    content_ref: ref["content_ref"],
+    media_type: typeof ref["media_type"] === "string" ? ref["media_type"] : "application/octet-stream",
+    size: typeof ref["size"] === "number" ? ref["size"] : 0,
+    ...(typeof ref["name"] === "string" ? { name: ref["name"] } : {}),
+  };
 }
 
 /** A short, human-readable digest of an evidence object. */
@@ -78,12 +100,14 @@ function toStepStatusUpdate(payload: unknown): StepStatusUpdate | null {
 
   const evidence = body["evidence"] as Record<string, unknown> | null | undefined;
   const failReason = body["fail_reason"] as Record<string, unknown> | null | undefined;
+  const evidenceRef = evidence ? evidenceRefOf(evidence) : undefined;
 
   return {
     workflowId: typeof body["workflow_id"] === "string" ? body["workflow_id"] : "",
     stepId,
     state: state as StepState,
     ...(evidence ? { evidenceSummary: summarizeEvidence(evidence) } : {}),
+    ...(evidenceRef === undefined ? {} : { evidenceRef }),
     ...(failReason ? { failReason: String(failReason["code"] ?? "") } : {}),
   };
 }
