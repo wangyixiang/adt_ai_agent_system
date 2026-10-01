@@ -87,6 +87,7 @@ app
       submit: (text) => session.submit(text),
       answer: (askId, answer) => session.answer(askId, answer),
       cancel: (workflowId) => session.cancel(workflowId),
+      report: (recordId, detailLevel) => session.report(recordId, detailLevel),
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
       emit: broadcast,

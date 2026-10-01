@@ -22,6 +22,7 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
       throw new Error("record is not used in this test");
     },
     cancel: async () => undefined,
+    report: async () => ({ ok: true, markdown: "" }),
     emit: () => undefined,
     ...overrides,
   };
@@ -77,5 +78,22 @@ describe("the main bridge", () => {
     );
     await bridge.handle({ kind: "cancel", workflowId: "wf_1" });
     expect(seen).toEqual(["wf_1"]);
+  });
+
+  it("routes a report request to the session", async () => {
+    const seen: Array<[string, string | undefined]> = [];
+    const bridge = createBridge(
+      deps({
+        report: async (recordId, detailLevel) => {
+          seen.push([recordId, detailLevel]);
+          return { ok: true, markdown: "# r" };
+        },
+      }),
+    );
+    expect(await bridge.handle({ kind: "report", recordId: "rec_1", detailLevel: "summary" })).toEqual({
+      ok: true,
+      markdown: "# r",
+    });
+    expect(seen).toEqual([["rec_1", "summary"]]);
   });
 });

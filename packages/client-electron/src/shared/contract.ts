@@ -20,6 +20,7 @@ export type RendererRequest =
   | { kind: "submit"; text: string }
   | { kind: "answer"; askId: string; answer: Answer }
   | { kind: "cancel"; workflowId: string }
+  | { kind: "report"; recordId: string; detailLevel?: "summary" | "full" }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -66,6 +67,11 @@ export interface UiRecordList {
   nextCursor: string | null;
 }
 
+/** A generated Report (`REPORT_SPEC.md` §4: markdown), or why it failed. */
+export type UiReport =
+  | { ok: true; markdown: string }
+  | { ok: false; errorCode: string; message: string };
+
 export type MainEvent = { type: "state"; snapshot: UiSnapshot } | { type: "ui"; event: import("./ui").UiEvent };
 
 /** What preload exposes on `window.adt`. */
@@ -75,6 +81,7 @@ export interface AdtBridge {
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): Promise<void>;
   cancel(workflowId: string): Promise<void>;
+  report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;

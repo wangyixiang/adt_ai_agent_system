@@ -326,4 +326,27 @@ describe("the in-process session", () => {
       await srv.close();
     }
   });
+
+  it("generates a Report from a finished Record, and refuses an unknown one", async () => {
+    const f = await fixture([readStep, done]);
+    try {
+      await f.session.submit("读一下状态");
+      const completion = await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "completion", "the completion");
+      f.session.answer(completion.workflows[0]!.pendingAsk!.askId, { kind: "completion", resolution: "solved" });
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      const recordId = settled.workflows[0]!.recordId!;
+
+      const report = await f.session.report(recordId);
+      expect(report.ok).toBe(true);
+      if (report.ok) expect(report.markdown.length).toBeGreaterThan(0);
+
+      // Generating does not create a second Record (FR-19).
+      const list = await f.session.records();
+      expect(list.records.filter((r) => r.recordId === recordId)).toHaveLength(1);
+
+      await expect(f.session.report("rec_nope")).rejects.toThrow(/unknown_record/);
+    } finally {
+      await f.close();
+    }
+  });
 });

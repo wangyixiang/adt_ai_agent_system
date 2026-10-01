@@ -6,6 +6,7 @@ import type {
   RendererRequest,
   UiRecord,
   UiRecordList,
+  UiReport,
   UiSnapshot,
 } from "../shared/contract";
 import { IPC } from "../shared/contract";
@@ -33,6 +34,13 @@ const bridge: AdtBridge = {
 
   cancel: (workflowId) =>
     ipcRenderer.invoke(IPC.invoke, { kind: "cancel", workflowId } satisfies RendererRequest) as Promise<void>,
+
+  report: (recordId, detailLevel) =>
+    ipcRenderer.invoke(IPC.invoke, {
+      kind: "report",
+      recordId,
+      ...(detailLevel === undefined ? {} : { detailLevel }),
+    } satisfies RendererRequest) as Promise<UiReport>,
 
   records: (cursor, pageSize) =>
     ipcRenderer.invoke(IPC.invoke, {

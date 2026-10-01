@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { ClientDaemon, openLedger, openSessionStore } from "@adt/client-daemon";
 
-import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiSnapshot } from "../../shared/contract";
+import type { UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiSnapshot } from "../../shared/contract";
 import { createDecisionHost } from "./host";
 import { createProjection } from "./projection";
 
@@ -25,6 +25,8 @@ export interface Session {
   answer(askId: string, body: unknown): void;
   /** Ask the Server to cancel a run; resolves once the cancel is acknowledged. */
   cancel(workflowId: string): Promise<void>;
+  /** Ask the Server to generate a Report from a Record; the content is the Server's. */
+  report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   /** List this user's finished Records (the Server filters by owner). */
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   /** One finished Record, by id. */
@@ -142,6 +144,25 @@ export function createSession(options: SessionOptions): Session {
       // means it is already over, so there is no convergence window to show.
       projection.observeCancelAck(workflowId, String(ack.workflow_status ?? ""));
       options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
+    },
+
+    async report(recordId, detailLevel = "full") {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      const result = (await daemon.connection.request(
+        "report.generate_request",
+        { record_id: recordId, options: { detail_level: detailLevel } },
+        "report.generate_result",
+      )) as { status?: unknown; report?: { format?: unknown; content?: unknown } | null; error_code?: unknown; message?: unknown };
+
+      const report = result.report ?? null;
+      if (result.status === "ok" && report !== null && report.format === "markdown" && typeof report.content === "string") {
+        return { ok: true as const, markdown: report.content };
+      }
+      return {
+        ok: false as const,
+        errorCode: String(result.error_code ?? "generation_failed"),
+        message: String(result.message ?? ""),
+      };
     },
 
     async records(cursor = null, pageSize = 100) {

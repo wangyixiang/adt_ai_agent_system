@@ -28,6 +28,7 @@ function fakeClient(overrides: Partial<AdtClient> = {}): AdtClient {
     submit: async () => "wf_1",
     answer: async () => undefined,
     cancel: async () => undefined,
+    report: async () => ({ ok: true, markdown: "" }),
     records: async () => ({ records: [], nextCursor: null }),
     record: async () => {
       throw new Error("record is not used in this test");

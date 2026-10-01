@@ -1,6 +1,6 @@
 import type { Answer } from "@adt/shared";
 
-import type { MainEvent, RendererRequest, UiRecord, UiRecordList, UiSnapshot } from "../../shared/contract";
+import type { MainEvent, RendererRequest, UiRecord, UiRecordList, UiReport, UiSnapshot } from "../../shared/contract";
 
 /**
  * The main-process side of the IPC contract. Pure logic on purpose: it takes the
@@ -13,6 +13,7 @@ export interface BridgeDeps {
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): void;
   cancel(workflowId: string): Promise<void>;
+  report(recordId: string, detailLevel?: "summary" | "full"): Promise<UiReport>;
   records(cursor: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   emit(event: MainEvent): void;
@@ -39,6 +40,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
         case "cancel":
           await deps.cancel(request.workflowId);
           return undefined;
+        case "report":
+          return deps.report(request.recordId, request.detailLevel);
         case "records":
           return deps.records(request.cursor ?? null, request.pageSize);
         case "record":
