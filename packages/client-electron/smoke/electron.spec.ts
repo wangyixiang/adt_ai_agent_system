@@ -66,6 +66,11 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
     await expect(page.getByRole("main").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
     // The run is now in the left conversation list.
     await expect(page.getByRole("button", { name: /服务异常/ }).first()).toBeVisible();
+
+    // A Report can be generated from the Record, and shows in the viewer.
+    await page.getByTestId("workbench").getByRole("button", { name: /生成报告/ }).click({ timeout: 20_000 });
+    await expect(page.getByTestId("report-viewer")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("report-viewer").getByRole("button", { name: "关闭" }).click();
   } finally {
     await app.close();
   }
