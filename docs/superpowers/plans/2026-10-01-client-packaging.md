@@ -181,6 +181,8 @@ ls -la packages/client-electron/release/*.exe
   Expected: 看到 **`ADT-0.1.0-setup.exe`**（NSIS 安装包）与 portable 产物；安装包大小量级 **≥ 50 MB**（Electron 运行时在里面）。
   **若 `rcedit` 报错**：按 Task 2 的说明**显式**关掉 `signAndEditExecutable` 并在注释里写明，然后重跑——**在计划下方记下这次降级**。
 
+> **执行记录（Task 3 Step 1）**：本机 `rcedit-x64.exe` **确实失败**（`Fatal error: Unable to commit changes`，重试 4 次）。按预案**显式**在 `electron-builder.yml` 里加了 `win.signAndEditExecutable: false` 并写明原因。结果：`release/ADT-0.1.0-setup.exe`（**109 MB**）正常产出；**app exe 保留 Electron 默认图标、无自定义版本元数据**（一处**已知、已记录**的降级；在 rcedit 可用的机器上删掉该行即可）。冒烟仍 3/3。
+
 - [ ] **Step 2: 跑既有冒烟，确认没被破坏**
 
 Run: `pnpm -C packages/client-electron test:e2e`

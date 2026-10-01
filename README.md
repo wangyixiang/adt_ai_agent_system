@@ -133,6 +133,7 @@ pnpm -C packages/client-electron dev     # 开发（electron-vite 热更）
 pnpm -C packages/client-electron build   # 构建 out/{main,preload,renderer}
 pnpm -C packages/client-electron smoke   # 探针：Electron 里的 node:sqlite 台账
 pnpm -C packages/client-electron run pack  # 打包成单个 Windows portable exe（release/）
+pnpm -C packages/client-electron run dist  # 打包成 NSIS 安装包（release/ADT-<版本>-setup.exe）
 pnpm -C packages/client-electron test:e2e  # 桌面冒烟：真 Electron + 真 Server，走完一条人在回路
 ```
 

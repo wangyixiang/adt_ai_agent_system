@@ -19,6 +19,13 @@ win:
     - nsis
     - portable
   icon: build/icon.png
+  # rcedit CANNOT commit on this machine: `Fatal error: Unable to commit
+  # changes` (retried 4x). Rather than fail the whole build, we skip writing the
+  # exe's own icon/version metadata — the installer is still produced, but the
+  # app exe keeps Electron's default icon. This is a KNOWN, DOCUMENTED downgrade
+  # (client-packaging plan, Task 3), not a silent one: remove this line on a
+  # machine where rcedit works.
+  signAndEditExecutable: false
 
 nsis:
   oneClick: false

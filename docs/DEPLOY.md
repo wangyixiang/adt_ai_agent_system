@@ -91,7 +91,18 @@ docker compose up -d --build           # 升级：重建镜像并滚动重启
 Server 就绪后，工程师侧的 Client 连接方式：
 
 - **开发/自用**：`ADT_SERVER_URL=ws://<host>:8080/ws pnpm -C packages/client-electron dev`（或 `pnpm -C packages/client-cli start -- --user <name> --url ws://<host>:8080/ws`）。
-- **安装包**：随客户端分发（NSIS）与首次运行设置页一起落地后，这里补"安装 → 首次填 Server 地址 → 登录"的完整步骤。
+
+### 安装客户端（Windows）
+
+1. 拿到 `ADT-<版本>-setup.exe`，双击安装（**per-user**，无需管理员）；装完从开始菜单启动 **ADT**。
+2. **首次运行会弹设置页**：填 Server 地址（形如 `ws://<server-host>:8080/ws`），工作区可留空；保存后进入登录。
+3. 用管理员通过 `adm` 建的账号登录。
+4. 之后想改地址：登录界面/应用里的「设置」。
+
+- 安装包**未做代码签名**：Windows 可能弹 SmartScreen 警告——点「更多信息」→「仍要运行」。
+- **不含自动更新**：升级请重新安装新版本。
+- 卸载：Windows「应用和功能」里的 **ADT**。
+- 自己构建安装包：`pnpm -C packages/client-electron run dist` → `packages/client-electron/release/ADT-<版本>-setup.exe`（`run pack` 仍出 portable）。
 
 ## 安全说明
 
