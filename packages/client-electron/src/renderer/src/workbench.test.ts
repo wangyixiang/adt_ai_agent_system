@@ -52,6 +52,50 @@ describe("deriveWorkbench", () => {
       state: "running",
       steps: [],
       conclusion: null,
+      completion: null,
     });
+  });
+
+  it("surfaces the completion candidate when it is present", () => {
+    const candidate: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "看起来好了", evidenceRefs: ["st_1"] },
+      askKind: "completion",
+      answered: false,
+      stepId: null,
+      text: "有一个完成候选在等你判断",
+    };
+    const model = deriveWorkbench([tool(), candidate], false);
+    expect(model.completion).toEqual({ summary: "看起来好了", evidenceRefs: ["st_1"] });
+  });
+
+  it("attaches a decision to the step it belongs to", () => {
+    const confirmed: TranscriptItem = {
+      key: "ask:wf_1:a1",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "a1",
+      ask: null,
+      askKind: "confirmation",
+      answered: true,
+      stepId: "st_1",
+      text: "已确认",
+    };
+    const pending: TranscriptItem = {
+      key: "ask:wf_1:a2",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "a2",
+      ask: null,
+      askKind: "resource_conflict",
+      answered: false,
+      stepId: "st_1",
+      text: "有一个资源冲突在等你决定",
+    };
+    const model = deriveWorkbench([tool(), confirmed, pending], false);
+    expect(model.steps[0]!.decisions).toEqual(["已确认", "待你回答"]);
   });
 });

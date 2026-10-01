@@ -84,10 +84,28 @@ export function Workbench({ items, cancelling, canCancel, onCancel }: WorkbenchP
               <span className="badge">{STEP_STATE_TEXT[step.state]}</span>
             </header>
             <p className="objective">{step.objective}</p>
+            {step.decisions.length > 0 && (
+              <div className="decisions">
+                {step.decisions.map((decision, index) => (
+                  <span key={index} className="decision">
+                    {decision}
+                  </span>
+                ))}
+              </div>
+            )}
             {step.evidenceSummary !== null && <pre className="evidence">{step.evidenceSummary}</pre>}
           </article>
         ))}
       </section>
+
+      {model.completion !== null && (
+        <section className="workbench-completion">
+          <p>完成候选：{model.completion.summary}</p>
+          {model.completion.evidenceRefs.length > 0 && (
+            <p className="evidence-refs">依据证据：{model.completion.evidenceRefs.join("、")}</p>
+          )}
+        </section>
+      )}
 
       {model.conclusion !== null && (
         <section className="workbench-conclusion">

@@ -13,17 +13,23 @@ const cancelling = (p: ReturnType<typeof createProjection>): boolean | undefined
 describe("the projection's cancellation state", () => {
   it("marks a workflow as cancelling and clears it on termination", () => {
     const p = createProjection();
-    p.observeCancelAck("wf_1");
+    p.observeCancelAck("wf_1", "CANCELLING");
     expect(cancelling(p)).toBe(true);
 
     p.observe("workflow.terminated", terminated);
     expect(cancelling(p)).toBe(false);
   });
 
+  it("does not mark a run the Server already reported CANCELLED", () => {
+    const p = createProjection();
+    p.observeCancelAck("wf_1", "CANCELLED");
+    expect(cancelling(p)).toBe(false);
+  });
+
   it("does not re-mark a workflow that has already terminated", () => {
     const p = createProjection();
     p.observe("workflow.terminated", terminated);
-    p.observeCancelAck("wf_1");
+    p.observeCancelAck("wf_1", "CANCELLING");
     expect(cancelling(p)).toBe(false);
   });
 });

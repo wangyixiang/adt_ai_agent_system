@@ -93,4 +93,34 @@ describe("the workbench", () => {
     await user.click(screen.getByRole("button", { name: "确定取消" }));
     expect(await screen.findByRole("button", { name: "取消" })).toBeTruthy();
   });
+
+  it("shows the completion candidate and a step's decision", () => {
+    const candidate: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "看起来好了", evidenceRefs: ["st_1"] },
+      askKind: "completion",
+      answered: false,
+      stepId: null,
+      text: "有一个完成候选在等你判断",
+    };
+    const decision: TranscriptItem = {
+      key: "ask:wf_1:a1",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "a1",
+      ask: null,
+      askKind: "confirmation",
+      answered: true,
+      stepId: "st_1",
+      text: "已确认",
+    };
+    render(
+      <Workbench items={[tool, decision, candidate]} cancelling={false} canCancel={false} onCancel={() => undefined} />,
+    );
+    expect(screen.getByText("已确认")).toBeTruthy();
+    expect(screen.getByText(/看起来好了/)).toBeTruthy();
+  });
 });

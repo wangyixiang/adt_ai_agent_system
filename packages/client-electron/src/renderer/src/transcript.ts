@@ -39,6 +39,8 @@ export type TranscriptItem =
       ask: Ask | null;
       askKind: AskKind | null;
       answered: boolean;
+      /** The step this decision belongs to; `null` for the completion candidate. */
+      stepId: string | null;
       text: string;
     }
   | { key: string; kind: "notice"; level: "info" | "warn"; text: string }
@@ -215,7 +217,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
   const putAsk = (
     workflowId: string,
     askId: string,
-    patch: { ask?: Ask | null; answered?: boolean; text?: string },
+    patch: { ask?: Ask | null; answered?: boolean; text?: string; stepId?: string | null },
     order: number,
   ): void => {
     const key = `ask:${workflowId}:${askId}`;
@@ -224,13 +226,15 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
     const ask = patch.ask ?? previous?.ask ?? null;
     const askKind = ask?.kind ?? previous?.askKind ?? null;
     const answered = patch.answered ?? previous?.answered ?? false;
+    const fromAsk = ask === null || ask.kind === "completion" ? null : ask.stepId;
+    const stepId = patch.stepId ?? previous?.stepId ?? fromAsk;
     const text =
       patch.text ??
       previous?.text ??
       (askKind === null ? "有一个问题在等你回答" : ASK_KIND_TEXT[askKind]);
 
     ordered.set(key, {
-      item: { key, kind: "ask", workflowId, askId, ask, askKind, answered, text },
+      item: { key, kind: "ask", workflowId, askId, ask, askKind, answered, stepId, text },
       workflowRank: rankOf(workflowId),
       userRank: 1,
       order: existing?.order ?? order,

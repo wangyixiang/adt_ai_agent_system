@@ -18,7 +18,7 @@ export interface Projection {
   observeStepStatus(update: StepStatusUpdate): UiEventInput;
   observeAsk(ask: Ask, workflowId: string): UiEventInput;
   /** The Server accepted a cancellation; mark the run as still converging. */
-  observeCancelAck(workflowId: string): void;
+  observeCancelAck(workflowId: string, status: string): void;
   noteAnswered(askId: string, answer: Answer): UiEventInput | null;
   snapshot(daemon: ClientDaemon | null): UiSnapshot;
 }
@@ -157,10 +157,11 @@ export function createProjection(): Projection {
       return { type: "ask", workflowId, ask };
     },
 
-    observeCancelAck(workflowId) {
+    observeCancelAck(workflowId, status) {
       const workflow = ensure(workflowId);
-      // A late ack must not resurrect a run that already terminated.
-      if (workflow.terminalState === null) workflow.cancelling = true;
+      // A late ack must not resurrect a run that already terminated, and a run
+      // the Server already reported CANCELLED is not "still converging".
+      if (workflow.terminalState === null) workflow.cancelling = status === "CANCELLING";
     },
 
     noteAnswered(askId, answer) {

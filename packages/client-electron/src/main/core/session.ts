@@ -133,12 +133,14 @@ export function createSession(options: SessionOptions): Session {
     async cancel(workflowId) {
       if (daemon === null) throw new Error("not_logged_in: not logged in");
       // No `reason`: the UI asks once and only says "cancel" (design §2/§7).
-      await daemon.connection.request(
+      const ack = (await daemon.connection.request(
         "workflow.cancel_request",
         { workflow_id: workflowId },
         "workflow.cancel_ack",
-      );
-      projection.observeCancelAck(workflowId);
+      )) as { workflow_status?: unknown };
+      // "CANCELLING" means a non-interruptible step is finishing; "CANCELLED"
+      // means it is already over, so there is no convergence window to show.
+      projection.observeCancelAck(workflowId, String(ack.workflow_status ?? ""));
       options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
     },
 

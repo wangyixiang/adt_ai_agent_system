@@ -133,6 +133,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
           ask: null,
           askKind: "confirmation",
           answered: true,
+          stepId,
           text,
         }));
         break;
@@ -152,6 +153,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
           ask: null,
           askKind: "manual_action",
           answered: true,
+          stepId,
           text: observation === "" ? label : `${label}：${observation}`,
         }));
         break;
@@ -166,6 +168,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
           ask: null,
           askKind: "completion",
           answered: false,
+          stepId: null,
           text: "有一个完成候选在等你判断",
         }));
         break;
@@ -181,6 +184,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
           ask: null,
           askKind: "completion",
           answered: true,
+          stepId: null,
           text: resolution,
         }));
         break;
