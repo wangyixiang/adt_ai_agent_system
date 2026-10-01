@@ -73,7 +73,7 @@ Server 监听端口默认 `8080`，可用 `PORT` 覆盖；非法值（`abc` / `0
 
 ### 正式运行（部署到内网一台机器）
 
-见 **[`docs/DEPLOY.md`](docs/DEPLOY.md)**：用 `docker compose` 把 Server 常驻起来（数据持久化、`/health`、优雅退出）、用 `adm` 建账号、以及客户端连接与排障。
+见 **[`docs/DEPLOY.md`](docs/DEPLOY.md)** —— 一套端到端总览：管理员用 `docker compose` 把 Server 常驻（数据持久化、`/health`、优雅退出）、用 `adm` 建账号；工程师装 **`ADT-<版本>-setup.exe`**、首次运行填 Server 地址后登录；含配置项与排障。
 
 ### LLM 规划（可选）
 

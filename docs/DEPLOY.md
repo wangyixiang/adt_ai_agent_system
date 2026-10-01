@@ -1,7 +1,31 @@
-# DEPLOY.md — 部署与运维（Server）
+# DEPLOY.md — 部署与使用（Server + 客户端）
 
-面向**实验室内网的一台机器**：用 Docker Compose 把 Server 常驻起来、建好账号，供多位工程师的 Client 连接。
-架构与信任模型见 `adr/ADR-003-deployment-and-trust-model.md`；本设计见 `superpowers/specs/2026-10-01-deployment-and-provisioning-design.md`。
+把整套系统**正式**跑起来：管理员在一台内网机器上把 **Server 常驻**（Docker Compose）并**建账号**；工程师**装上客户端**、首次运行填 Server 地址后登录使用。
+
+- 架构与信任模型：`adr/ADR-003-deployment-and-trust-model.md`
+- 对应设计：`superpowers/specs/2026-10-01-deployment-and-provisioning-design.md`
+- 三份实现计划与各自的评审裁决表：`superpowers/plans/2026-10-01-server-ops.md`、`…-client-config.md`、`…-client-packaging.md`
+
+## 端到端总览
+
+```text
+管理员（一次）：
+  1. cp .env.example .env   并改 BLOB_SECRET / BLOB_BASE_URL（见「配置项」）
+  2. docker compose up -d --build      → curl /health 期望 200
+  3. adm user add <name>               给每位工程师建号（见「账号管理」）
+
+工程师（每人）：
+  1. 拿到 dist 产出的 ADT-<版本>-setup.exe，双击安装（per-user，无需管理员）
+  2. 首次运行：填 Server 地址 ws://<server-host>:8080/ws
+  3. 用管理员建的账号登录 → 提交诊断 → 记录 / 报告 / 导出
+```
+
+| 角色 | 用什么 | 看哪节 |
+|---|---|---|
+| 管理员 | `docker compose`、`adm`、`.env` | 快速开始 · 账号管理 · 配置项 · 运维 |
+| 工程师 | `ADT-<版本>-setup.exe`（或开发时 `pnpm -C packages/client-electron dev`） | 安装客户端（Windows） |
+
+三个"产物"分别从哪来：**Server 镜像** ← `docker compose build`；**账号** ← `adm user add`；**客户端安装包** ← `pnpm -C packages/client-electron run dist`。
 
 ## 先决条件
 
