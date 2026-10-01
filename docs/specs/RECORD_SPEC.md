@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.9（§4 新增 `step_status` entry：记录某个 Step 进入**终态**（`COMPLETED`/`FAILED`/`REJECTED`/`UNKNOWN`）；中间态与进度保活**不记**——让"回看往期"能**读**出步骤终态，而不是从其它 entry 推断；取代 v0.8）
+- **Version:** v0.10（§3 新增"附件的形状"：把 `user_request.attachments` 的每一项写死为 `{ name, media_type, size, sha256, mode }`，内联（`data_base64`）或走 blob（`content_ref`）二选一；取代 v0.9）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -95,6 +95,19 @@ final_result:
 ```
 
 当 Workflow 终止时仍有未对账的 `UNKNOWN` 副作用 Step（工程师取消、或 Server 判定无法继续），必须在 `final_result` 中标注"存在未对账的副作用动作（可能已执行）"，既不谎称成功也不谎称失败。这是"忠实"原则（§1）在 `UNKNOWN` 上的落地（见 `WORKFLOW_SPEC.md` §4.3）。
+
+**附件的形状（v0.10 新增）：**
+
+`user_request.attachments` 的每一项是一条附件引用（`user_request` 原样透传自 `workflow.request`）：
+
+```text
+{ name, media_type, size, sha256, mode: "inline", data_base64 }   # ≤ 64 KiB：内容内联
+{ name, media_type, size, sha256, mode: "blob",   content_ref  }   # > 64 KiB：字节走 blob 通道
+```
+
+* `sha256` 是小写十六进制、标识内容字节；`size` 是字节数；`mode` 让读方**无需猜测**判别方式。
+* 走 blob 时 Record **保留** `content_ref`，使证据可回溯（本轮 §3 的承诺）；字节经 `PROTOCOL_SPEC.md` §7.5 的签名 URL 取回。
+* 该形状由**客户端**定义：`PROTOCOL_SPEC.md` §7.5 只规定传输与阈值（64 KiB 建议值，本版本客户端**强制**），不规定内联项的结构；服务端**原样透存**。
 
 ---
 

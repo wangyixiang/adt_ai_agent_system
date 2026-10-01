@@ -1,6 +1,6 @@
 # CLIENT_SPEC.md
 
-- **Version:** v0.9（只读 Capability 适配器层：可插拔适配器在本机执行，filesystem 限定工作区、本地子进程带超时；断线重连：发起 `session.resume` 并依据 `workflow.state_sync` 继续；部署/信任模型落地：登录与会话、只确认自己的 Workflow、Record 仅自己可见、发起 KB 导出；依据 `ADR-003`、`PROTOCOL_SPEC.md` v0.7，取代 v0.8）
+- **Version:** v0.10（提交附件：≤ 64 KiB 内联、> 64 KiB 走 blob，并支持粘贴文本；工作台/往期对附件与证据 blob 的预览、另存；依据 `PROTOCOL_SPEC.md` §7.5、`RECORD_SPEC.md` v0.10 附件的形状，取代 v0.9）
 - **Role:** AI Client / User Interaction + Local Execution Runtime
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 CLIENT_SPEC.md 的瘦身版本。Step/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`（Client 与 Server 共享，避免两边各写一份、逐渐漂移），Capability 命名规范已抽取到 `../specs/CAPABILITY_SPEC.md`。系统级架构图和核心边界原则见 `ARCHITECTURE.md`。
@@ -29,6 +29,8 @@ Client 不负责整个问题的规划，而负责：
 * **在用户提交某一个互斥意图后锁定对应 UI**（v0.6 新增）
 * **登录并把凭据交给 Server 完成认证，维护 `session` 与 `user_id`**（v0.7 新增）
 * **只展示当前用户自己的 Record，并可按需发起导出到第三方 Knowledge Base**（v0.7 新增）
+* **提交时附加文件（≤ 64 KiB 内联、> 64 KiB 走 blob 通道），并支持把一段文本作为附件**（v0.10 新增）
+* **在工作台与往期中预览或另存附件与证据 blob（经主进程代理取回、校验 sha256）**（v0.10 新增）
 
 核心原则：
 
@@ -86,6 +88,7 @@ Client MUST：
 18. **在用户明确请求时，向 Server 发起 Record/Report 的 KB 导出请求，并展示结果**（v0.7 新增，对应 FR-24、`PROTOCOL_SPEC.md` §10.3）
 19. **断线后使用原 `session_id` 发起 `session.resume`（携带认证凭据），并按 `workflow.state_sync` 恢复：有 `pending_step` 时继续执行该 Step 而非重新开始；收到 `session_expired` 时重新握手（`session.hello`）并把未完成工作作为新的 `workflow.request` 提交**（v0.8 新增，对应 `PROTOCOL_SPEC.md` §5.2、`REQUIREMENTS.md` NFR-3）
 20. **通过可插拔的 Capability 适配器在本机执行能力；只读能力的 `filesystem` 读取限定在配置的工作区根目录内，本地子进程带超时与输出上限；执行失败一律上报 `FAILED`（不伪造证据），需确认（`requires_confirmation`）的 Step 绝不自动执行**（v0.9 新增，对应 `CAPABILITY_SPEC.md` §5、`ADR-004` §3）
+21. **按 64 KiB 阈值把提交附件分流：≤ 阈值内联、> 阈值经 blob 通道上传后只带 `content_ref`；对附件数量与总量设上限并明确拒绝超限；渲染 blob 时经主进程取回并校验 sha256**（v0.10 新增，对应 `PROTOCOL_SPEC.md` §7.5、`RECORD_SPEC.md` v0.10）
 
 Client MUST NOT：
 
