@@ -19,6 +19,7 @@ export type RendererRequest =
   | { kind: "login"; username: string; secret: string }
   | { kind: "submit"; text: string }
   | { kind: "answer"; askId: string; answer: Answer }
+  | { kind: "cancel"; workflowId: string }
   | { kind: "records"; cursor?: string | null; pageSize?: number }
   | { kind: "record"; id: string };
 
@@ -73,6 +74,7 @@ export interface AdtBridge {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): Promise<void>;
+  cancel(workflowId: string): Promise<void>;
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   onEvent(listener: (event: MainEvent) => void): () => void;

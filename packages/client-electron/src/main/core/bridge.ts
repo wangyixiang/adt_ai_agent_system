@@ -12,6 +12,7 @@ export interface BridgeDeps {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, answer: Answer): void;
+  cancel(workflowId: string): Promise<void>;
   records(cursor: string | null, pageSize?: number): Promise<UiRecordList>;
   record(id: string): Promise<UiRecord>;
   emit(event: MainEvent): void;
@@ -34,6 +35,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
           return deps.submit(request.text);
         case "answer":
           deps.answer(request.askId, request.answer);
+          return undefined;
+        case "cancel":
+          await deps.cancel(request.workflowId);
           return undefined;
         case "records":
           return deps.records(request.cursor ?? null, request.pageSize);

@@ -290,4 +290,40 @@ describe("the in-process session", () => {
       await srv.close();
     }
   });
+
+  it("cancels a run that is waiting for the human, and it terminates as CANCELLED", async () => {
+    const f = await fixture([manualStep, done]);
+    try {
+      const workflowId = await f.session.submit("换根线");
+      await waitFor(f, (s) => s.workflows[0]?.pendingAsk?.kind === "manual_action", "the manual action");
+
+      await f.session.cancel(workflowId);
+
+      const settled = await waitFor(f, (s) => s.workflows[0]?.terminalState !== null, "the end");
+      expect(settled.workflows[0]!.terminalState).toBe("CANCELLED");
+      expect(settled.workflows[0]!.cancelling).toBe(false);
+      expect(settled.workflows[0]!.pendingAskId).toBeNull();
+      expect(uiTypes(f)).toContain("workflow.terminated");
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("refuses to cancel before login", async () => {
+    const srv = await startTestServer({ planner: [readStep, done] as never });
+    const session = createSession({
+      serverUrl: srv.url,
+      workspaceRoot: process.cwd(),
+      clientInfo: { name: "session-int-test", platform: "test" },
+      ledgerPath: ":memory:",
+      sessionPath: ":memory:",
+      emit: () => undefined,
+    });
+    try {
+      await expect(session.cancel("wf_x")).rejects.toThrow(/not_logged_in/);
+    } finally {
+      await session.close();
+      await srv.close();
+    }
+  });
 });

@@ -21,6 +21,7 @@ function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
     record: async () => {
       throw new Error("record is not used in this test");
     },
+    cancel: async () => undefined,
     emit: () => undefined,
     ...overrides,
   };
@@ -63,5 +64,18 @@ describe("the main bridge", () => {
     expect(seen).toEqual([
       { askId: "ask_1", answer: { kind: "confirmation", decision: "declined" } },
     ]);
+  });
+
+  it("routes a cancel to the session", async () => {
+    const seen: string[] = [];
+    const bridge = createBridge(
+      deps({
+        cancel: async (workflowId) => {
+          seen.push(workflowId);
+        },
+      }),
+    );
+    await bridge.handle({ kind: "cancel", workflowId: "wf_1" });
+    expect(seen).toEqual(["wf_1"]);
   });
 });

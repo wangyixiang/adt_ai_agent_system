@@ -86,6 +86,7 @@ app
       login: (username, secret) => session.login(username, secret),
       submit: (text) => session.submit(text),
       answer: (askId, answer) => session.answer(askId, answer),
+      cancel: (workflowId) => session.cancel(workflowId),
       records: (cursor, pageSize) => session.records(cursor, pageSize),
       record: (id) => session.record(id),
       emit: broadcast,

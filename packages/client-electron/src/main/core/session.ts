@@ -23,6 +23,8 @@ export interface Session {
   login(username: string, secret: string): Promise<void>;
   submit(text: string): Promise<string>;
   answer(askId: string, body: unknown): void;
+  /** Ask the Server to cancel a run; resolves once the cancel is acknowledged. */
+  cancel(workflowId: string): Promise<void>;
   /** List this user's finished Records (the Server filters by owner). */
   records(cursor?: string | null, pageSize?: number): Promise<UiRecordList>;
   /** One finished Record, by id. */
@@ -126,6 +128,18 @@ export function createSession(options: SessionOptions): Session {
       if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`);
       const event = projection.noteAnswered(askId, outcome.answer);
       if (event !== null) emitUi(event);
+    },
+
+    async cancel(workflowId) {
+      if (daemon === null) throw new Error("not_logged_in: not logged in");
+      // No `reason`: the UI asks once and only says "cancel" (design §2/§7).
+      await daemon.connection.request(
+        "workflow.cancel_request",
+        { workflow_id: workflowId },
+        "workflow.cancel_ack",
+      );
+      projection.observeCancelAck(workflowId);
+      options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
     },
 
     async records(cursor = null, pageSize = 100) {

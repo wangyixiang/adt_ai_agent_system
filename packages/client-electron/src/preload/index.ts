@@ -31,6 +31,9 @@ const bridge: AdtBridge = {
   answer: (askId, answer) =>
     ipcRenderer.invoke(IPC.invoke, { kind: "answer", askId, answer } satisfies RendererRequest) as Promise<void>,
 
+  cancel: (workflowId) =>
+    ipcRenderer.invoke(IPC.invoke, { kind: "cancel", workflowId } satisfies RendererRequest) as Promise<void>,
+
   records: (cursor, pageSize) =>
     ipcRenderer.invoke(IPC.invoke, {
       kind: "records",
