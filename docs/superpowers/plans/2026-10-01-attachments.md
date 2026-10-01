@@ -281,3 +281,23 @@ expect(validateAnswer("manual_action", { kind:"manual_action", outcome:"succeede
 **4. Review Focus：** 五条都落到测试——阈值纪律（T3 单测 + 集成）、限额拒绝（T3 单测 + T5 组件）、blob 校验（T4 复用 `downloadBlob` 的 sha256；T4 单测覆盖类型分流）、证据引用只在 BlobRef 时带（T2）、`details` 可选（T6）。
 
 **5. Proportion：** 计划只钉接口、阈值与断言；上传/下载的变量名与 UI 细节留给实现。
+
+---
+
+## 评审裁决表（整分支评审）
+
+评审：`opencode-go/deepseek-v4.1-flash`，范围 `dc165b0..a34489c`（8 提交）。结论 **With fixes**（**0 Critical / 2 Important / 若干 Minor**）。一轮修复（提交 `bbc470b`）后全绿：`client-electron` 112/112、整仓 `pnpm -r --if-present test` exit 0、`typecheck` exit 0、桌面冒烟 2/2。
+
+| 评审项 | 裁决 | 落点 |
+|---|---|---|
+| **I1（重要）** 手工动作 `details.attachments` **绕过了数量/总量限额**（`prepareAnswer` 直接 `buildAttachments`，没有 `checkAttachments`）；限额是 S4 明确"复用 S5 机制"的一部分 | **已修** | `session.ts` 的 `prepareAnswer` 先 `checkAttachments`，超限抛 `too_many`/`too_large`；新增 `session.int.test.ts`「rejects an over-limit set of details attachments」（断言问题仍开着） |
+| **I2（重要）** 提交被拒时 **Composer 已同步清空草稿**（先 `setText("")` 再异步失败）——超限现在是可达的正常路径，文字/附件被吞 | **已修** | `Composer` 改为**成功后才清空**（失败保留草稿，`.catch` 消费拒绝）；`app.handleSubmit` 返回 `Promise` 并 rethrow；新增 `Composer.test.tsx`「keeps the draft when the submit fails」与 `app.test.tsx`「keeps the composer's draft when the submit is rejected」 |
+| **M3（次要）** `parseAttachments` 只查 `name`/`media_type`/`mode`，不查模式专属字段（畸形 Record 会带 `undefined` 的 `content_ref`） | **已修** | `recordTranscript.ts`：`blob` 必须有 `content_ref`、`inline` 必须有 `data_base64` |
+| **M4（次要）** 工作台附件用 `name` 作 React key，重名会撞 | **已修** | `Workbench.tsx` 改为 `` `${name}-${mode}` `` 复合键 |
+| **M5（次要）** 计划自己要求的覆盖面缺测试：`details` 附件的端到端、超限提交不得创建 workflow、`blob_save` 路由、`writeBytesFile` | **已修** | 新增 `session.int.test.ts`「rejects an over-limit submit before creating a workflow」（断言 `workflows` 为空）、`app.test.tsx`「carries a manual action's attachment in details」、`bridge.test.ts`「routes a blob_save」、`save.test.ts`「writes raw bytes unchanged」 |
+| **M6（次要）** live 附件只随 `workflow.created` 事件到达，**重载后工作台里消失**（快照不带附件） | **延后** | spec 未要求快照持久化附件；终止后 Record 仍带附件。触发条件：需要在重载后即时看到进行中会话的附件时 |
+| **M7（次要）** 若干接口与计划文档有漂移（`planAttachment` 参数减少、`blobPreview/blobSave` 增 `mediaType`、`renderer/attachments.ts` 的 `PendingAttachment` 未实现、`UiAttachment` 落在 `RECORD_SPEC §3` 而非计划的"§4"） | **已记录** | 均不改行为；`mediaType` 是分类所需，§3 是附件的正确归属 |
+
+**评审"Declined to judge"各行：维持**——Report/导出/取消（S0–S3，已在 `master`）、blob 生命周期/分片上传/大文件流式、`details` 在往期重建里的渲染、内联附件的预览、服务端 `blob_rejected` 兜底、`submit` 未登录措辞、base64 宽松性——均在本切片范围之外。
+
+**RED 证据（如实）**：I1（超限 details）与 I2（保留草稿）为**先写出的回归测试**（先红后绿）；M3/M4/M5 为评审指出的**覆盖/健壮性缺口**，测试写出后即通过。
