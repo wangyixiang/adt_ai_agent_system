@@ -125,6 +125,7 @@ describe("deriveTranscript", () => {
           terminalState: null,
           terminalReason: null,
           recordId: null,
+          cancelling: false,
           pendingAskId: "ask_9",
           pendingAsk: {
             askId: "ask_9",

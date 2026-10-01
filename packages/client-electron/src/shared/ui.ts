@@ -21,6 +21,8 @@ export interface UiWorkflow {
   terminalState: TerminalState | null;
   terminalReason: string | null;
   recordId: string | null;
+  /** The human asked to cancel and the Server acknowledged it; still converging. */
+  cancelling: boolean;
   /** Non-null means "a question is waiting for you". */
   pendingAskId: string | null;
   pendingAsk: Ask | null;

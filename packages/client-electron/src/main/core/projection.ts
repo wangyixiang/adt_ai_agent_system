@@ -17,6 +17,8 @@ export interface Projection {
   ): UiEventInput | null;
   observeStepStatus(update: StepStatusUpdate): UiEventInput;
   observeAsk(ask: Ask, workflowId: string): UiEventInput;
+  /** The Server accepted a cancellation; mark the run as still converging. */
+  observeCancelAck(workflowId: string): void;
   noteAnswered(askId: string, answer: Answer): UiEventInput | null;
   snapshot(daemon: ClientDaemon | null): UiSnapshot;
 }
@@ -37,6 +39,7 @@ export function createProjection(): Projection {
         terminalState: null,
         terminalReason: null,
         recordId: null,
+        cancelling: false,
         pendingAskId: null,
         pendingAsk: null,
         steps: [],
@@ -92,6 +95,7 @@ export function createProjection(): Projection {
             typeof payload["terminal_reason"] === "string" ? payload["terminal_reason"] : null;
           workflow.recordId =
             typeof payload["record_id"] === "string" ? payload["record_id"] : null;
+          workflow.cancelling = false;
           workflow.pendingAskId = null;
           workflow.pendingAsk = null;
 
@@ -151,6 +155,12 @@ export function createProjection(): Projection {
       workflow.pendingAskId = ask.askId;
       workflow.pendingAsk = ask;
       return { type: "ask", workflowId, ask };
+    },
+
+    observeCancelAck(workflowId) {
+      const workflow = ensure(workflowId);
+      // A late ack must not resurrect a run that already terminated.
+      if (workflow.terminalState === null) workflow.cancelling = true;
     },
 
     noteAnswered(askId, answer) {
