@@ -85,6 +85,8 @@ docker compose exec server pnpm --silent -C packages/server adm user add alice
 
 数值类变量（`PORT`、`BLOB_*`、`KB_*`、`LLM_MAX_RETRIES` 等）必须是整数；不可用或超上限的值会**告警并回落默认**。
 
+> **LLM 模型与思考模式（踩过一次）**：DeepSeek 当前模型名是 **`deepseek-flash`**（另有 `deepseek-v4-pro`；`deepseek-chat` 之类是旧名）。`deepseek-flash` **默认就是思考模式**，而思考模式**不接受强制 `tool_choice`**（指定具体 tool 或 `required` 都会返回 **400**，官方原文："思考模式下不支持 required 和指定具体 tool 的用法"）。本系统的规划器**需要**强制工具调用，所以 provider 一律显式发 **`thinking: {type:"disabled"}`**。若换网关/模型后出现 **`LLM HTTP 400`**，先查这条。
+
 ## 运维
 
 ```bash
