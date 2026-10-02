@@ -170,7 +170,7 @@ export function llmProviderFromEnv(
   const apiKey = env.LLM_API_KEY;
   if (!apiKey) return null;
 
-  const model = env.LLM_MODEL ?? "deepseek-v4.1-flash";
+  const model = env.LLM_MODEL ?? "deepseek-flash";
   const baseUrl = env.LLM_BASE_URL ?? "https://api.deepseek.com/v1";
   return {
     provider: new OpenAiCompatibleProvider({

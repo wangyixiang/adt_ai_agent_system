@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-- **Version:** v0.7（部署/信任模型：新增 §6 部署视图（多用户共享 Server、本地账号、按用户隔离、TLS 延后）；依据 `ADR-003`，取代 v0.6）
+- **Version:** v0.8（引用状态同步：Record/Report 的 KB 导出**出站**已定案（`ADR-005`）并实现（P4d，FR-24），只剩 FR-23 检索；§6 补部署落地指针 `../DEPLOY.md`；取代 v0.7）
 - **层级:** Architecture — 系统应该由什么构成
 - **拆分说明:** 本文件从原 `CLIENT_SPEC.md` / `SERVER_SPEC.md` v0.2 中抽取系统级架构内容整合而成。组件各自的角色定位见 `CLIENT_SPEC.md` / `SERVER_SPEC.md`；Step/Workflow/Evidence 的具体契约见 `../specs/WORKFLOW_SPEC.md`。
 
@@ -78,7 +78,7 @@
 
 这与 `PRODUCT.md` D-5（"不在本系统内建设知识库或历史案例检索能力"）是一致的：D-5 排除的是"自己造一个检索引擎/知识库"，不是"完全不能查任何知识库"。
 
-一个相关但**明确不在本版本范围内**的问题：本系统产生的 Record，未来是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用？——产品侧已经确认这是未来方向，但本版本不实现任何主动推送机制。这意味着 Record 的结构设计需要考虑"以后可能要被导出"——`RECORD_SPEC.md` §8 已按此给出约束（结构化字段自足、`narrative` 用领域语言书写等），但不需要现在就构建导出通道。具体的第三方系统接口形态，留给后续架构决策（建议后续单独出一条 ADR，而不是散落在本文件里）。
+一个相关的问题（**已定案并实现出站**）：本系统产生的 Record 是否会被沉淀/导出到这个第三方 Knowledge Base，供后续检索复用？——产品侧确认这是方向；**导出出站已由 `ADR-005` 定案并实现**（P4d，FR-24 的"导出半边"），`RECORD_SPEC.md` §8 的"导出友好"约束（结构化字段自足、`narrative` 用领域语言书写等）继续有效。**KB 侧的检索（FR-23）仍未实现**：`ADR-005` §6 已预留独立的 `KnowledgeProvider` 接口，等目标 KB 确定后按其真实接口补一份 KB 集成 Spec。
 
 ---
 
@@ -157,7 +157,7 @@ Local Capability
 
 ## 6. 部署视图与信任边界（v0.7 新增）
 
-> 完整决策与被否决的替代方案见 `../adr/ADR-003-deployment-and-trust-model.md`。本节只画形态。
+> 完整决策与被否决的替代方案见 `../adr/ADR-003-deployment-and-trust-model.md`。本节只画形态。**落地方式见 `../DEPLOY.md`**（Docker Compose 常驻 Server + `adm` 建账号 + NSIS 客户端安装包 + 首次运行设置页）。
 
 ```text
    工程师 A                工程师 B                工程师 C

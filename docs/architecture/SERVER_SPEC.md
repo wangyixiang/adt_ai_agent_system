@@ -1,6 +1,6 @@
 # SERVER_SPEC.md
 
-- **Version:** v0.12（KB 导出的**出站**已实现（P4d）：按 `ADR-005` 的传输/鉴权/重试/失败语义投递 Record/Report，未配置端点或凭据 → `export_unavailable`；只剩 FR-23 检索未实现）
+- **Version:** v0.13（引用状态同步：KB 导出的"出站"已由 `ADR-005` 定案并实现（P4d），§"仍未实现"那段与 v0.4 备注已更正为"只剩 FR-23 检索"；取代 v0.12）
 - **Role:** Central AI Orchestrator
 - **层级:** Architecture — 组件角色定位
 - **拆分说明:** 本文件是原 v0.2 SERVER_SPEC.md 的瘦身版本。Step/Workflow/Evidence/Completion 的具体契约已抽取到 `../specs/WORKFLOW_SPEC.md`，Capability 相关内容已抽取到 `../specs/CAPABILITY_SPEC.md`，协议消息清单已移至 `../specs/PROTOCOL_SPEC.md`。两条关键架构决策（Workflow State Authority、One-Step Planning）已沉淀为 ADR，本文件只保留结论并引用。
@@ -188,7 +188,7 @@ LLM 不负责：
 
 Step/Workflow 的具体状态机、Step Schema、Evidence 结构、Completion 判定流程，均已抽取到 `../specs/WORKFLOW_SPEC.md`，作为 Client 与 Server 共享的唯一权威契约，本文件不再重复定义。
 
-> **v0.4 备注：** 是否需要为"Server 与第三方 Knowledge Base 的集成方式"、"Record 未来导出到 Knowledge Base"单独补一条 ADR，建议在下一次架构评审时决定——这两点目前只是在本文件和 `ARCHITECTURE.md` §1.1 里做了文字说明，还没有经过"排除替代方案"的决策过程，不应该被当作已经定案的架构决策。
+> **v0.4 备注（已定案，P4d）：** "Server 与第三方 Knowledge Base 的集成方式"与"Record 导出到 Knowledge Base"**已由 `ADR-005` 定案并实现出站**（FR-24 的"导出半边"）；只剩 KB **检索**（FR-23）的接口待目标 KB 确定后补一份集成 Spec。原备注"建议在下一次架构评审时决定"已不再适用。
 
 > **v0.7 补充：** 终止护栏（`WORKFLOW_SPEC.md` §13）、副作用结果未知与对账（§4.3）都是 `ADR-001`（Workflow Engine 是唯一权威）的直接推论——它们必须由**确定性组件**执行，不能委托给 LLM；这一点也是它们写进 Spec 而不是留给实现自由发挥的原因。
 

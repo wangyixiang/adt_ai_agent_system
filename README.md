@@ -4,7 +4,7 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
 
 ## 当前状态
 
-已实现到 **P4d + D7(b) + 单体 Electron 客户端（`ADR-006`）**：
+已实现到 **P4d + D7(b) + 单体 Electron 客户端（`ADR-006`）的完整闭环 + 部署与分发**：
 
 - **P1 骨架与协议层**：TypeScript monorepo、协议信封编解码、认证握手、能力同步、应用层心跳与协议错误处置。
 - **P2a Workflow 引擎与持久化**：Step/Workflow 状态机（含 `UNKNOWN` 与终态不可变）、取消与 `CANCELLING` 收敛、终止护栏、`completion_criteria`、PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
@@ -30,8 +30,10 @@ HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENT
   - **LLM 有界重试**（`ADR-004` 修订 A2）：只对 429 / 5xx / 网络错误按 500ms→1000ms 退避重试（`LLM_MAX_RETRIES`，默认 2），**不重试**其它 4xx、自身超时与模型语义错误；终局仍是 `planner_error`。
 - **P4d KB 导出（`ADR-005` 出站）**：提交人显式把一条 Record（默认）或 Report 投递到**配置的 KB 端点**，同步拿到结论。投递包由纯函数生成（`deposit_version` / 稳定 `deposit_id = hash(record_id, object, content_sha256)` / `content_sha256` / 墙钟 `submitted_at` / `content`）；`object=report` 时**只投 Report、不夹带 Record**。出站是 `KnowledgeDepositor` 接缝 + HTTP 实现：`POST` + 配置的鉴权头 + 超时，**网络错误 / 超时 / 5xx 有限重试（默认 2 次，指数退避），4xx 不重试**；**未配置端点或凭据 → `export_unavailable`**（绝不假装成功）。导出**不改 Record**、**不影响 Workflow 状态**。**blob 引用不随导出解析**（KB 只拿到引用，见 `ADR-005` §7）。
 - **D7(b) `client-cli` 控制台客户端**：`client-daemon` 的人类前端——`:ask` 提交请求，确认 / 建议 / 资源冲突由人在终端回答，`:records` / `:show` / `:report` / `:export` / `:blob` 读与导出；**确认绝不默认同意**，`EOF` 一律落到安全默认。**它会真的执行本机能力**（见下文「控制台客户端」一节）。
+- **桌面客户端的产品化闭环（`ADR-006`）**：**三栏工作台**（步骤/证据时间线 + 完成候选 + 人工决定小标）、**会话历史**（左栏 live + 往期 Record 重建，`RECORD_SPEC` v0.9 增 `step_status`）、**闭环末端**（Report 生成/覆盖式查看器/复制/另存、KB 导出并如实显示"端点已接收≠已收录"、取消含 `CANCELLING` 收敛）、**附件与 blob**（≤64 KiB 内联 / >64 KiB 走 blob、粘贴文本、预览/另存、往期渲染）与手工动作 `details`。契约见 `RECORD_SPEC` v0.10、`CLIENT_SPEC` v0.10。
+- **部署与使用（`docs/DEPLOY.md`）**：Server 用 **Docker Compose 常驻**（`server` + Postgres；`pgdata`/`blobs` 持久化、`/health`、`SIGTERM` 优雅退出、`.env` 装载且**真实环境变量优先**）、运维 CLI **`adm`**（建号/改口令/停用）与**首启脱敏配置摘要**；客户端出 **NSIS 安装包**（`pnpm -C packages/client-electron run dist`）并有**首次运行设置页**（Server 地址持久化，文件 **优先于** 环境变量）。
 
-后续：**D6（a）**（真实 Windows 适配器的调研简报）与**正式 Client UI**。控制台客户端见下文。
+后续：**D6（a）**（真实 Windows 适配器的调研简报）；**B1** Electron 安全硬化（CSP / `setWindowOpenHandler` / `sender` 校验）、**C1** 断线恢复体验、**D2** token 流式；打包增强（代码签名 / 自动更新）。控制台客户端见下文。
 
 ## 结构
 
@@ -81,8 +83,10 @@ Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 
 
 - `LLM_API_KEY`：设置后才启用；未设置时回退为 no-op 规划器（Workflow 不会产生 Step，直接给完成候选）。
 - `LLM_BASE_URL`：默认 `https://api.deepseek.com/v1`。
-- `LLM_MODEL`：默认 `deepseek-v4.1-flash`。
+- `LLM_MODEL`：默认 `deepseek-flash`（当前 DeepSeek 模型名；`deepseek-v4-pro` 亦可）。
 - `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试），上限 `10`（超出会**告警**并按默认值处理）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
+
+> **思考模式与强制工具调用**（`ADR-004` 修订 A3）：规划器靠**强制工具调用**（`tool_choice` 指定具体 tool）拿到结构化的决定（`step` / `completion_candidate` / `reconcile`）。而 `deepseek-flash` **默认就是思考模式**，思考模式**不接受**强制 `tool_choice`（官方：返回 **400**），所以 provider 一律显式发 `thinking:{type:"disabled"}`。换模型/网关后若遇 **`LLM HTTP 400`**，先查这条。
 
 真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
 

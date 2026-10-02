@@ -135,3 +135,13 @@ packages/
 * **参数**：`LLM_MAX_RETRIES`（默认 2 → 最多 3 次尝试），退避 500ms / 1000ms（指数）。设为 0 可关闭重试。
 * **最坏耗时**：被重试的失败**每次尝试都有各自的 `timeoutMs` 窗口**，因此上界是 `timeoutMs × (maxRetries + 1)` + 退避总和（默认 30s × 3 + 1.5s ≈ 93s）；**我们自己的超时不重试**，所以"挂死"那条路径只花一个 `timeoutMs`。实践中要逼近上界，需要网关每次都"拖到接近超时才回 429/5xx"；对延迟敏感时把 `LLM_MAX_RETRIES` 设为 0 或调小 `timeoutMs`（provider 的 `timeoutMs` 默认 30s）。
 * 重试耗尽后仍抛错 → 编排层 `FAILED(planner_error)`（既有语义）。
+
+### A3. 规划器关掉思考模式（2026-10-02，接真 LLM 时）
+
+`LlmPlanner` 用**强制工具调用**取得结构化决定：每次请求只提供一个工具（`propose_step` / `set_completion_criteria`），并用 `tool_choice: {type:"function", function:{name:…}}` **指定它**——因为引擎要的是类型化、可校验的 `PlannerDecision`（`step` / `completion_candidate` / `reconcile`，`packages/server/src/workflow/planner.ts`），而不是自由文本；强制调用同时保证"一次调用恰好产出一个决定"（`ADR-002` One-Step Planning）。
+
+而 DeepSeek 当前模型 **`deepseek-flash`（DeepSeek-V4.1-Flash）默认就是思考模式**，官方 Chat Completions 文档明确：**思考模式下不支持 `required` 和指定具体 tool 的用法，API 会返回 `400`**。两者直接冲突。
+
+决定：**provider 一律在请求体里发 `thinking: {type:"disabled"}`**（`packages/server/src/llm/openaiCompatible.ts`），保留强制工具调用；默认模型名取文档当前的 **`deepseek-flash`**（`deepseek-v4-pro` 同样受此限制，关思考后两者都可用）。若日后要支持思考模式，须放弃强制工具调用、改用 `auto` 并自行校验返回的工具名——工具调用的可靠性没有保证，本决定不采用。
+
+> 与 A2 无关：A2 是"传输层有界重试"，A3 是"请求体加一个开关"，两者互不影响。
