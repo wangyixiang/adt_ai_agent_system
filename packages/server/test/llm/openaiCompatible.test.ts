@@ -39,6 +39,10 @@ describe("OpenAiCompatibleProvider", () => {
       type: "function",
       function: { name: "propose_step" },
     });
+    // The default model runs in thinking mode, which REJECTS a forced
+    // tool_choice (DeepSeek docs: "思考模式下不支持 required 和指定具体 tool").
+    // The planner needs a forced tool call, so thinking must be off.
+    expect((body as { thinking: unknown }).thinking).toEqual({ type: "disabled" });
     expect(res.toolCalls).toEqual([
       { name: "propose_step", arguments: { action: "completion_candidate" } },
     ]);

@@ -87,6 +87,11 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       })),
       tool_choice: { type: "function", function: { name: request.toolChoice } },
       temperature: request.temperature,
+      // DeepSeek V4 runs in **thinking mode by default**, and thinking mode
+      // rejects a forced `tool_choice` ("思考模式下不支持 required 和指定具体
+      // tool") — the API returns 400. The planner needs a forced tool call, so
+      // thinking is disabled here. See `api-docs.deepseek.com/zh-cn/api/create-chat-completion`.
+      thinking: { type: "disabled" },
     });
 
     for (let attempt = 0; ; attempt++) {
