@@ -55,6 +55,8 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
   const { app, page } = await launchApp();
   try {
     await login(page);
+    await expect(page.getByTestId("app-bar")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("app-bar").getByText("已连接")).toBeVisible();
     await page.getByPlaceholder(/请求/).fill("服务异常");
     await page.getByLabel("添加附件").setInputFiles({
       name: "note.txt",
