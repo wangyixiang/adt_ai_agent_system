@@ -122,6 +122,18 @@ describe("the app", () => {
     expect(within(screen.getByTestId("workbench")).getByText(/Record: rec_1/)).toBeTruthy();
   });
 
+  it("keeps the completion summary in the thread, not the workbench", async () => {
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({ onEvent: (l) => { push = l; return () => undefined; } });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, { id: 1, type: "ask", workflowId: "wf_1", ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "看起来好了", evidenceRefs: ["st_1"] } });
+    });
+    expect(await within(screen.getByRole("main")).findByText(/看起来好了/)).toBeTruthy();
+    expect(within(screen.getByTestId("workbench")).queryByText(/看起来好了/)).toBeNull();
+  });
+
   it("shows a step's objective once, even while its ask is open", async () => {
     let push!: (e: MainEvent) => void;
     const client = fakeClient({ onEvent: (l) => { push = l; return () => undefined; } });

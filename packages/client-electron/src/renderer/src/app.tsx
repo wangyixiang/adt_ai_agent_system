@@ -376,6 +376,7 @@ export function App({ client }: { client: AdtClient }) {
           onPreviewBlob={handlePreviewBlob}
           onSaveBlob={handleSaveBlob}
           focusedStepId={focusedStepId}
+          onLocate={setFocusedStepId}
         />
       </div>
       {blob !== null && (

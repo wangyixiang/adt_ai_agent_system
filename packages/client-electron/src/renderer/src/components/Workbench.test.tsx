@@ -43,6 +43,7 @@ const base: WorkbenchProps = {
   onPreviewBlob: () => undefined,
   onSaveBlob: () => undefined,
   focusedStepId: null,
+  onLocate: () => undefined,
 };
 const show = (over: Partial<WorkbenchProps> = {}) => render(<Workbench {...base} {...over} />);
 
@@ -125,7 +126,26 @@ describe("the workbench", () => {
     };
     show({ items: [tool, decision, candidate] });
     expect(screen.getByText("已确认")).toBeTruthy();
-    expect(screen.getByText(/看起来好了/)).toBeTruthy();
+    expect(screen.queryByText(/看起来好了/)).toBeNull();
+    expect(screen.getByText("待你决定")).toBeTruthy();
+  });
+
+  it("locates the step behind a completion ref", async () => {
+    const located: string[] = [];
+    const candidate: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "s", evidenceRefs: ["st_1"] },
+      askKind: "completion",
+      answered: false,
+      stepId: null,
+      text: "t",
+    };
+    show({ items: [tool, candidate], onLocate: (id) => located.push(id) });
+    await userEvent.click(screen.getByRole("button", { name: "st_1" }));
+    expect(located).toEqual(["st_1"]);
   });
 
   it("offers report and export once a Record exists", async () => {

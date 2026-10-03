@@ -57,7 +57,7 @@ describe("deriveWorkbench", () => {
     });
   });
 
-  it("surfaces the completion candidate when it is present", () => {
+  it("carries the completion's refs and its decision, not its summary", () => {
     const candidate: TranscriptItem = {
       key: "ask:wf_1:ask_c",
       kind: "ask",
@@ -69,8 +69,15 @@ describe("deriveWorkbench", () => {
       stepId: null,
       text: "有一个完成候选在等你判断",
     };
-    const model = deriveWorkbench([tool(), candidate], false);
-    expect(model.completion).toEqual({ summary: "看起来好了", evidenceRefs: ["st_1"] });
+    const answered: TranscriptItem = { ...candidate, answered: true, text: "认为已解决" };
+    expect(deriveWorkbench([tool(), candidate], false).completion).toEqual({
+      evidenceRefs: ["st_1"],
+      decision: null,
+    });
+    expect(deriveWorkbench([tool(), answered], false).completion).toEqual({
+      evidenceRefs: ["st_1"],
+      decision: "认为已解决",
+    });
   });
 
   it("exposes a step's evidence blob", () => {

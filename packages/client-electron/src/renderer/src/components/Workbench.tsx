@@ -26,6 +26,8 @@ export interface WorkbenchProps {
   onSaveBlob(contentRef: string, mediaType: string, name?: string): void;
   /** The step the thread asked to locate; `null` when nothing was asked. */
   focusedStepId: string | null;
+  /** Locate a step in this panel (used by the completion candidate's refs). */
+  onLocate(stepId: string): void;
 }
 
 /**
@@ -46,6 +48,7 @@ export function Workbench({
   onPreviewBlob,
   onSaveBlob,
   focusedStepId,
+  onLocate,
 }: WorkbenchProps) {
   const [confirming, setConfirming] = useState(false);
   const [requested, setRequested] = useState(false);
@@ -193,9 +196,16 @@ export function Workbench({
 
       {model.completion !== null && (
         <section className="workbench-completion">
-          <p>完成候选：{model.completion.summary}</p>
+          <p className="completion-decision">{model.completion.decision ?? "待你决定"}</p>
           {model.completion.evidenceRefs.length > 0 && (
-            <p className="evidence-refs">依据证据：{model.completion.evidenceRefs.join("、")}</p>
+            <div className="completion-refs">
+              <span>依据证据：</span>
+              {model.completion.evidenceRefs.map((ref) => (
+                <button key={ref} type="button" onClick={() => onLocate(ref)}>
+                  {ref}
+                </button>
+              ))}
+            </div>
           )}
         </section>
       )}

@@ -34,8 +34,9 @@ export interface WorkbenchConclusion {
 }
 
 export interface WorkbenchCompletion {
-  summary: string;
   evidenceRefs: string[];
+  /** The human's decision, once made; `null` while it is still open. */
+  decision: string | null;
 }
 
 export interface WorkbenchModel {
@@ -50,7 +51,6 @@ export interface WorkbenchModel {
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 type AskItem = Extract<TranscriptItem, { kind: "ask" }>;
 type SummaryItem = Extract<TranscriptItem, { kind: "summary" }>;
-type CompletionAsk = Extract<Ask, { kind: "completion" }>;
 
 export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): WorkbenchModel {
   const asks = items.filter((item): item is AskItem => item.kind === "ask");
@@ -82,11 +82,14 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
           recordId: summary.recordId,
         };
 
-  const candidate = asks
-    .map((ask) => ask.ask)
-    .find((ask): ask is CompletionAsk => ask !== null && ask.kind === "completion");
+  const completionAsk = asks.find((ask) => ask.askKind === "completion" && ask.ask !== null);
   const completion: WorkbenchCompletion | null =
-    candidate === undefined ? null : { summary: candidate.summary, evidenceRefs: candidate.evidenceRefs };
+    completionAsk === undefined || completionAsk.ask === null || completionAsk.ask.kind !== "completion"
+      ? null
+      : {
+          evidenceRefs: completionAsk.ask.evidenceRefs,
+          decision: completionAsk.answered ? completionAsk.text : null,
+        };
 
   const first = items.find((item) => item.kind !== "notice");
   const workflowId = first === undefined ? null : first.workflowId;

@@ -150,9 +150,9 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
         </div>
       )}
 
+      {ask.kind === "completion" && <p className="completion-summary">{ask.summary}</p>}
       {!item.answered && ask.kind === "completion" && (
         <div className="decision">
-          <p>{ask.summary}</p>
           <textarea
             value={feedback}
             placeholder="补充说明（可选）"
