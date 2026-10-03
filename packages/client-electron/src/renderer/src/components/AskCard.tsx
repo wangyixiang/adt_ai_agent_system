@@ -11,6 +11,8 @@ type AskItem = Extract<TranscriptItem, { kind: "ask" }>;
 export interface AskCardProps {
   item: AskItem;
   onAnswer(askId: string, body: Answer): void;
+  /** A past transcript: render the decision as history, with no controls. */
+  readOnly: boolean;
 }
 
 /** `unknown` here is first-person: "I am not sure" — not a step's UNKNOWN. */
@@ -21,7 +23,7 @@ const OUTCOME_LABEL: Record<ManualOutcome, string> = {
   unknown: "我说不准",
 };
 
-export function AskCard({ item, onAnswer }: AskCardProps) {
+export function AskCard({ item, onAnswer, readOnly }: AskCardProps) {
   const ask = item.ask;
   const [observation, setObservation] = useState("");
   const [outcome, setOutcome] = useState<ManualOutcome>("succeeded");
@@ -51,7 +53,7 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
       {header}
       {item.answered && <p className="answer">{item.text}</p>}
 
-      {!item.answered && ask.kind === "confirmation" && (
+      {!readOnly && !item.answered && ask.kind === "confirmation" && (
         <div className="decision">
           <p className="hint">这是一个有副作用的动作，需要你确认。</p>
           <button type="button" onClick={() => onAnswer(ask.askId, { kind: "confirmation", decision: "confirmed" })}>
@@ -63,7 +65,7 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
         </div>
       )}
 
-      {!item.answered && ask.kind === "manual_action" && (
+      {!readOnly && !item.answered && ask.kind === "manual_action" && (
         <form
           className="decision"
           onSubmit={(event) => {
@@ -138,7 +140,7 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
         </form>
       )}
 
-      {!item.answered && ask.kind === "resource_conflict" && (
+      {!readOnly && !item.answered && ask.kind === "resource_conflict" && (
         <div className="decision">
           {ask.message !== undefined && <p>{ask.message}</p>}
           <button type="button" onClick={() => onAnswer(ask.askId, { kind: "resource_conflict", answer: "wait" })}>
@@ -151,7 +153,7 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
       )}
 
       {ask.kind === "completion" && <p className="completion-summary">{ask.summary}</p>}
-      {!item.answered && ask.kind === "completion" && (
+      {!readOnly && !item.answered && ask.kind === "completion" && (
         <div className="decision">
           <textarea
             value={feedback}

@@ -17,7 +17,13 @@ const request = (): TranscriptItem => ({
   ],
 });
 
-const props = { onAnswer: () => {}, onPreviewBlob: () => {}, onSaveBlob: () => {}, onLocate: () => {} };
+const props = {
+  onAnswer: () => {},
+  onPreviewBlob: () => {},
+  onSaveBlob: () => {},
+  onLocate: () => {},
+  readOnly: false,
+};
 
 describe("the transcript's user bubble", () => {
   it("shows the request's attachments", () => {
@@ -36,6 +42,7 @@ describe("the transcript's user bubble", () => {
         onPreviewBlob={previewed}
         onSaveBlob={saved}
         onLocate={() => {}}
+        readOnly={false}
       />,
     );
     const user = userEvent.setup();
@@ -44,5 +51,22 @@ describe("the transcript's user bubble", () => {
     expect(previewed).toHaveBeenCalledWith("blob_x", "text/plain");
     expect(saved).toHaveBeenCalledWith("blob_x", "text/plain", "big.log");
     expect(screen.getAllByRole("button", { name: "预览" })).toHaveLength(1);
+  });
+
+  it("hides the decision controls in a read-only (past) transcript", () => {
+    const completion: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "看起来好了", evidenceRefs: [] },
+      askKind: "completion",
+      answered: false,
+      stepId: null,
+      text: "有一个完成候选在等你判断",
+    };
+    render(<Transcript items={[completion]} {...props} readOnly />);
+    expect(screen.getByText("看起来好了")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "已解决" })).toBeNull();
   });
 });

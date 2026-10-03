@@ -130,6 +130,23 @@ describe("the workbench", () => {
     expect(screen.getByText("待你决定")).toBeTruthy();
   });
 
+  it("shows the completion decision once it is made", () => {
+    const answered: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "s", evidenceRefs: ["st_1"] },
+      askKind: "completion",
+      answered: true,
+      stepId: null,
+      text: "认为已解决",
+    };
+    show({ items: [tool, answered] });
+    expect(screen.getByText("认为已解决")).toBeTruthy();
+    expect(screen.queryByText("待你决定")).toBeNull();
+  });
+
   it("locates the step behind a completion ref", async () => {
     const located: string[] = [];
     const candidate: TranscriptItem = {

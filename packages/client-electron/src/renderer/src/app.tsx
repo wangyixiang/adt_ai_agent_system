@@ -357,6 +357,7 @@ export function App({ client }: { client: AdtClient }) {
             onPreviewBlob={handlePreviewBlob}
             onSaveBlob={handleSaveBlob}
             onLocate={setFocusedStepId}
+            readOnly={selectedConversation !== null && !selectedConversation.live}
           />
           {/* The composer only opens a *new* conversation, so it is always
               available (disabled while anything is running) — including when the

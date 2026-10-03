@@ -96,6 +96,8 @@ test("the past run survives a restart, reconstructed from its Record", async () 
     await expect(row).toBeVisible({ timeout: 20_000 });
     await row.click();
     await expect(page.getByTestId("workbench").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
+    // The past completion candidate is reconstructed, so the workbench shows its decision too.
+    await expect(page.getByTestId("workbench").getByText("认为已解决")).toBeVisible({ timeout: 20_000 });
   } finally {
     await app.close();
   }

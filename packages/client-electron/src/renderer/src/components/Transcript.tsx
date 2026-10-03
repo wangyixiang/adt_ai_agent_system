@@ -12,12 +12,15 @@ export function Transcript({
   onPreviewBlob,
   onSaveBlob,
   onLocate,
+  readOnly,
 }: {
   items: TranscriptItem[];
   onAnswer(askId: string, body: Answer): void;
   onPreviewBlob(contentRef: string, mediaType: string): void;
   onSaveBlob(contentRef: string, mediaType: string, name?: string): void;
   onLocate(stepId: string): void;
+  /** A reconstructed past transcript: decisions are history, not answers. */
+  readOnly: boolean;
 }) {
   if (items.length === 0) {
     return <p className="empty">还没有内容。提交一次请求开始。</p>;
@@ -71,7 +74,7 @@ export function Transcript({
           case "tool":
             return <ToolCard key={item.key} item={item} onLocate={onLocate} />;
           case "ask":
-            return <AskCard key={item.key} item={item} onAnswer={onAnswer} />;
+            return <AskCard key={item.key} item={item} onAnswer={onAnswer} readOnly={readOnly} />;
           case "notice":
             return <Notice key={item.key} item={item} />;
           case "summary":
