@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { STEP_STATE_TEXT, type TranscriptItem } from "../transcript";
 import { deriveWorkbench, type WorkbenchState } from "../workbench";
@@ -51,6 +51,9 @@ export function Workbench({
   const [requested, setRequested] = useState(false);
   const [detailLevel, setDetailLevel] = useState<"summary" | "full">("full");
   const [exportObject, setExportObject] = useState<"record" | "report">("record");
+  const focusRef = useCallback((node: HTMLElement | null): void => {
+    node?.scrollIntoView?.({ block: "nearest" });
+  }, []);
 
   if (items.length === 0) {
     return (
@@ -62,10 +65,6 @@ export function Workbench({
 
   const model = deriveWorkbench(items, cancelling);
   const canAskToCancel = canCancel && !cancelling && !requested;
-
-  const focusRef = (node: HTMLElement | null): void => {
-    node?.scrollIntoView?.({ block: "nearest" });
-  };
 
   const confirmCancel = (): void => {
     if (model.workflowId === null) return;

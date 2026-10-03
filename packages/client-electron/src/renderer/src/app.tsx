@@ -164,6 +164,7 @@ export function App({ client }: { client: AdtClient }) {
     setNotice(null);
     setReport(null);
     setBlob(null);
+    setFocusedStepId(null);
   }, [effectiveSelected]);
 
   const handleLogin = (username: string, secret: string): void => {

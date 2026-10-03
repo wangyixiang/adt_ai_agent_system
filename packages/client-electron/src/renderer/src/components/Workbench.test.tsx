@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -176,5 +176,34 @@ describe("the workbench", () => {
     show({ items: [withInput] });
     expect(screen.getByText(/maxLines/)).toBeTruthy();
     expect(screen.getByText("需要人工确认")).toBeTruthy();
+  });
+
+  it("does not render the request's attachments (they belong to the thread)", () => {
+    const request: TranscriptItem = {
+      key: "user:wf_1",
+      kind: "user",
+      workflowId: "wf_1",
+      text: "看附件",
+      attachments: [
+        { name: "note.txt", media_type: "text/plain", size: 2, sha256: "a", mode: "inline", data_base64: "aGk=" },
+      ],
+    };
+    show({ items: [request, tool] });
+    expect(screen.queryByText("note.txt")).toBeNull();
+  });
+
+  it("does not crash when asked to focus a step it does not have", () => {
+    show({ items: [tool], focusedStepId: "ghost" });
+    expect(screen.getByText("git.collect_diagnostics")).toBeTruthy();
+  });
+
+  it("scrolls the focused node once per locate, not on every render", () => {
+    const scroll = vi.fn();
+    (Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = scroll;
+    const { rerender } = render(<Workbench {...base} focusedStepId="st_1" />);
+    const afterMount = scroll.mock.calls.length;
+    expect(afterMount).toBeGreaterThan(0);
+    rerender(<Workbench {...base} focusedStepId="st_1" />);
+    expect(scroll.mock.calls.length).toBe(afterMount);
   });
 });

@@ -49,7 +49,6 @@ export function AskCard({ item, onAnswer }: AskCardProps) {
   return (
     <article className="ask-card" data-ask-kind={ask.kind} data-answered={item.answered}>
       {header}
-      {ask.kind !== "completion" && <p>{ask.objective}</p>}
       {item.answered && <p className="answer">{item.text}</p>}
 
       {!item.answered && ask.kind === "confirmation" && (

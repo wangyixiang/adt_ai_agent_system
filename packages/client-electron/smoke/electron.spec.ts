@@ -66,7 +66,7 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
     await page.getByRole("button", { name: "发送" }).click();
 
     await page.getByRole("button", { name: "确认" }).click({ timeout: 20_000 });
-    // The right-hand workbench shows the run's steps and its attachment.
+    // The workbench shows the run's steps; the request's attachment is in the thread.
     await expect(page.getByTestId("workbench").getByText("复位测试台")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("main").getByText("note.txt")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "已解决" }).click({ timeout: 20_000 });

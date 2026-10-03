@@ -107,6 +107,22 @@ describe("the app", () => {
     expect(screen.getByTestId("workbench").querySelector('[data-focused="true"]')).toBeTruthy();
   });
 
+  it("shows a step's objective once, even while its ask is open", async () => {
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({ onEvent: (l) => { push = l; return () => undefined; } });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+
+    act(() => {
+      pushUi(push, { id: 1, type: "step.dispatched", workflowId: "wf_1", stepId: "st_1", capability: "sim_rig.trigger_reset", objective: "复位测试台", input: {}, requiresConfirmation: true });
+      pushUi(push, { id: 2, type: "ask", workflowId: "wf_1", ask: { askId: "ask_k", kind: "confirmation", stepId: "st_1", capability: "sim_rig.trigger_reset", objective: "复位测试台", input: {} } });
+    });
+
+    const thread = within(screen.getByRole("main"));
+    await thread.findByText("复位测试台");
+    expect(thread.getAllByText("复位测试台")).toHaveLength(1);
+  });
+
   it("answers a confirmation from the card", async () => {
     const answers: unknown[] = [];
     let push!: (e: MainEvent) => void;
