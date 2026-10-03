@@ -118,6 +118,7 @@ describe("the app", () => {
     });
     const thread = within(screen.getByRole("main"));
     expect(await thread.findByText(/工作流已终止/)).toBeTruthy();
+    expect(thread.getByText(/见右栏结论/)).toBeTruthy();
     expect(thread.queryByText(/Record: rec_1/)).toBeNull();
     expect(within(screen.getByTestId("workbench")).getByText(/Record: rec_1/)).toBeTruthy();
   });

@@ -147,6 +147,23 @@ describe("the workbench", () => {
     expect(screen.queryByText("待你决定")).toBeNull();
   });
 
+  it("does not offer a locate button for a ref that matches no step", () => {
+    const candidate: TranscriptItem = {
+      key: "ask:wf_1:ask_c",
+      kind: "ask",
+      workflowId: "wf_1",
+      askId: "ask_c",
+      ask: { askId: "ask_c", kind: "completion", workflowId: "wf_1", summary: "s", evidenceRefs: ["ghost"] },
+      askKind: "completion",
+      answered: false,
+      stepId: null,
+      text: "t",
+    };
+    show({ items: [tool, candidate] });
+    expect(screen.queryByRole("button", { name: "ghost" })).toBeNull();
+    expect(screen.getByText("ghost")).toBeTruthy();
+  });
+
   it("locates the step behind a completion ref", async () => {
     const located: string[] = [];
     const candidate: TranscriptItem = {

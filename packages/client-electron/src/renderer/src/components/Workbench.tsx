@@ -200,11 +200,17 @@ export function Workbench({
           {model.completion.evidenceRefs.length > 0 && (
             <div className="completion-refs">
               <span>依据证据：</span>
-              {model.completion.evidenceRefs.map((ref) => (
-                <button key={ref} type="button" onClick={() => onLocate(ref)}>
-                  {ref}
-                </button>
-              ))}
+              {model.completion.evidenceRefs.map((ref) =>
+                model.steps.some((step) => step.stepId === ref) ? (
+                  <button key={ref} type="button" onClick={() => onLocate(ref)}>
+                    {ref}
+                  </button>
+                ) : (
+                  <span key={ref} className="completion-ref-missing">
+                    {ref}
+                  </span>
+                ),
+              )}
             </div>
           )}
         </section>

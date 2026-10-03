@@ -121,7 +121,7 @@ function answerText(answer: Answer): string {
 
 function summaryText(terminalState: TerminalState, terminalReason: string | null): string {
   const reason = terminalReason === null ? "" : ` · ${terminalReason}`;
-  return `工作流已终止：${terminalState}${reason}`;
+  return `工作流已终止：${terminalState}${reason} · 见右栏结论`;
 }
 
 /** Seed from the snapshot, then fold the events in id order (at most once each). */
