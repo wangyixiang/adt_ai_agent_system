@@ -172,34 +172,6 @@ export function Workbench({
         ))}
       </section>
 
-      {model.attachments.length > 0 && (
-        <section className="workbench-attachments">
-          <h4>附件</h4>
-          {model.attachments.map((attachment) => (
-            <div key={`${attachment.name}-${attachment.mode}`} className="attachment">
-              <span className="attachment-name">{attachment.name}</span>
-              <span className="attachment-mode">{attachment.mode === "inline" ? "内联" : "blob"}</span>
-              {attachment.mode === "blob" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onPreviewBlob(attachment.content_ref, attachment.media_type)}
-                  >
-                    预览
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSaveBlob(attachment.content_ref, attachment.media_type, attachment.name)}
-                  >
-                    另存
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
-
       {model.completion !== null && (
         <section className="workbench-completion">
           <p>完成候选：{model.completion.summary}</p>

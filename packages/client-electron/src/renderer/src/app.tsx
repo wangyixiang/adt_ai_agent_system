@@ -348,7 +348,12 @@ export function App({ client }: { client: AdtClient }) {
           {selectedConversation !== null && !selectedConversation.live && (
             <p className="past-note">往期记录</p>
           )}
-          <Transcript items={viewItems} onAnswer={handleAnswer} />
+          <Transcript
+            items={viewItems}
+            onAnswer={handleAnswer}
+            onPreviewBlob={handlePreviewBlob}
+            onSaveBlob={handleSaveBlob}
+          />
           {/* The composer only opens a *new* conversation, so it is always
               available (disabled while anything is running) — including when the
               list is empty or a past record is selected. */}

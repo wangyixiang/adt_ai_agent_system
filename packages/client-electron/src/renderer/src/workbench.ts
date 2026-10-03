@@ -7,7 +7,7 @@
  */
 import type { Ask, StepState, TerminalState } from "@adt/shared";
 
-import type { UiAttachment, UiEvidenceBlob } from "../../shared/contract";
+import type { UiEvidenceBlob } from "../../shared/contract";
 import type { TranscriptItem } from "./transcript";
 
 /** `CANCELLING` is the convergence window, not a terminal state. */
@@ -42,8 +42,6 @@ export interface WorkbenchModel {
   conclusion: WorkbenchConclusion | null;
   /** The Server's "solved?" proposal, when one is on the table/answered. */
   completion: WorkbenchCompletion | null;
-  /** The request's attachments, if any. */
-  attachments: UiAttachment[];
 }
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
@@ -86,10 +84,8 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
 
   const first = items.find((item) => item.kind !== "notice");
   const workflowId = first === undefined ? null : first.workflowId;
-  const user = items.find((item): item is Extract<TranscriptItem, { kind: "user" }> => item.kind === "user");
-  const attachments = user?.attachments ?? [];
   // A terminal state wins: "cancelling" only tells the running case apart.
   const state: WorkbenchState = conclusion?.terminalState ?? (cancelling ? "CANCELLING" : "running");
 
-  return { workflowId, state, steps, conclusion, completion, attachments };
+  return { workflowId, state, steps, conclusion, completion };
 }

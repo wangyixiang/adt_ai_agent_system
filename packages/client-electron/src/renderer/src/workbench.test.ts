@@ -54,7 +54,6 @@ describe("deriveWorkbench", () => {
       steps: [],
       conclusion: null,
       completion: null,
-      attachments: [],
     });
   });
 
