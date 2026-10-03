@@ -72,4 +72,10 @@ describe("the design tokens", () => {
     expect(css).toContain(".screen .login");
     expect(css).toContain(".screen .settings");
   });
+
+  it("themes the overlays", () => {
+    expect(css).toMatch(/\.report-viewer[^{]*\{[^}]*position:\s*fixed/);
+    expect(css).toContain(".blob-viewer");
+    expect(css).toContain(".report-content");
+  });
 });
