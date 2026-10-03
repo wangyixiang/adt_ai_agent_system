@@ -64,6 +64,7 @@ describe("transcriptFromRecord", () => {
     expect(tool(items).text).toContain("完成");
     expect(tool(items).evidenceSummary).toContain("git_status");
     expect(ask(items)).toMatchObject({ askKind: "completion", answered: true, text: "认为已解决" });
+    expect(ask(items).ask).toMatchObject({ summary: "看起来好了", evidenceRefs: ["st_1"] });
     expect(items[3]).toMatchObject({ kind: "summary", recordId: "rec_1" });
     // The conclusion is surfaced, not just the terminal state.
     expect((items[3] as Extract<TranscriptItem, { kind: "summary" }>).text).toContain("好了");

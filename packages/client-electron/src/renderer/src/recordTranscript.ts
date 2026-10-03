@@ -57,6 +57,8 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   const toolIndex = new Map<string, number>();
   const askIndex = new Map<string, number>();
+  /** The completion candidate's fields, remembered across its response. */
+  let completion: { summary: string; evidenceRefs: string[] } | null = null;
 
   items.push({
     key: `hist:user:${workflowId}`,
@@ -190,12 +192,17 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
       }
 
       case "completion_candidate": {
+        const summary = typeof ref.summary === "string" ? ref.summary : "";
+        const evidenceRefs = Array.isArray(ref.evidence_refs)
+          ? ref.evidence_refs.filter((value): value is string => typeof value === "string")
+          : [];
+        completion = { summary, evidenceRefs };
         upsertAsk("hist:ask:completion", () => ({
           key: "hist:ask:completion",
           kind: "ask",
           workflowId,
           askId: "hist:completion",
-          ask: null,
+          ask: { askId: "hist:completion", kind: "completion", workflowId, summary, evidenceRefs },
           askKind: "completion",
           answered: false,
           stepId: null,
@@ -206,12 +213,16 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
 
       case "completion_response": {
         const resolution = ref.resolution === "solved" ? "认为已解决" : "认为没解决";
+        const candidate = completion;
         upsertAsk("hist:ask:completion", () => ({
           key: "hist:ask:completion",
           kind: "ask",
           workflowId,
           askId: "hist:completion",
-          ask: null,
+          ask:
+            candidate === null
+              ? null
+              : { askId: "hist:completion", kind: "completion", workflowId, ...candidate },
           askKind: "completion",
           answered: true,
           stepId: null,
