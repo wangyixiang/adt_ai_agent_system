@@ -15,6 +15,7 @@ export type WorkbenchState = "running" | "CANCELLING" | TerminalState;
 
 export interface WorkbenchStep {
   key: string;
+  stepId: string;
   capability: string;
   objective: string;
   state: StepState;
@@ -56,6 +57,7 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
     .filter((item): item is ToolItem => item.kind === "tool")
     .map((item) => ({
       key: item.key,
+      stepId: item.stepId,
       capability: item.capability,
       objective: item.objective,
       state: item.state,

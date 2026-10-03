@@ -43,6 +43,8 @@ export function App({ client }: { client: AdtClient }) {
   const [records, setRecords] = useState<UiRecordListEntry[]>([]);
   const [recordsTick, setRecordsTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The step the thread last asked the workbench to locate. */
+  const [focusedStepId, setFocusedStepId] = useState<string | null>(null);
   /** The effective settings; `null` until the first `configGet` resolves. */
   const [config, setConfig] = useState<UiConfig | null>(null);
   /** The settings page was opened from the app (as opposed to first run). */
@@ -353,6 +355,7 @@ export function App({ client }: { client: AdtClient }) {
             onAnswer={handleAnswer}
             onPreviewBlob={handlePreviewBlob}
             onSaveBlob={handleSaveBlob}
+            onLocate={setFocusedStepId}
           />
           {/* The composer only opens a *new* conversation, so it is always
               available (disabled while anything is running) — including when the
@@ -371,6 +374,7 @@ export function App({ client }: { client: AdtClient }) {
           onExport={handleExport}
           onPreviewBlob={handlePreviewBlob}
           onSaveBlob={handleSaveBlob}
+          focusedStepId={focusedStepId}
         />
       </div>
       {blob !== null && (

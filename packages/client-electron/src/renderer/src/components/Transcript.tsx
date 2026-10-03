@@ -11,11 +11,13 @@ export function Transcript({
   onAnswer,
   onPreviewBlob,
   onSaveBlob,
+  onLocate,
 }: {
   items: TranscriptItem[];
   onAnswer(askId: string, body: Answer): void;
   onPreviewBlob(contentRef: string, mediaType: string): void;
   onSaveBlob(contentRef: string, mediaType: string, name?: string): void;
+  onLocate(stepId: string): void;
 }) {
   if (items.length === 0) {
     return <p className="empty">还没有内容。提交一次请求开始。</p>;
@@ -67,13 +69,11 @@ export function Transcript({
               </div>
             );
           case "assistant":
-            return (
-              <div key={item.key} className="bubble assistant">
-                {item.text}
-              </div>
-            );
+            // A step's objective has one home in the thread: its compact row
+            // below (spec §6.3). The assistant item duplicates it.
+            return null;
           case "tool":
-            return <ToolCard key={item.key} item={item} />;
+            return <ToolCard key={item.key} item={item} onLocate={onLocate} />;
           case "ask":
             return <AskCard key={item.key} item={item} onAnswer={onAnswer} />;
           case "notice":

@@ -99,8 +99,12 @@ describe("the app", () => {
     const thread = within(screen.getByRole("main"));
     expect(await thread.findByText("先收集诊断信息")).toBeTruthy();
     expect(thread.getByText("完成")).toBeTruthy();
-    expect(thread.getByText(/maxLines/)).toBeTruthy();
     expect(thread.getByText(/Record: rec_1/)).toBeTruthy();
+
+    // The thread's step row points at the workbench node (spec §6.3).
+    const user = userEvent.setup();
+    await user.click(thread.getByText("git.collect_diagnostics"));
+    expect(screen.getByTestId("workbench").querySelector('[data-focused="true"]')).toBeTruthy();
   });
 
   it("answers a confirmation from the card", async () => {

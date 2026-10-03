@@ -2,18 +2,22 @@ import type { TranscriptItem } from "../transcript";
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
-export function ToolCard({ item }: { item: ToolItem }) {
+/**
+ * The thread's compact pointer at a step: capability, state and objective.
+ * The full record (input, evidence, blob actions, decisions) belongs to the
+ * workbench — clicking this row locates that node (spec §6.2/§6.3).
+ */
+export function ToolCard({ item, onLocate }: { item: ToolItem; onLocate(stepId: string): void }) {
   return (
-    <article className="tool-card" data-state={item.state}>
-      <header>
-        <span className="capability">{item.capability}</span>
-        <span className="badge">{item.text}</span>
-      </header>
-      {Object.keys(item.input).length > 0 && (
-        <pre className="input">{JSON.stringify(item.input, null, 2)}</pre>
-      )}
-      {item.requiresConfirmation && <p className="hint">这一步需要你的确认。</p>}
-      {item.evidenceSummary !== null && <pre className="evidence">{item.evidenceSummary}</pre>}
-    </article>
+    <button
+      type="button"
+      className="tool-row"
+      data-state={item.state}
+      onClick={() => onLocate(item.stepId)}
+    >
+      <span className="capability">{item.capability}</span>
+      <span className="badge">{item.text}</span>
+      {item.objective !== "" && <span className="objective">{item.objective}</span>}
+    </button>
   );
 }

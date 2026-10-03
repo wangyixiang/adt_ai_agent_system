@@ -24,6 +24,8 @@ export interface WorkbenchProps {
   onExport(object: "record" | "report"): void;
   onPreviewBlob(contentRef: string, mediaType: string): void;
   onSaveBlob(contentRef: string, mediaType: string, name?: string): void;
+  /** The step the thread asked to locate; `null` when nothing was asked. */
+  focusedStepId: string | null;
 }
 
 /**
@@ -43,6 +45,7 @@ export function Workbench({
   onExport,
   onPreviewBlob,
   onSaveBlob,
+  focusedStepId,
 }: WorkbenchProps) {
   const [confirming, setConfirming] = useState(false);
   const [requested, setRequested] = useState(false);
@@ -59,6 +62,10 @@ export function Workbench({
 
   const model = deriveWorkbench(items, cancelling);
   const canAskToCancel = canCancel && !cancelling && !requested;
+
+  const focusRef = (node: HTMLElement | null): void => {
+    node?.scrollIntoView?.({ block: "nearest" });
+  };
 
   const confirmCancel = (): void => {
     if (model.workflowId === null) return;
@@ -134,7 +141,13 @@ export function Workbench({
       <section className="workbench-steps">
         {model.steps.length === 0 && <p className="empty">还没有步骤。</p>}
         {model.steps.map((step) => (
-          <article key={step.key} className="workbench-step" data-state={step.state}>
+          <article
+            key={step.key}
+            className="workbench-step"
+            data-state={step.state}
+            data-focused={focusedStepId === step.stepId}
+            ref={focusedStepId === step.stepId ? focusRef : undefined}
+          >
             <header>
               <span className="capability">{step.capability}</span>
               <span className="badge">{STEP_STATE_TEXT[step.state]}</span>
