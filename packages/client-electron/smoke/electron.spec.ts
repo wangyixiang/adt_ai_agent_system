@@ -71,7 +71,7 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
     await expect(page.getByRole("main").getByText("note.txt")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "已解决" }).click({ timeout: 20_000 });
 
-    await expect(page.getByRole("main").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("workbench").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
     // The run is now in the left conversation list.
     await expect(page.getByRole("button", { name: /服务异常/ }).first()).toBeVisible();
 
@@ -94,7 +94,7 @@ test("the past run survives a restart, reconstructed from its Record", async () 
     const row = page.getByRole("button", { name: /服务异常/ }).first();
     await expect(row).toBeVisible({ timeout: 20_000 });
     await row.click();
-    await expect(page.getByRole("main").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("workbench").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
   } finally {
     await app.close();
   }

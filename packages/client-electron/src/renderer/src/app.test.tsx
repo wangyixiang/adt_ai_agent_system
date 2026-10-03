@@ -99,12 +99,27 @@ describe("the app", () => {
     const thread = within(screen.getByRole("main"));
     expect(await thread.findByText("先收集诊断信息")).toBeTruthy();
     expect(thread.getByText("完成")).toBeTruthy();
-    expect(thread.getByText(/Record: rec_1/)).toBeTruthy();
+    expect(within(screen.getByTestId("workbench")).getByText(/Record: rec_1/)).toBeTruthy();
 
     // The thread's step row points at the workbench node (spec §6.3).
     const user = userEvent.setup();
     await user.click(thread.getByText("git.collect_diagnostics"));
     expect(screen.getByTestId("workbench").querySelector('[data-focused="true"]')).toBeTruthy();
+  });
+
+  it("keeps the Record id out of the thread (the workbench owns it)", async () => {
+    let push!: (e: MainEvent) => void;
+    const client = fakeClient({ onEvent: (l) => { push = l; return () => undefined; } });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    act(() => {
+      pushUi(push, { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "x" } });
+      pushUi(push, { id: 2, type: "workflow.terminated", workflowId: "wf_1", terminalState: "COMPLETED", terminalReason: null, recordId: "rec_1" });
+    });
+    const thread = within(screen.getByRole("main"));
+    expect(await thread.findByText(/工作流已终止/)).toBeTruthy();
+    expect(thread.queryByText(/Record: rec_1/)).toBeNull();
+    expect(within(screen.getByTestId("workbench")).getByText(/Record: rec_1/)).toBeTruthy();
   });
 
   it("shows a step's objective once, even while its ask is open", async () => {
@@ -286,7 +301,7 @@ describe("the app", () => {
     // The list shows the past run, and opening it reconstructs the transcript.
     const thread = within(screen.getByRole("main"));
     expect(await thread.findByText("查一下日志")).toBeTruthy();
-    expect(thread.getByText(/Record: rec_9/)).toBeTruthy();
+    expect(within(screen.getByTestId("workbench")).getByText(/Record: rec_9/)).toBeTruthy();
     expect(fetched).toEqual(["rec_9"]);
 
     // A re-render must not refetch the same (immutable) Record.
