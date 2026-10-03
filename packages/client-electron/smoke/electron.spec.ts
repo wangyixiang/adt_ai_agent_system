@@ -70,6 +70,7 @@ test("a person can log in, run a diagnostic, and answer the cards", async () => 
     await expect(page.getByTestId("workbench").getByText("复位测试台")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("main").getByText("note.txt")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "已解决" }).click({ timeout: 20_000 });
+    await expect(page.getByTestId("workbench").getByText("认为已解决")).toBeVisible({ timeout: 20_000 });
 
     await expect(page.getByTestId("workbench").getByText(/Record: rec_/)).toBeVisible({ timeout: 20_000 });
     // The run is now in the left conversation list.
