@@ -42,6 +42,7 @@ const base: WorkbenchProps = {
   onExport: () => undefined,
   onPreviewBlob: () => undefined,
   onSaveBlob: () => undefined,
+  focusedStepId: null,
 };
 const show = (over: Partial<WorkbenchProps> = {}) => render(<Workbench {...base} {...over} />);
 
@@ -164,5 +165,16 @@ describe("the workbench", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /预览证据/ }));
     expect(previewed).toEqual(["blob_x"]);
+  });
+
+  it("shows a step's input and that it needs confirmation", () => {
+    const withInput: Extract<TranscriptItem, { kind: "tool" }> = {
+      ...tool,
+      input: { maxLines: 200 },
+      requiresConfirmation: true,
+    };
+    show({ items: [withInput] });
+    expect(screen.getByText(/maxLines/)).toBeTruthy();
+    expect(screen.getByText("需要人工确认")).toBeTruthy();
   });
 });

@@ -153,6 +153,13 @@ export function Workbench({
               <span className="badge">{STEP_STATE_TEXT[step.state]}</span>
             </header>
             <p className="objective">{step.objective}</p>
+            {step.requiresConfirmation && <p className="needs-confirmation">需要人工确认</p>}
+            {Object.keys(step.input).length > 0 && (
+              <details className="step-input">
+                <summary>输入</summary>
+                <pre>{JSON.stringify(step.input, null, 2)}</pre>
+              </details>
+            )}
             {step.decisions.length > 0 && (
               <div className="decisions">
                 {step.decisions.map((decision, index) => (

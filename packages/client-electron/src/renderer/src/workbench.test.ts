@@ -105,4 +105,11 @@ describe("deriveWorkbench", () => {
     const model = deriveWorkbench([tool(), confirmed, pending], false);
     expect(model.steps[0]!.decisions).toEqual(["已确认", "待你回答"]);
   });
+
+  it("carries a step's input and its confirmation flag into the model", () => {
+    const withInput = { ...tool(), input: { maxLines: 200 }, requiresConfirmation: true };
+    const model = deriveWorkbench([withInput], false);
+    expect(model.steps[0]!.input).toEqual({ maxLines: 200 });
+    expect(model.steps[0]!.requiresConfirmation).toBe(true);
+  });
 });

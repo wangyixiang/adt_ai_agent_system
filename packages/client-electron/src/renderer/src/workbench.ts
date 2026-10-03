@@ -19,6 +19,8 @@ export interface WorkbenchStep {
   capability: string;
   objective: string;
   state: StepState;
+  input: Record<string, unknown>;
+  requiresConfirmation: boolean;
   evidenceSummary: string | null;
   evidenceBlob: UiEvidenceBlob | null;
   /** This step's human decisions, as short labels (answered) or "待你回答". */
@@ -61,6 +63,8 @@ export function deriveWorkbench(items: TranscriptItem[], cancelling: boolean): W
       capability: item.capability,
       objective: item.objective,
       state: item.state,
+      input: item.input,
+      requiresConfirmation: item.requiresConfirmation,
       evidenceSummary: item.evidenceSummary,
       evidenceBlob: item.evidenceBlob,
       decisions: asks
