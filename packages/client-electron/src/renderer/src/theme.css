@@ -4,7 +4,7 @@
  * these variables; they never hard-code a colour. Locally bundled Inter /
  * JetBrains Mono live in ./assets/fonts so the app works offline.
  *
- * The shell's layout rules are appended below by the UI-1 shell task.
+ * The shell's layout rules live below; components read these variables only.
  */
 :root {
   --color-bg: #0b1326;
@@ -104,6 +104,7 @@ body,
   flex: 1;
   display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 
 .conversations {
@@ -119,6 +120,12 @@ body,
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .workbench {

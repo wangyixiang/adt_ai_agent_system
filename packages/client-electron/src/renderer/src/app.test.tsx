@@ -925,6 +925,7 @@ describe("the app", () => {
     render(<App client={client} />);
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/config unreadable/)).toBeTruthy();
+    expect(screen.queryByTestId("app-bar")).toBeNull();
     expect(screen.queryByTestId("settings")).toBeNull();
   });
 
@@ -946,7 +947,16 @@ describe("the app", () => {
     // Connection has a single home: the app bar (spec §6.3).
     expect(screen.getAllByText("已连接")).toHaveLength(1);
     expect(screen.getByTestId("conversation-list")).toBeTruthy();
+    // The list is a pane even when empty: its geometry must not collapse.
+    expect(screen.getByRole("navigation")).toBeTruthy();
     expect(screen.getByRole("main")).toBeTruthy();
     expect(screen.getByTestId("workbench")).toBeTruthy();
+  });
+
+  it("does not render the app bar before sign-in", async () => {
+    const client = fakeClient({ snapshot: async () => disconnected });
+    render(<App client={client} />);
+    expect(await screen.findByLabelText("用户名")).toBeTruthy();
+    expect(screen.queryByTestId("app-bar")).toBeNull();
   });
 });

@@ -14,30 +14,30 @@ export interface ConversationListProps {
 }
 
 export function ConversationList({ conversations, selected, onSelect }: ConversationListProps) {
-  if (conversations.length === 0) {
-    return <p className="empty" data-testid="conversation-list">还没有对话，提交一次请求开始。</p>;
-  }
-
   return (
     <nav className="conversations" data-testid="conversation-list">
-      {conversations.map((conversation) => (
-        <button
-          key={conversation.workflowId}
-          type="button"
-          className={
-            conversation.workflowId === selected ? "conversation selected" : "conversation"
-          }
-          onClick={() => onSelect(conversation.workflowId)}
-        >
-          <span className="conversation-title">{conversation.title}</span>
-          <span className="conversation-state">
-            {conversation.state === "running" ? "进行中" : conversation.state}
-          </span>
-          {conversation.durationMs !== undefined && (
-            <span className="conversation-duration">{formatDuration(conversation.durationMs)}</span>
-          )}
-        </button>
-      ))}
+      {conversations.length === 0 ? (
+        <p className="empty">还没有对话，提交一次请求开始。</p>
+      ) : (
+        conversations.map((conversation) => (
+          <button
+            key={conversation.workflowId}
+            type="button"
+            className={
+              conversation.workflowId === selected ? "conversation selected" : "conversation"
+            }
+            onClick={() => onSelect(conversation.workflowId)}
+          >
+            <span className="conversation-title">{conversation.title}</span>
+            <span className="conversation-state">
+              {conversation.state === "running" ? "进行中" : conversation.state}
+            </span>
+            {conversation.durationMs !== undefined && (
+              <span className="conversation-duration">{formatDuration(conversation.durationMs)}</span>
+            )}
+          </button>
+        ))
+      )}
     </nav>
   );
 }

@@ -49,4 +49,15 @@ describe("the design tokens", () => {
   it("keeps the smallest type at 11px", () => {
     expect(css).not.toMatch(/font-size:\s*(9|10)px/);
   });
+
+  it("keeps the offline fallback stacks", () => {
+    expect(css).toContain('--font-sans: "Inter", "Segoe UI", system-ui, sans-serif');
+    expect(css).toContain('--font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace');
+  });
+
+  it("contains scrolling inside the panes", () => {
+    expect(css).toMatch(/\.app-body\s*\{[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.transcript\s*\{[^}]*overflow-y:\s*auto/);
+    expect(css).toMatch(/\.transcript\s*\{[^}]*min-height:\s*0/);
+  });
 });
