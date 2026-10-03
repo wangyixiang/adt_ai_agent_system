@@ -18,7 +18,9 @@ export function AppBar({
   return (
     <header className="app-bar" data-testid="app-bar">
       <span className="app-name">ADT</span>
-      <span className="app-connection">{CONNECTION_TEXT[connection]}</span>
+      <span className="app-connection" data-connection={connection}>
+        {CONNECTION_TEXT[connection]}
+      </span>
       {userId !== null && <span className="app-user">{userId}</span>}
       <button type="button" className="app-settings" onClick={onOpenSettings}>
         设置

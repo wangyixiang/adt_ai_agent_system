@@ -332,7 +332,7 @@ Expected: build exit 0；冒烟 **3 passed**（第一条含新断言）。
 - [ ] **Step 3: 全量验证**
 
 Run: `pnpm -r --if-present test`（串行）与 `pnpm -r --if-present typecheck`
-Expected: 两个都 exit 0；`client-electron` 测试数 = 既有 132 + 新增（AppBar 3 + app 2 = 5）。
+Expected: 两个都 exit 0；`client-electron` 测试数 = 既有 132 + 新增（theme 3 + AppBar 3 + app 2 = 8）= 140（评审修复轮再 +3，最终 143）。
 
 - [ ] **Step 4: 提交**
 

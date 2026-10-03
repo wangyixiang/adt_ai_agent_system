@@ -100,6 +100,36 @@ body,
   border-bottom: 1px solid var(--color-outline-variant);
 }
 
+.app-name {
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.app-connection {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.app-connection[data-connection="connected"] {
+  color: var(--color-tertiary);
+}
+
+.app-connection[data-connection="disconnected"] {
+  color: var(--color-warning);
+}
+
+.app-user {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.app-settings {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+
 .app-body {
   flex: 1;
   display: flex;

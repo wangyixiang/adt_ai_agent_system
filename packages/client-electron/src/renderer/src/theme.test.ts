@@ -60,4 +60,10 @@ describe("the design tokens", () => {
     expect(css).toMatch(/\.transcript\s*\{[^}]*overflow-y:\s*auto/);
     expect(css).toMatch(/\.transcript\s*\{[^}]*min-height:\s*0/);
   });
+
+  it("dresses the app bar", () => {
+    for (const selector of [".app-name", ".app-connection", ".app-user", ".app-settings"]) {
+      expect(css).toContain(selector);
+    }
+  });
 });
