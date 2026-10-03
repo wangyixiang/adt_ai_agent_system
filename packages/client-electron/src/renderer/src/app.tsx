@@ -4,6 +4,7 @@ import type { Answer } from "@adt/shared";
 
 import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot, UiBlobPreview, UiConfig, IncomingAttachment } from "../../shared/contract";
 import type { AdtClient } from "./api";
+import { AppBar } from "./components/AppBar";
 import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
 import { Login } from "./components/Login";
@@ -333,36 +334,40 @@ export function App({ client }: { client: AdtClient }) {
 
   return (
     <div className="app" data-testid="app">
-      <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
-      <main className="thread">
-        <ProgressHeader items={viewItems} connection={ui.snapshot.connection} />
-        <button type="button" className="open-settings" onClick={() => setSettingsOpen(true)}>
-          设置
-        </button>
-        {error !== null && <p role="alert">{error}</p>}
-        {notice !== null && <p role="status">{notice}</p>}
-        {selectedConversation !== null && !selectedConversation.live && (
-          <p className="past-note">往期记录</p>
-        )}
-        <Transcript items={viewItems} onAnswer={handleAnswer} />
-        {/* The composer only opens a *new* conversation, so it is always
-            available (disabled while anything is running) — including when the
-            list is empty or a past record is selected. */}
-        <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
-      </main>
-      <Workbench
-        key={effectiveSelected ?? "none"}
-        items={viewItems}
-        cancelling={selectedCancelling}
-        canCancel={canCancel}
-        onCancel={handleCancel}
-        recordId={selectedRecordId}
-        reportReady={selectedRecordId !== null && reportReady.has(selectedRecordId)}
-        onGenerateReport={handleGenerateReport}
-        onExport={handleExport}
-        onPreviewBlob={handlePreviewBlob}
-        onSaveBlob={handleSaveBlob}
+      <AppBar
+        connection={ui.snapshot.connection}
+        userId={ui.snapshot.userId}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
+      <div className="app-body">
+        <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
+        <main className="thread">
+          <ProgressHeader items={viewItems} />
+          {error !== null && <p role="alert">{error}</p>}
+          {notice !== null && <p role="status">{notice}</p>}
+          {selectedConversation !== null && !selectedConversation.live && (
+            <p className="past-note">往期记录</p>
+          )}
+          <Transcript items={viewItems} onAnswer={handleAnswer} />
+          {/* The composer only opens a *new* conversation, so it is always
+              available (disabled while anything is running) — including when the
+              list is empty or a past record is selected. */}
+          <Composer disabled={anyRunning || submitting} onSubmit={handleSubmit} />
+        </main>
+        <Workbench
+          key={effectiveSelected ?? "none"}
+          items={viewItems}
+          cancelling={selectedCancelling}
+          canCancel={canCancel}
+          onCancel={handleCancel}
+          recordId={selectedRecordId}
+          reportReady={selectedRecordId !== null && reportReady.has(selectedRecordId)}
+          onGenerateReport={handleGenerateReport}
+          onExport={handleExport}
+          onPreviewBlob={handlePreviewBlob}
+          onSaveBlob={handleSaveBlob}
+        />
+      </div>
       {blob !== null && (
         <div className="blob-viewer" data-testid="blob-viewer" role="dialog" aria-modal="true">
           <header>

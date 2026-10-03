@@ -1,12 +1,6 @@
 import { hasRunningWorkflow, type TranscriptItem } from "../transcript";
 
-export function ProgressHeader({
-  items,
-  connection,
-}: {
-  items: TranscriptItem[];
-  connection: "connected" | "disconnected";
-}) {
+export function ProgressHeader({ items }: { items: TranscriptItem[] }) {
   const tools = items.filter((item) => item.kind === "tool");
   const done = tools.filter((item) => item.state === "COMPLETED").length;
   const running = hasRunningWorkflow(items);
@@ -14,7 +8,6 @@ export function ProgressHeader({
 
   return (
     <header className="progress">
-      <span>{connection === "connected" ? "已连接" : "未连接"}</span>
       <span>
         已走 {tools.length} 步（完成 {done}）
       </span>

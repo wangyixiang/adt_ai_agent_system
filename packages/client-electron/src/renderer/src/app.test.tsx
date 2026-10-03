@@ -927,4 +927,26 @@ describe("the app", () => {
     expect(screen.getByText(/config unreadable/)).toBeTruthy();
     expect(screen.queryByTestId("settings")).toBeNull();
   });
+
+  it("shows the app bar and opens settings from it", async () => {
+    const client = fakeClient();
+    render(<App client={client} />);
+    const bar = await screen.findByTestId("app-bar");
+    expect(within(bar).getByText("已连接")).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(within(bar).getByRole("button", { name: "设置" }));
+    expect(await screen.findByTestId("settings")).toBeTruthy();
+  });
+
+  it("has exactly one settings button, one connection label, and a three-pane body", async () => {
+    const client = fakeClient();
+    render(<App client={client} />);
+    await screen.findByTestId("app-bar");
+    expect(screen.getAllByRole("button", { name: "设置" })).toHaveLength(1);
+    // Connection has a single home: the app bar (spec §6.3).
+    expect(screen.getAllByText("已连接")).toHaveLength(1);
+    expect(screen.getByTestId("conversation-list")).toBeTruthy();
+    expect(screen.getByRole("main")).toBeTruthy();
+    expect(screen.getByTestId("workbench")).toBeTruthy();
+  });
 });

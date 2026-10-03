@@ -15,11 +15,11 @@ export interface ConversationListProps {
 
 export function ConversationList({ conversations, selected, onSelect }: ConversationListProps) {
   if (conversations.length === 0) {
-    return <p className="empty">还没有对话，提交一次请求开始。</p>;
+    return <p className="empty" data-testid="conversation-list">还没有对话，提交一次请求开始。</p>;
   }
 
   return (
-    <nav className="conversations">
+    <nav className="conversations" data-testid="conversation-list">
       {conversations.map((conversation) => (
         <button
           key={conversation.workflowId}
