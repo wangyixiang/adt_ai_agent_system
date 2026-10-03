@@ -44,18 +44,18 @@ const run: UiEvent[] = [
 const kinds = (items: TranscriptItem[]): string[] => items.map((item) => item.kind);
 
 describe("deriveTranscript", () => {
-  it("builds user → assistant → tool → summary from the events", () => {
+  it("builds user → tool → summary from the events", () => {
     const items = deriveTranscript(snapshot, run);
-    expect(kinds(items)).toEqual(["user", "assistant", "tool", "summary"]);
+    expect(kinds(items)).toEqual(["user", "tool", "summary"]);
     expect(items[0]).toMatchObject({ kind: "user", text: "项目起不来了" });
-    expect(items[2]).toMatchObject({
+    expect(items[1]).toMatchObject({
       kind: "tool",
       capability: "git.collect_diagnostics",
       input: { maxLines: 200 },
       state: "COMPLETED",
       evidenceSummary: "git_status: clean",
     });
-    expect(items[3]).toMatchObject({ kind: "summary", terminalState: "COMPLETED", recordId: "rec_1" });
+    expect(items[2]).toMatchObject({ kind: "summary", terminalState: "COMPLETED", recordId: "rec_1" });
   });
 
   it("applies an event with a duplicate id only once", () => {

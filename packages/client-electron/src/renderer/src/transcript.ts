@@ -12,14 +12,6 @@ export type TranscriptItem =
   | { key: string; kind: "user"; workflowId: string; text: string; attachments: UiAttachment[] }
   | {
       key: string;
-      kind: "assistant";
-      workflowId: string;
-      stepId: string;
-      capability: string;
-      text: string;
-    }
-  | {
-      key: string;
       kind: "tool";
       workflowId: string;
       stepId: string;
@@ -161,8 +153,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
   };
 
   const stepOrder = (workflowId: string, stepId: string, fallback: number): number => {
-    const existing =
-      get(`tool:${workflowId}:${stepId}`) ?? get(`assistant:${workflowId}:${stepId}`);
+    const existing = get(`tool:${workflowId}:${stepId}`);
     return existing?.order ?? fallback;
   };
 
@@ -173,7 +164,6 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
     order: number,
   ): void => {
     const toolKey = `tool:${workflowId}:${stepId}`;
-    const assistantKey = `assistant:${workflowId}:${stepId}`;
     const previousTool = get(toolKey);
     const previous = previousTool?.item.kind === "tool" ? previousTool.item : undefined;
     const resolved = stepOrder(workflowId, stepId, order);
@@ -190,13 +180,6 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
     const evidenceBlob =
       patch.evidenceBlob !== undefined ? patch.evidenceBlob : (previous?.evidenceBlob ?? null);
 
-    ordered.set(assistantKey, {
-      item: { key: assistantKey, kind: "assistant", workflowId, stepId, capability, text: objective },
-      workflowRank: rank,
-      userRank: 1,
-      order: resolved,
-      sub: 0,
-    });
     ordered.set(toolKey, {
       item: {
         key: toolKey,

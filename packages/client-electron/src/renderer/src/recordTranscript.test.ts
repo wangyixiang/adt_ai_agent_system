@@ -39,7 +39,7 @@ const ask = (items: TranscriptItem[]): Extract<TranscriptItem, { kind: "ask" }> 
   items.find((i) => i.kind === "ask")! as Extract<TranscriptItem, { kind: "ask" }>;
 
 describe("transcriptFromRecord", () => {
-  it("maps a run into user → assistant → tool → completion → summary", () => {
+  it("maps a run into user → tool → completion → summary", () => {
     const items = transcriptFromRecord(
       recordOf([
         entry("step_dispatched", {
@@ -58,15 +58,15 @@ describe("transcriptFromRecord", () => {
       ]),
     );
 
-    expect(items.map((i) => i.kind)).toEqual(["user", "assistant", "tool", "ask", "summary"]);
+    expect(items.map((i) => i.kind)).toEqual(["user", "tool", "ask", "summary"]);
     expect(items[0]).toMatchObject({ kind: "user", text: "项目起不来了" });
     expect(tool(items)).toMatchObject({ state: "COMPLETED", input: { maxLines: 200 } });
     expect(tool(items).text).toContain("完成");
     expect(tool(items).evidenceSummary).toContain("git_status");
     expect(ask(items)).toMatchObject({ askKind: "completion", answered: true, text: "认为已解决" });
-    expect(items[4]).toMatchObject({ kind: "summary", recordId: "rec_1" });
+    expect(items[3]).toMatchObject({ kind: "summary", recordId: "rec_1" });
     // The conclusion is surfaced, not just the terminal state.
-    expect((items[4] as Extract<TranscriptItem, { kind: "summary" }>).text).toContain("好了");
+    expect((items[3] as Extract<TranscriptItem, { kind: "summary" }>).text).toContain("好了");
   });
 
   it("uses the last step_status as the step's state", () => {

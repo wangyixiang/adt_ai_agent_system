@@ -33,9 +33,9 @@ export function Transcript({
                 <p className="bubble-text">{item.text}</p>
                 {item.attachments.length > 0 && (
                   <ul className="bubble-attachments">
-                    {item.attachments.map((attachment) => (
+                    {item.attachments.map((attachment, index) => (
                       <li
-                        key={`${attachment.name}-${attachment.mode}`}
+                        key={`${index}-${attachment.name}`}
                         className="bubble-attachment"
                       >
                         <span className="attachment-name">{attachment.name}</span>
@@ -68,10 +68,6 @@ export function Transcript({
                 )}
               </div>
             );
-          case "assistant":
-            // A step's objective has one home in the thread: its compact row
-            // below (spec §6.3). The assistant item duplicates it.
-            return null;
           case "tool":
             return <ToolCard key={item.key} item={item} onLocate={onLocate} />;
           case "ask":
