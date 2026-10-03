@@ -815,6 +815,60 @@ describe("the app", () => {
     const viewer = await screen.findByTestId("blob-viewer");
     expect(within(viewer).getByText("log line")).toBeTruthy();
     expect(seen).toEqual(["blob_x"]);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await user.click(within(viewer).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByTestId("blob-viewer")).toBeNull();
+  });
+
+  it("shows an image blob in the modal", async () => {
+    const past: UiRecord = {
+      ...pastRecord("rec_9", "wf_9", "第九"),
+      entries: [
+        { entry_id: "e1", ts: 1, kind: "step_dispatched", ref: { step_id: "st_1", capability: "c", objective: "o", input: {} }, narrative: "n" },
+        { entry_id: "e2", ts: 2, kind: "evidence_received", ref: { step_id: "st_1", evidence: { type: "img", result: { content_ref: "blob_img", media_type: "image/png", size: 9 } } }, narrative: "n" },
+      ],
+    };
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      blobPreview: async () => ({ kind: "image", mediaType: "image/png", dataUrl: "data:image/png;base64,AAAA" }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /预览证据/ }));
+    const viewer = await screen.findByTestId("blob-viewer");
+    expect(within(viewer).getByRole("img")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("offers only a save hint for a binary blob, and closes", async () => {
+    const past: UiRecord = {
+      ...pastRecord("rec_9", "wf_9", "第九"),
+      entries: [
+        { entry_id: "e1", ts: 1, kind: "step_dispatched", ref: { step_id: "st_1", capability: "c", objective: "o", input: {} }, narrative: "n" },
+        { entry_id: "e2", ts: 2, kind: "evidence_received", ref: { step_id: "st_1", evidence: { type: "bin", result: { content_ref: "blob_bin", media_type: "application/octet-stream", size: 9 } } }, narrative: "n" },
+      ],
+    };
+    const client = fakeClient({
+      records: async () => ({
+        records: [{ recordId: "rec_9", workflowId: "wf_9", summary: past.summary }],
+        nextCursor: null,
+      }),
+      record: async () => past,
+      blobPreview: async () => ({ kind: "binary", mediaType: "application/octet-stream", size: 9 }),
+    });
+    render(<App client={client} />);
+    await screen.findByTestId("app");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /预览证据/ }));
+    const viewer = await screen.findByTestId("blob-viewer");
+    expect(within(viewer).getByText(/二进制内容/)).toBeTruthy();
+    await user.click(within(viewer).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByTestId("blob-viewer")).toBeNull();
   });
 
   it("keeps the composer's draft when the submit is rejected", async () => {
@@ -1011,7 +1065,7 @@ describe("the app", () => {
   it("wraps the login screen in the themed shell", async () => {
     const client = fakeClient({ snapshot: async () => disconnected });
     render(<App client={client} />);
-    expect(await screen.findByTestId("app-screen")).toBeTruthy();
-    expect(screen.getByLabelText("用户名")).toBeTruthy();
+    const shell = await screen.findByTestId("app-screen");
+    expect(within(shell).getByLabelText("用户名")).toBeTruthy();
   });
 });

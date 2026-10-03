@@ -109,8 +109,7 @@ test("a fresh install asks for the server address first", async () => {
   const app = await electron.launch({ args: [".", `--user-data-dir=${userData}`], cwd: packageDir });
   const page = await app.firstWindow();
   try {
-    await expect(page.getByTestId("app-screen")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("settings")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("app-screen").getByTestId("settings")).toBeVisible({ timeout: 20_000 });
     await page.getByLabel(/Server 地址/).fill(serverUrl);
     await page.getByRole("button", { name: /保存/ }).click();
     await expect(page.getByLabel("用户名")).toBeVisible({ timeout: 20_000 });
