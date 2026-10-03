@@ -1,0 +1,74 @@
+/*
+ * The single source of the client's design tokens (spec §5.1) — the values
+ * from the reference mockup's YAML header, and only those. Components read
+ * these variables; they never hard-code a colour. Locally bundled Inter /
+ * JetBrains Mono live in ./assets/fonts so the app works offline.
+ *
+ * The shell's layout rules are appended below by the UI-1 shell task.
+ */
+:root {
+  --color-bg: #0b1326;
+  --color-surface-lowest: #060e20;
+  --color-surface-low: #131b2e;
+  --color-surface: #171f33;
+  --color-surface-high: #222a3d;
+  --color-surface-highest: #2d3449;
+  --color-on-surface: #dae2fd;
+  --color-on-surface-variant: #bfc7d2;
+  --color-outline-variant: #3f4850;
+  --color-primary: #93ccff;
+  --color-primary-container: #3198dc;
+  --color-on-primary: #003351;
+  --color-secondary: #c0c1ff;
+  --color-tertiary: #4edea3;
+  --color-error: #ffb4ab;
+  --color-warning: #fbbf24;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  --text-sm: 11px;
+  --text-body: 13px;
+  --text-mono: 12px;
+  --radius: 4px;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/inter-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2");
+}
