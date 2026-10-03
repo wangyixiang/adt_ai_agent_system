@@ -1007,4 +1007,11 @@ describe("the app", () => {
     expect(await screen.findByLabelText("用户名")).toBeTruthy();
     expect(screen.queryByTestId("app-bar")).toBeNull();
   });
+
+  it("wraps the login screen in the themed shell", async () => {
+    const client = fakeClient({ snapshot: async () => disconnected });
+    render(<App client={client} />);
+    expect(await screen.findByTestId("app-screen")).toBeTruthy();
+    expect(screen.getByLabelText("用户名")).toBeTruthy();
+  });
 });

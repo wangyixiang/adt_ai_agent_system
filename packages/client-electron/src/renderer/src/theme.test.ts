@@ -66,4 +66,10 @@ describe("the design tokens", () => {
       expect(css).toContain(selector);
     }
   });
+
+  it("themes the pre-shell screens", () => {
+    expect(css).toMatch(/\.screen\s*\{[^}]*background:\s*var\(--color-bg\)/);
+    expect(css).toContain(".screen .login");
+    expect(css).toContain(".screen .settings");
+  });
 });

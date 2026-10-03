@@ -205,22 +205,40 @@ export function App({ client }: { client: AdtClient }) {
     client.answer(askId, body).catch((cause: unknown) => setError(messageOf(cause)));
   };
 
-  if (!loaded) return <div className="loading">加载中…</div>;
+  if (!loaded) {
+    return (
+      <div className="screen" data-testid="app-screen">
+        <p className="loading">加载中…</p>
+      </div>
+    );
+  }
   if (config === null) {
     // A failed config load must say so, not spin forever.
-    return error !== null ? <p role="alert">{error}</p> : <div className="loading">加载中…</div>;
+    return (
+      <div className="screen" data-testid="app-screen">
+        {error !== null ? <p role="alert">{error}</p> : <p className="loading">加载中…</p>}
+      </div>
+    );
   }
   if (!config.configured || settingsOpen) {
     return (
-      <Settings
-        initial={config}
-        onSave={handleSaveConfig}
-        error={error}
-        {...(config.configured ? { onCancel: () => setSettingsOpen(false) } : {})}
-      />
+      <div className="screen" data-testid="app-screen">
+        <Settings
+          initial={config}
+          onSave={handleSaveConfig}
+          error={error}
+          {...(config.configured ? { onCancel: () => setSettingsOpen(false) } : {})}
+        />
+      </div>
     );
   }
-  if (!signedIn) return <Login onSubmit={handleLogin} error={error} />;
+  if (!signedIn) {
+    return (
+      <div className="screen" data-testid="app-screen">
+        <Login onSubmit={handleLogin} error={error} />
+      </div>
+    );
+  }
 
   const viewItems: TranscriptItem[] =
     selectedConversation === null

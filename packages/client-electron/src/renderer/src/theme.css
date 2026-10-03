@@ -130,6 +130,31 @@ body,
   font-size: var(--text-sm);
 }
 
+.screen {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--color-bg);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.screen .login,
+.screen .settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 360px;
+  max-width: 100%;
+  padding: 1.5rem;
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius);
+}
+
 .app-body {
   flex: 1;
   display: flex;
