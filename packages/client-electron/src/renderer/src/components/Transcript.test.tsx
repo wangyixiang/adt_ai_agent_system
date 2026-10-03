@@ -17,7 +17,7 @@ const request = (): TranscriptItem => ({
   ],
 });
 
-const props = { onAnswer: () => {}, onPreviewBlob: () => {}, onSaveBlob: () => {} };
+const props = { onAnswer: () => {}, onPreviewBlob: () => {}, onSaveBlob: () => {}, onLocate: () => {} };
 
 describe("the transcript's user bubble", () => {
   it("shows the request's attachments", () => {
@@ -35,6 +35,7 @@ describe("the transcript's user bubble", () => {
         onAnswer={() => {}}
         onPreviewBlob={previewed}
         onSaveBlob={saved}
+        onLocate={() => {}}
       />,
     );
     const user = userEvent.setup();
