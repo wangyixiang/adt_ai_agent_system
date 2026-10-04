@@ -196,8 +196,7 @@ describe("controlled execution end to end", () => {
     await srv.close();
   });
 
-  // Timing-sensitive: real timers under load; retry absorbs scheduler noise (the assertions are exact).
-  it("reconciles a side effect that timed out into an outcome", { retry: 2 }, async () => {
+  it("reconciles a side effect that timed out into an outcome", async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
       stepTimeoutGraceMs: 0,

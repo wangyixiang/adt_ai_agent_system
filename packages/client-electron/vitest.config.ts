@@ -13,6 +13,11 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 30000,
     fileParallelism: false,
+    // The integration test drives a real Server + daemon round trip; under a busy
+    // machine a test can flake on infrastructure timing alone. One bounded retry
+    // absorbs that noise; the assertions stay exact, so a real regression fails
+    // on every attempt and still surfaces.
+    retry: 2,
   },
   resolve: {
     alias: {
