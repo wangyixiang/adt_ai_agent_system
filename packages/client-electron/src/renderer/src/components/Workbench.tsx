@@ -84,17 +84,33 @@ export function Workbench({
   return (
     <aside className="workbench" data-testid="workbench">
       <header className="workbench-header">
-        <span className="workbench-state">{STATE_TEXT[model.state]}</span>
+        <div className="workbench-heading">
+          <h2 className="workbench-title">诊断工作台</h2>
+          <span className="workbench-state" data-state={model.state}>
+            <span className="workbench-state-dot" />
+            {STATE_TEXT[model.state]}
+          </span>
+        </div>
+
         <div className="workbench-actions">
+          {recordId !== null && (
+            <button type="button" onClick={() => onGenerateReport(detailLevel)}>
+              生成报告
+            </button>
+          )}
+          {recordId !== null && (
+            <button type="button" onClick={() => onExport(exportObject)}>
+              导出到知识库
+            </button>
+          )}
           {canAskToCancel && !confirming && (
-            <button type="button" onClick={() => setConfirming(true)}>
+            <button type="button" className="danger" onClick={() => setConfirming(true)}>
               取消
             </button>
           )}
           {canAskToCancel && confirming && (
             <>
-              <p className="hint">确定取消这条诊断吗？正在执行的不可中断步骤会等它结束。</p>
-              <button type="button" onClick={confirmCancel}>
+              <button type="button" className="danger" onClick={confirmCancel}>
                 确定取消
               </button>
               <button type="button" onClick={() => setConfirming(false)}>
@@ -102,100 +118,110 @@ export function Workbench({
               </button>
             </>
           )}
-
-          {recordId !== null && (
-            <>
-              <label className="detail-level">
-                报告
-                <select
-                  value={detailLevel}
-                  onChange={(event) => setDetailLevel(event.target.value as "summary" | "full")}
-                >
-                  <option value="full">完整</option>
-                  <option value="summary">摘要</option>
-                </select>
-              </label>
-              <button type="button" onClick={() => onGenerateReport(detailLevel)}>
-                生成报告
-              </button>
-
-              <label className="export-object">
-                导出
-                <select
-                  value={exportObject}
-                  onChange={(event) => setExportObject(event.target.value as "record" | "report")}
-                >
-                  <option value="record">Record</option>
-                  <option value="report" disabled={!reportReady}>
-                    Report
-                  </option>
-                </select>
-              </label>
-              {!reportReady && <span className="hint">生成一次报告后可导出 Report</span>}
-              <button type="button" onClick={() => onExport(exportObject)}>
-                导出到知识库
-              </button>
-            </>
-          )}
         </div>
+        {canAskToCancel && confirming && (
+          <p className="hint">确定取消这条诊断吗？正在执行的不可中断步骤会等它结束。</p>
+        )}
+
+        {recordId !== null && (
+          <div className="workbench-options">
+            <label className="detail-level">
+              报告
+              <select
+                value={detailLevel}
+                onChange={(event) => setDetailLevel(event.target.value as "summary" | "full")}
+              >
+                <option value="full">完整</option>
+                <option value="summary">摘要</option>
+              </select>
+            </label>
+            <label className="export-object">
+              导出
+              <select
+                value={exportObject}
+                onChange={(event) => setExportObject(event.target.value as "record" | "report")}
+              >
+                <option value="record">Record</option>
+                <option value="report" disabled={!reportReady}>
+                  Report
+                </option>
+              </select>
+            </label>
+            {!reportReady && <span className="hint">生成一次报告后可导出 Report</span>}
+          </div>
+        )}
       </header>
 
+      <div className="workbench-section-heading">
+        <span className="workbench-section-label">步骤与证据时间线 / STEP TIMELINE</span>
+        <span className="workbench-section-count">{model.steps.length} NODES</span>
+      </div>
       <section className="workbench-steps">
         {model.steps.length === 0 && <p className="empty">还没有步骤。</p>}
-        {model.steps.map((step) => (
-          <article
-            key={step.key}
-            className="workbench-step"
-            data-state={step.state}
-            data-focused={focusedStepId === step.stepId}
-            ref={focusedStepId === step.stepId ? focusRef : undefined}
-          >
-            <header>
-              <span className="capability">{step.capability}</span>
-              <span className="badge">{STEP_STATE_TEXT[step.state]}</span>
-            </header>
-            <p className="objective">{step.objective}</p>
-            {step.requiresConfirmation && <p className="needs-confirmation">需要人工确认</p>}
-            {Object.keys(step.input).length > 0 && (
-              <details className="step-input">
-                <summary>输入</summary>
-                <pre>{JSON.stringify(step.input, null, 2)}</pre>
-              </details>
-            )}
-            {step.decisions.length > 0 && (
-              <div className="decisions">
-                {step.decisions.map((decision, index) => (
-                  <span key={index} className="decision">
-                    {decision}
-                  </span>
-                ))}
-              </div>
-            )}
-            {step.evidenceBlob !== null && (
-              <div className="evidence-blob">
-                <button
-                  type="button"
-                  onClick={() => onPreviewBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type)}
-                >
-                  预览证据
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSaveBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type, step.evidenceBlob!.name)
-                  }
-                >
-                  另存证据
-                </button>
-              </div>
-            )}
-            {step.evidenceSummary !== null && <pre className="evidence">{step.evidenceSummary}</pre>}
-          </article>
-        ))}
+        <div className="workbench-timeline">
+          {model.steps.map((step) => (
+            <article
+              key={step.key}
+              className="workbench-step"
+              data-state={step.state}
+              data-focused={focusedStepId === step.stepId}
+              ref={focusedStepId === step.stepId ? focusRef : undefined}
+            >
+              <span className="workbench-node" data-state={step.state} />
+              <header>
+                <span className="capability">{step.capability}</span>
+                <span className="badge">{STEP_STATE_TEXT[step.state]}</span>
+              </header>
+              {step.objective !== "" && <p className="objective">目标: {step.objective}</p>}
+              {step.requiresConfirmation && <p className="needs-confirmation">需要人工确认</p>}
+              {Object.keys(step.input).length > 0 && (
+                <details className="step-input">
+                  <summary>输入</summary>
+                  <pre>{JSON.stringify(step.input, null, 2)}</pre>
+                </details>
+              )}
+              {step.decisions.length > 0 && (
+                <div className="decisions">
+                  {step.decisions.map((decision, index) => (
+                    <span key={index} className="decision">
+                      {decision}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {step.evidenceSummary !== null && <pre className="evidence">{step.evidenceSummary}</pre>}
+              {step.evidenceBlob !== null && (
+                <div className="evidence-blob">
+                  <button
+                    type="button"
+                    onClick={() => onPreviewBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type)}
+                  >
+                    预览证据
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onSaveBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type, step.evidenceBlob!.name)
+                    }
+                  >
+                    另存证据
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
       </section>
 
+      <div className="workbench-section-heading">
+        <span className="workbench-section-label">结论与收敛区 / TERMINAL &amp; CANDIDATE</span>
+      </div>
       {model.completion !== null && (
         <section className="workbench-completion">
+          <div className="workbench-completion-head">
+            <span className="workbench-completion-title">当前完成候选 (Completion Candidate)</span>
+            <span className="chip">DRAFT</span>
+          </div>
           <p className="completion-decision">{model.completion.decision ?? "待你决定"}</p>
           {model.completion.evidenceRefs.length > 0 && (
             <div className="completion-refs">
@@ -216,7 +242,11 @@ export function Workbench({
         </section>
       )}
 
-      {model.conclusion !== null && (
+      {model.conclusion === null ? (
+        <div className="workbench-terminal-placeholder">
+          终止收敛后将在此固化 terminal_state、terminal_reason 与 recordId 归档指纹。
+        </div>
+      ) : (
         <section className="workbench-conclusion">
           <p>
             {model.conclusion.terminalState}

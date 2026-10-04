@@ -478,7 +478,7 @@ describe("the app", () => {
     render(<App client={client} />);
     await screen.findByTestId("app");
     const wb = within(await screen.findByTestId("workbench"));
-    expect(wb.getByText("查日志")).toBeTruthy();
+    expect(wb.getByText(/查日志/)).toBeTruthy();
     expect(wb.queryByRole("button", { name: "取消" })).toBeNull();
   });
 

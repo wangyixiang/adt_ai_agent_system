@@ -57,7 +57,7 @@ describe("the workbench", () => {
   it("shows the steps and the conclusion", () => {
     show();
     expect(screen.getByText("git.collect_diagnostics")).toBeTruthy();
-    expect(screen.getByText("先收集诊断信息")).toBeTruthy();
+    expect(screen.getByText(/先收集诊断信息/)).toBeTruthy();
     expect(screen.getByText(/Record: rec_1/)).toBeTruthy();
   });
 
