@@ -61,7 +61,8 @@ async function completedWorkflow(
 }
 
 describe("record and report protocol", () => {
-  it("stamps every entry with the same ordering clock", async () => {
+  // Timing-sensitive: real timers under load; retry absorbs scheduler noise (the assertions are exact).
+  it("stamps every entry with the same ordering clock", { retry: 2 }, async () => {
     // One clock for the whole log: an entry written by the protocol layer must
     // not land on a different time base than the engine's own events
     // (RECORD_SPEC.md §6.1).

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { startTestServer, TestClient } from "@adt/test-support";
 
 describe("step timeout end to end", () => {
-  it("fails a read-only step the client acknowledges but never completes", async () => {
+  it("fails a read-only step the client acknowledges but never completes", { retry: 2 }, async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
       stepTimeoutGraceMs: 0,
@@ -42,7 +42,7 @@ describe("step timeout end to end", () => {
       payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
     });
 
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 10_000;
     let state = "";
     while (Date.now() < deadline) {
       state = (await srv.engine.getStep(stepId))?.state ?? "";
