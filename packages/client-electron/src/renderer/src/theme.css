@@ -198,6 +198,9 @@ body,
 
 /* --- The thread --- */
 .transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -369,6 +372,10 @@ body,
 
 /* --- The workbench --- */
 .workbench {
+  width: 380px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--color-surface-low);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -500,15 +507,4 @@ body,
   flex-direction: column;
 }
 
-.transcript {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.workbench {
-  width: 380px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  background: var(--color-surface-low);
-}
+/* .transcript and .workbench are dressed in their component sections above. */

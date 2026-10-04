@@ -106,4 +106,10 @@ describe("the design tokens", () => {
     expect(css).toContain(".loading");
     expect(css).toMatch(/\[role="alert"\]/);
   });
+
+  it("uses tokens, not raw colours, outside :root", () => {
+    const withoutRoot = css.replace(/:root\s*\{[^}]*\}/s, "");
+    expect(withoutRoot).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(withoutRoot).not.toMatch(/\brgb\(|\bhsl\(/);
+  });
 });
