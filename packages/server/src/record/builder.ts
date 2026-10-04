@@ -100,6 +100,7 @@ function toEntry(
         capability: payload.capability,
         objective: step?.objective ?? null,
         input: payload.input ?? {},
+        requires_confirmation: step?.sideEffect ?? false,
       };
       return [{ ...base, kind: "step_dispatched", ref, narrative: renderNarrative("step_dispatched", ref) }];
     }

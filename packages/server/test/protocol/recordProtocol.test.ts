@@ -234,4 +234,70 @@ describe("record and report protocol", () => {
     await c.close();
     await srv.close();
   });
+
+  it("carries a step's requires_confirmation into the record", async () => {
+    const srv = await startTestServer({
+      planner: [
+        {
+          kind: "step",
+          step: {
+            objective: "reset",
+            capability: "sim_rig.trigger_reset",
+            sideEffect: true,
+            interruptible: false,
+          },
+        },
+        { kind: "completion_candidate", summary: "done", evidenceRefs: [] },
+      ],
+    });
+    const c = await TestClient.connect(srv.url);
+    await c.hello({ username: "alice", secret: "pw-alice" });
+
+    const created = await c.sendRaw({
+      ...c.base("workflow.request"),
+      payload: {
+        client_request_id: "req_rc",
+        user_request: { text: "x", attachments: [], context: {} },
+      },
+    });
+    const workflowId = (created.payload as { workflow_id: string }).workflow_id;
+    const dispatch = await c.next();
+    const stepId = (dispatch.payload as { step_id: string }).step_id;
+
+    c.send({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, step_id: stepId, status: "RUNNING" },
+    });
+    const candidate = await c.sendRaw({
+      ...c.base("step.status"),
+      workflow_id: workflowId,
+      payload: {
+        workflow_id: workflowId,
+        step_id: stepId,
+        status: "COMPLETED",
+        evidence: { source: "capability", type: "reset_ack", result: {} },
+      },
+    });
+    expect(candidate.type).toBe("workflow.completion_candidate");
+    const terminated = await c.sendRaw({
+      ...c.base("workflow.completion_response"),
+      workflow_id: workflowId,
+      payload: { workflow_id: workflowId, resolution: "solved" },
+    });
+    const recordId = (terminated.payload as { record_id: string }).record_id;
+
+    const got = await c.sendRaw({
+      ...c.base("record.get_request"),
+      payload: { record_id: recordId },
+    });
+    const record = (
+      got.payload as { record: { entries: Array<{ kind: string; ref: Record<string, unknown> }> } }
+    ).record;
+    const dispatched = record.entries.find((entry) => entry.kind === "step_dispatched")!;
+    expect(dispatched.ref.requires_confirmation).toBe(true);
+
+    await c.close();
+    await srv.close();
+  });
 });
