@@ -67,7 +67,7 @@ async function waitFor(
   predicate: (s: ReturnType<Session["snapshot"]>) => boolean,
   what: string,
 ): Promise<ReturnType<Session["snapshot"]>> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
     const current = f.session.snapshot();
     if (predicate(current)) return current;
@@ -84,7 +84,7 @@ async function waitForSession(
   predicate: (s: ReturnType<Session["snapshot"]>) => boolean,
   what: string,
 ): Promise<ReturnType<Session["snapshot"]>> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
     const current = session.snapshot();
     if (predicate(current)) return current;

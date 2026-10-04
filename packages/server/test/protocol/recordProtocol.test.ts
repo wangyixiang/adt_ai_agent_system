@@ -61,7 +61,8 @@ async function completedWorkflow(
 }
 
 describe("record and report protocol", () => {
-  // Timing-sensitive: real timers under load; retry absorbs scheduler noise (the assertions are exact).
+  // Timing-sensitive: the clock is injected (the assertion is deterministic), but
+  // the Record round-trips Postgres + a real WebSocket; retry absorbs that under load.
   it("stamps every entry with the same ordering clock", { retry: 2 }, async () => {
     // One clock for the whole log: an entry written by the protocol layer must
     // not land on a different time base than the engine's own events

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { startTestServer, TestClient } from "@adt/test-support";
 
 describe("step timeout end to end", () => {
+  // Timing-sensitive: the server's step-timeout sweep runs on a real interval;
+  // retry absorbs scheduling under load (the assertions are exact).
   it("fails a read-only step the client acknowledges but never completes", { retry: 2 }, async () => {
     const srv = await startTestServer({
       stepTimeoutMs: 50,
