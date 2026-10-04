@@ -18,7 +18,9 @@ export type IconName =
   | "error"
   | "block"
   | "hourglass"
-  | "file";
+  | "file"
+  | "robot"
+  | "hand";
 
 const PATHS: Record<IconName, ReactNode> = {
   tune: (
@@ -129,6 +131,22 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
       <polyline points="14 3 14 8 19 8" />
+    </>
+  ),
+  robot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <line x1="12" y1="8" x2="12" y2="5" />
+      <circle cx="12" cy="4" r="1" />
+      <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  hand: (
+    <>
+      <path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10" />
+      <path d="M12 10V4.5a1.5 1.5 0 0 1 3 0V10" />
+      <path d="M15 10V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6v-2.5a1.5 1.5 0 0 1 3 0V14" />
     </>
   ),
 };

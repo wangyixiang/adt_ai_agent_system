@@ -39,50 +39,65 @@ export function Transcript({
         switch (item.kind) {
           case "user":
             return (
-              <div key={item.key} className="bubble user">
-                <p className="bubble-text">{item.text}</p>
-                {item.attachments.length > 0 && (
-                  <ul className="bubble-attachments">
-                    {item.attachments.map((attachment, index) => (
-                      <li
-                        key={`${index}-${attachment.name}`}
-                        className="bubble-attachment"
-                      >
-                        <Icon name="file" />
-                        <span className="attachment-name">{attachment.name}</span>
-                        <span className="attachment-mode">
-                          ({formatBytes(attachment.size)}, {attachment.mode === "inline" ? "内联" : "blob"})
-                        </span>
-                        {attachment.mode === "blob" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onPreviewBlob(attachment.content_ref, attachment.media_type)
-                              }
-                            >
-                              预览
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSaveBlob(attachment.content_ref, attachment.media_type, attachment.name)
-                              }
-                            >
-                              另存
-                            </button>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div key={item.key} className="turn user">
+                <div className="bubble user">
+                  <p className="bubble-text">{item.text}</p>
+                  {item.attachments.length > 0 && (
+                    <ul className="bubble-attachments">
+                      {item.attachments.map((attachment, index) => (
+                        <li key={`${index}-${attachment.name}`} className="bubble-attachment">
+                          <Icon name="file" />
+                          <span className="attachment-name">{attachment.name}</span>
+                          <span className="attachment-mode">
+                            ({formatBytes(attachment.size)}, {attachment.mode === "inline" ? "内联" : "blob"})
+                          </span>
+                          {attachment.mode === "blob" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onPreviewBlob(attachment.content_ref, attachment.media_type)}
+                              >
+                                预览
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onSaveBlob(attachment.content_ref, attachment.media_type, attachment.name)
+                                }
+                              >
+                                另存
+                              </button>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             );
           case "tool":
-            return <ToolCard key={item.key} item={item} onLocate={onLocate} />;
+            return (
+              <div key={item.key} className="turn server">
+                <span className="turn-avatar">
+                  <Icon name="robot" />
+                </span>
+                <div className="turn-body">
+                  <ToolCard item={item} onLocate={onLocate} />
+                </div>
+              </div>
+            );
           case "ask":
-            return <AskCard key={item.key} item={item} onAnswer={onAnswer} readOnly={readOnly} />;
+            return (
+              <div key={item.key} className="turn server">
+                <span className="turn-avatar">
+                  <Icon name="hand" />
+                </span>
+                <div className="turn-body">
+                  <AskCard item={item} onAnswer={onAnswer} readOnly={readOnly} />
+                </div>
+              </div>
+            );
           case "notice":
             return <Notice key={item.key} item={item} />;
           case "summary":
