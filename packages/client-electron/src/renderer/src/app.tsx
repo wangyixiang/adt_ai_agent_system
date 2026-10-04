@@ -5,6 +5,7 @@ import type { Answer } from "@adt/shared";
 import type { MainEvent, UiEvent, UiRecordListEntry, UiSnapshot, UiBlobPreview, UiConfig, IncomingAttachment } from "../../shared/contract";
 import type { AdtClient } from "./api";
 import { AppBar } from "./components/AppBar";
+import { BlobViewer } from "./components/BlobViewer";
 import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
 import { Login } from "./components/Login";
@@ -398,19 +399,7 @@ export function App({ client }: { client: AdtClient }) {
           onLocate={setFocusedStepId}
         />
       </div>
-      {blob !== null && (
-        <div className="blob-viewer" data-testid="blob-viewer" role="dialog" aria-modal="true">
-          <header>
-            <span>附件 / 证据</span>
-            <button type="button" onClick={() => setBlob(null)}>
-              关闭
-            </button>
-          </header>
-          {blob.kind === "text" && <pre className="blob-text">{blob.text}</pre>}
-          {blob.kind === "image" && <img className="blob-image" src={blob.dataUrl} alt="证据" />}
-          {blob.kind === "binary" && <p>这是二进制内容（{blob.size} 字节），请用「另存」保存。</p>}
-        </div>
-      )}
+      {blob !== null && <BlobViewer preview={blob} onClose={() => setBlob(null)} />}
       {report !== null && (
         <ReportViewer
           markdown={report.markdown}
