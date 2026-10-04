@@ -1,6 +1,6 @@
 # RECORD_SPEC.md
 
-- **Version:** v0.10（§3 新增"附件的形状"：把 `user_request.attachments` 的每一项写死为 `{ name, media_type, size, sha256, mode }`，内联（`data_base64`）或走 blob（`content_ref`）二选一；取代 v0.9）
+- **Version:** v0.11（§3 的 `step_dispatched` 增 `requires_confirmation`，让往期也能显示"需要人工确认"；取代 v0.10）
 - **层级:** Specification — Record 的结构、生成方式与版本追踪
 - **拆分说明:** `PRODUCT.md`/`REQUIREMENTS.md` 定义了 Record 必须存在（FR-12~FR-14）、必须忠实（FR-13）、必须可追溯（NFR-1）；`WORKFLOW_SPEC.md` §12 定义了 Record 的触发时机（Workflow 进入任一终止状态时）。本文件补上中间缺的一环：**Record 到底是什么结构，谁在什么时候把它拼出来**。设计方向（"方向三"：Workflow 结束时一次性生成定型的成品文档，不做协议消息重放）是在对齐 `PROTOCOL_SPEC.md` 时讨论出来的，本文件是这个决定的具体落地。
 
@@ -129,7 +129,7 @@ Entry
 
 | kind | 说明 | ref 包含 |
 |---|---|---|
-| `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增） |
+| `step_dispatched` | Server 下发了一个 Step | `step_id`, `capability`, `objective`, `input`（v0.6 新增）, `requires_confirmation`（v0.11 新增） |
 | `step_status`（v0.9 新增） | 某个 Step 进入**终态**（只记 `COMPLETED`/`FAILED`/`REJECTED`/`UNKNOWN`，中间态与进度保活不记） | `step_id`, `state` |
 | `evidence_received` | 某个 Step 产生了 Evidence | `step_id`, `evidence`（沿用 `WORKFLOW_SPEC.md` §5 的 envelope 结构）, `fail_reason`（v0.6，仅当该证据被校验拒绝时，见 `WORKFLOW_SPEC.md` §2 的 `invalid_output`） |
 | `user_confirmation` | 工程师对一个有副作用的动作做了确认/拒绝（对齐 `WORKFLOW_SPEC.md` §4.2） | `step_id`, `decision`（confirmed \| declined） |
