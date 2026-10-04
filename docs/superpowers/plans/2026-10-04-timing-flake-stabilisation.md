@@ -88,3 +88,13 @@ Expected: 三次都 exit 0；typecheck exit 0。
 **4. Review Focus：** 四条分别由"只改测试"、三处限定、注释、重试后仍失败即真 bug 钉住。
 
 **5. Proportion：** 计划只钉三处改动与理由。
+
+---
+
+## Amendment (执行中发现，随修复一起提交)
+
+连跑三次整仓时，`client-electron` 的 `src/main/core/session.int.test.ts` 也偶发失败（3 个 `waitFor` 用例；该 helper 的 deadline 是 **10s**，负载下不够）。它是同一个"真实计时器 + 负载"家族，补进本切片：
+
+- `session.int.test.ts` 的 `waitFor` deadline：**10s → 25s**（仍是集成测试，`testTimeout` 30s）。
+- `recordProtocol` 的注释改为**准确**措辞：该用例的时钟是**注入的**（断言确定），失败源于 Record 往返 **Postgres + 真实 WebSocket** 的基础设施计时，而非"测试自身计时器"。
+- `stepTimeout.int` 的注释改为：依赖**服务端 step-timeout 扫描的真实 interval**。
