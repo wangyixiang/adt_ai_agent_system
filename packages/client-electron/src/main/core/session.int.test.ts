@@ -450,4 +450,29 @@ describe("the in-process session", () => {
       await f.close();
     }
   });
+
+  it("reports reconnecting when the transport drops", async () => {
+    const srv = await startTestServer({ planner: [done] as never });
+    const session = createSession({
+      serverUrl: srv.url,
+      workspaceRoot: process.cwd(),
+      clientInfo: { name: "session-int-test", platform: "test" },
+      ledgerPath: ":memory:",
+      sessionPath: ":memory:",
+      emit: () => undefined,
+    });
+    try {
+      await session.login("alice", "pw-alice");
+      expect(session.snapshot().connection).toBe("connected");
+
+      await srv.close();
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && session.snapshot().connection !== "reconnecting") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(session.snapshot().connection).toBe("reconnecting");
+    } finally {
+      await session.close();
+    }
+  });
 });

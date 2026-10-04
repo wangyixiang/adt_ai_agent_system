@@ -1,5 +1,5 @@
 export { DaemonConnection, type ClientConfig } from "./connection";
-export { ClientDaemon, type ClientDaemonOptions, type StepStatusUpdate } from "./daemon";
+export { ClientDaemon, type ClientDaemonOptions, type ResumedStep, type StepStatusUpdate } from "./daemon";
 export { CapabilityRegistry } from "./capability/registry";
 export { defaultRegistry } from "./capability/defaultRegistry";
 export { mvpDescriptors, mvpSpec } from "./capability/descriptors";

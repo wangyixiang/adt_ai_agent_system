@@ -3,6 +3,7 @@ import type { UiSnapshot } from "../../../shared/contract";
 /** The connection states the app bar can show (spec §7; `reconnecting` is UI-4). */
 const CONNECTION_TEXT: Record<UiSnapshot["connection"], string> = {
   connected: "已连接",
+  reconnecting: "正在重连…",
   disconnected: "已断开",
 };
 

@@ -1,7 +1,7 @@
 import type { Answer, Ask, StepState, TerminalState } from "@adt/shared";
-import type { ClientDaemon, StepStatusUpdate } from "@adt/client-daemon";
+import type { ResumedStep, StepStatusUpdate } from "@adt/client-daemon";
 
-import type { UiAttachment, UiEventInput, UiSnapshot, UiStep, UiWorkflow } from "../../shared/contract";
+import type { UiAttachment, UiEventInput, UiStep, UiWorkflow } from "../../shared/contract";
 
 /**
  * The daemon's own view of its workflows, projected for the renderer. The daemon
@@ -20,7 +20,9 @@ export interface Projection {
   /** The Server accepted a cancellation; mark the run as still converging. */
   observeCancelAck(workflowId: string, status: string): void;
   noteAnswered(askId: string, answer: Answer): UiEventInput | null;
-  snapshot(daemon: ClientDaemon | null): UiSnapshot;
+  /** Seed a step the Server re-dispatched on resume, with its full dispatch. */
+  noteResumed(step: ResumedStep): UiEventInput;
+  workflows(): UiWorkflow[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -136,6 +138,7 @@ export function createProjection(): Projection {
       const step = stepOf(workflow, update.stepId);
       if (step !== undefined) {
         step.state = update.state;
+        step.resuming = false;
         if (update.evidenceSummary !== undefined) step.evidenceSummary = update.evidenceSummary;
         if (update.evidenceRef !== undefined) step.evidenceBlob = update.evidenceRef;
       }
@@ -181,13 +184,40 @@ export function createProjection(): Projection {
       return null;
     },
 
-    snapshot(daemon) {
+    noteResumed(step) {
+      const workflow = ensure(step.workflowId);
+      const existing = stepOf(workflow, step.stepId);
+      const seeded: UiStep =
+        existing ?? {
+          stepId: step.stepId,
+          capability: step.capability,
+          objective: step.objective,
+          input: step.input,
+          state: "PENDING",
+          requiresConfirmation: false,
+          evidenceSummary: null,
+          evidenceBlob: null,
+        };
+      if (step.capability !== "") seeded.capability = step.capability;
+      if (step.objective !== "") seeded.objective = step.objective;
+      seeded.input = step.input;
+      seeded.resuming = true;
+      if (existing === undefined) workflow.steps = [...workflow.steps, seeded];
+
       return {
-        connection: daemon === null ? "disconnected" : "connected",
-        userId: daemon === null ? null : daemon.connection.userId,
-        capabilities: daemon === null ? [] : daemon.registry.descriptors().map((spec) => spec.name),
-        workflows: [...workflows.values()],
+        type: "step.dispatched",
+        workflowId: step.workflowId,
+        stepId: step.stepId,
+        capability: seeded.capability,
+        objective: seeded.objective,
+        input: seeded.input,
+        requiresConfirmation: seeded.requiresConfirmation,
+        resuming: true,
       };
+    },
+
+    workflows() {
+      return [...workflows.values()];
     },
   };
 }

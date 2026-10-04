@@ -24,6 +24,8 @@ export interface UiStep {
   evidenceSummary: string | null;
   /** The step's evidence blob, when the evidence was offloaded (not inline). */
   evidenceBlob: UiEvidenceBlob | null;
+  /** Set while a reconnect is re-dispatching this step; cleared on its first status. */
+  resuming?: boolean;
 }
 
 export interface UiWorkflow {
@@ -43,7 +45,7 @@ export interface UiWorkflow {
 }
 
 export interface UiSnapshot {
-  connection: "connected" | "disconnected";
+  connection: "connected" | "reconnecting" | "disconnected";
   userId: string | null;
   capabilities: string[];
   workflows: UiWorkflow[];
@@ -67,6 +69,8 @@ export type UiEvent =
       objective: string;
       input: Record<string, unknown>;
       requiresConfirmation: boolean;
+      /** Set when this dispatch is a reconnect re-dispatching a resumed step. */
+      resuming?: boolean;
     })
   | (UiEventBase & {
       type: "step.status";

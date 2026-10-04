@@ -8,7 +8,7 @@ const terminated = {
 };
 
 const cancelling = (p: ReturnType<typeof createProjection>): boolean | undefined =>
-  p.snapshot(null).workflows.find((w) => w.workflowId === "wf_1")?.cancelling;
+  p.workflows().find((w) => w.workflowId === "wf_1")?.cancelling;
 
 describe("the projection's cancellation state", () => {
   it("marks a workflow as cancelling and clears it on termination", () => {
@@ -31,5 +31,28 @@ describe("the projection's cancellation state", () => {
     p.observe("workflow.terminated", terminated);
     p.observeCancelAck("wf_1", "CANCELLING");
     expect(cancelling(p)).toBe(false);
+  });
+});
+
+describe("the projection's resumed steps", () => {
+  it("seeds a resumed step with its dispatch, then clears resuming on a status", () => {
+    const p = createProjection();
+    p.noteResumed({
+      workflowId: "wf_1",
+      stepId: "st_1",
+      capability: "git.collect_diagnostics",
+      objective: "先收集诊断信息",
+      input: { maxLines: 200 },
+    });
+    const step = p.workflows().find((w) => w.workflowId === "wf_1")!.steps[0]!;
+    expect(step).toMatchObject({
+      capability: "git.collect_diagnostics",
+      objective: "先收集诊断信息",
+      input: { maxLines: 200 },
+      resuming: true,
+    });
+
+    p.observeStepStatus({ workflowId: "wf_1", stepId: "st_1", state: "RUNNING" });
+    expect(p.workflows().find((w) => w.workflowId === "wf_1")!.steps[0]!.resuming).toBe(false);
   });
 });

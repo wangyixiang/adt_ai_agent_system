@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { ClientDaemon, downloadBlob, openLedger, openSessionStore, uploadBlob } from "@adt/client-daemon";
+import type { ResumedStep } from "@adt/client-daemon";
 
 import type { UiAttachment, UiEvent, UiEventInput, UiRecord, UiRecordList, UiRecordSummary, UiReport, UiExportResult, UiSnapshot, UiBlobPreview, IncomingAttachment } from "../../shared/contract";
 import { checkAttachments, normalizeMediaType, planAttachment } from "./attachments";
@@ -111,63 +112,137 @@ export function createSession(options: SessionOptions): Session {
   );
   let daemon: ClientDaemon | null = null;
   let nextEventId = 1;
+  let transport: "connected" | "reconnecting" | "disconnected" = "disconnected";
+  let credentials: { username: string; secret: string } | null = null;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let reconnectAttempts = 0;
+  let stopping = false;
 
   function emitUi(input: UiEventInput): void {
     options.emit({ type: "ui", event: { ...input, id: nextEventId++ } as UiEvent });
   }
 
+  function currentSnapshot(): UiSnapshot {
+    return {
+      connection: transport,
+      userId: daemon === null ? null : daemon.connection.userId,
+      capabilities: daemon === null ? [] : daemon.registry.descriptors().map((spec) => spec.name),
+      workflows: projection.workflows(),
+    };
+  }
+
+  function emitState(): void {
+    options.emit({ type: "state", snapshot: currentSnapshot() });
+  }
+
+  /** Wire a daemon's events; called once per (re)connection. */
+  function subscribe(connected: ClientDaemon): void {
+    // The fourth decision: the Server proposes "solved?", only the human
+    // disposes. `workflow_id` is on the envelope, not in this payload.
+    connected.connection.on("workflow.completion_candidate", (env) => {
+      const payload = env.payload as { summary?: string; evidence_refs?: string[] };
+      void (async () => {
+        const decision = await host.completion({
+          workflowId: env.workflow_id ?? "",
+          summary: payload.summary ?? "",
+          evidenceRefs: payload.evidence_refs ?? [],
+        });
+        // `feedback` must reach the Server: on `not_solved` it is the text the
+        // re-plan is built from (`PROTOCOL_SPEC.md` §7.2).
+        connected.connection.send("workflow.completion_response", {
+          workflow_id: env.workflow_id,
+          resolution: decision.resolution,
+          ...(decision.feedback === undefined ? {} : { feedback: decision.feedback }),
+        });
+      })();
+    });
+
+    for (const type of ["step.dispatch", "workflow.terminated", "protocol.error"]) {
+      connected.connection.on(type, (env) => {
+        const event = projection.observe(type, env);
+        if (event !== null) emitUi(event);
+      });
+    }
+
+    connected.connection.onClose(() => scheduleReconnect());
+  }
+
+  function connectDaemon(
+    creds: { username: string; secret: string },
+    onResumed: (steps: ResumedStep[]) => void,
+  ): Promise<ClientDaemon> {
+    return ClientDaemon.connect({
+      url: options.serverUrl,
+      credentials: creds,
+      clientInfo: options.clientInfo,
+      workspaceRoot: options.workspaceRoot,
+      ledger: openLedger(options.ledgerPath),
+      sessionStore: openSessionStore(options.sessionPath),
+      onConfirmationRequired: host.onConfirmationRequired,
+      onUserInput: host.onUserInput,
+      onResourceConflict: host.onResourceConflict,
+      onStepStatus: (update) => emitUi(projection.observeStepStatus(update)),
+      onResumed,
+    });
+  }
+
+  function scheduleReconnect(): void {
+    if (stopping || credentials === null) return;
+    if (reconnectTimer !== null) return;
+    transport = "reconnecting";
+    emitState();
+    const delay = Math.min(30_000, 500 * 2 ** reconnectAttempts);
+    reconnectAttempts++;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void attemptReconnect();
+    }, delay);
+  }
+
+  async function attemptReconnect(): Promise<void> {
+    if (stopping || credentials === null) return;
+    const hadLive = projection.workflows().some((workflow) => workflow.terminalState === null);
+    let resumed = false;
+    try {
+      const connected = await connectDaemon(credentials, (steps) => {
+        resumed = steps.length > 0;
+        for (const step of steps) emitUi(projection.noteResumed(step));
+      });
+      daemon = connected;
+      reconnectAttempts = 0;
+      transport = "connected";
+      subscribe(connected);
+      emitState();
+      if (hadLive && !resumed) {
+        emitUi({
+          type: "notice",
+          level: "warn",
+          message: "会话已过期，未能恢复；未完成的工作需要重新提交。",
+        });
+      }
+    } catch {
+      scheduleReconnect();
+    }
+  }
+
   return {
     snapshot() {
-      return projection.snapshot(daemon);
+      return currentSnapshot();
     },
 
     isRunning() {
-      return projection.snapshot(daemon).workflows.some((workflow) => workflow.terminalState === null);
+      return projection.workflows().some((workflow) => workflow.terminalState === null);
     },
 
     async login(username, secret) {
-      const connected = await ClientDaemon.connect({
-        url: options.serverUrl,
-        credentials: { username, secret },
-        clientInfo: options.clientInfo,
-        workspaceRoot: options.workspaceRoot,
-        ledger: openLedger(options.ledgerPath),
-        sessionStore: openSessionStore(options.sessionPath),
-        onConfirmationRequired: host.onConfirmationRequired,
-        onUserInput: host.onUserInput,
-        onResourceConflict: host.onResourceConflict,
-        onStepStatus: (update) => emitUi(projection.observeStepStatus(update)),
+      credentials = { username, secret };
+      const connected = await connectDaemon(credentials, (steps) => {
+        for (const step of steps) emitUi(projection.noteResumed(step));
       });
       daemon = connected;
-
-      // The fourth decision: the Server proposes "solved?", only the human
-      // disposes. `workflow_id` is on the envelope, not in this payload.
-      connected.connection.on("workflow.completion_candidate", (env) => {
-        const payload = env.payload as { summary?: string; evidence_refs?: string[] };
-        void (async () => {
-          const decision = await host.completion({
-            workflowId: env.workflow_id ?? "",
-            summary: payload.summary ?? "",
-            evidenceRefs: payload.evidence_refs ?? [],
-          });
-          // `feedback` must reach the Server: on `not_solved` it is the text the
-          // re-plan is built from (`PROTOCOL_SPEC.md` §7.2).
-          connected.connection.send("workflow.completion_response", {
-            workflow_id: env.workflow_id,
-            resolution: decision.resolution,
-            ...(decision.feedback === undefined ? {} : { feedback: decision.feedback }),
-          });
-        })();
-      });
-
-      for (const type of ["step.dispatch", "workflow.terminated", "protocol.error"]) {
-        connected.connection.on(type, (env) => {
-          const event = projection.observe(type, env);
-          if (event !== null) emitUi(event);
-        });
-      }
-
-      options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
+      transport = "connected";
+      subscribe(connected);
+      emitState();
     },
 
     async submit(text, attachments = []) {
@@ -212,7 +287,7 @@ export function createSession(options: SessionOptions): Session {
       // "CANCELLING" means a non-interruptible step is finishing; "CANCELLED"
       // means it is already over, so there is no convergence window to show.
       projection.observeCancelAck(workflowId, String(ack.workflow_status ?? ""));
-      options.emit({ type: "state", snapshot: projection.snapshot(daemon) });
+      emitState();
     },
 
     async report(recordId, detailLevel = "full") {
@@ -290,6 +365,12 @@ export function createSession(options: SessionOptions): Session {
     },
 
     async close() {
+      stopping = true;
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      transport = "disconnected";
       host.abandon();
       await daemon?.close();
     },
