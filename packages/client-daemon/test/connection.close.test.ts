@@ -45,4 +45,18 @@ describe("DaemonConnection close notification", () => {
     expect(closed).toBe(0);
     await srv.close();
   });
+
+  it("reports isClosed after a deliberate close", async () => {
+    const srv = await startTestServer({});
+    const connection = await DaemonConnection.connect({
+      url: srv.url,
+      credentials,
+      clientInfo,
+      capabilities: [],
+    });
+    expect(connection.isClosed()).toBe(false);
+    await connection.close();
+    expect(connection.isClosed()).toBe(true);
+    await srv.close();
+  });
 });

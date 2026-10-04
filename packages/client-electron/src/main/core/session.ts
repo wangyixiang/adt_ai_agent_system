@@ -223,6 +223,10 @@ export function createSession(options: SessionOptions): Session {
       reconnectAttempts = 0;
       transport = "connected";
       subscribe(connected);
+      if (connected.connection.isClosed()) {
+        scheduleReconnect();
+        return;
+      }
       emitState();
       if (hadLive && !resumed) {
         emitUi({
@@ -254,6 +258,7 @@ export function createSession(options: SessionOptions): Session {
       transport = "connected";
       subscribe(connected);
       emitState();
+      if (connected.connection.isClosed()) scheduleReconnect();
     },
 
     async submit(text, attachments = []) {

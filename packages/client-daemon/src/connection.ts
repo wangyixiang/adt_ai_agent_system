@@ -250,6 +250,11 @@ export class DaemonConnection {
     this.closeHandlers.push(handler);
   }
 
+  /** Whether the underlying socket is fully closed. */
+  isClosed(): boolean {
+    return this.ws.readyState === WebSocket.CLOSED;
+  }
+
   private off(type: string, handler: (env: Envelope) => void): void {
     const handlers = this.listeners.get(type);
     if (!handlers) return;
