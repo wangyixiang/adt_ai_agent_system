@@ -56,3 +56,14 @@ describe("the projection's resumed steps", () => {
     expect(p.workflows().find((w) => w.workflowId === "wf_1")!.steps[0]!.resuming).toBe(false);
   });
 });
+
+describe("the projection's terminal reconciliation", () => {
+  it("marks a workflow that terminated during the outage", () => {
+    const p = createProjection();
+    p.noteRequest("wf_1", "x", []);
+    p.noteTerminal("wf_1", "COMPLETED", "rec_1");
+    const workflow = p.workflows().find((w) => w.workflowId === "wf_1")!;
+    expect(workflow.terminalState).toBe("COMPLETED");
+    expect(workflow.recordId).toBe("rec_1");
+  });
+});

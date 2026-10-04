@@ -188,6 +188,13 @@ export function createSession(options: SessionOptions): Session {
       onResourceConflict: host.onResourceConflict,
       onStepStatus: (update) => emitUi(projection.observeStepStatus(update)),
       onResumed,
+      knownWorkflows: () => projection.workflows().map((workflow) => workflow.workflowId),
+      onReconciled: (workflows) => {
+        for (const workflow of workflows) {
+          projection.noteTerminal(workflow.workflowId, workflow.terminalState, workflow.recordId);
+        }
+        emitState();
+      },
     });
   }
 
@@ -206,7 +213,6 @@ export function createSession(options: SessionOptions): Session {
 
   async function attemptReconnect(): Promise<void> {
     if (stopping || credentials === null) return;
-    const hadLive = projection.workflows().some((workflow) => workflow.terminalState === null);
     let resumed = false;
     try {
       const connected = await connectDaemon(credentials, (steps) => {
@@ -228,7 +234,10 @@ export function createSession(options: SessionOptions): Session {
         return;
       }
       emitState();
-      if (hadLive && !resumed) {
+      // After reconciliation, only a still-live run that could not be resumed is
+      // worth telling the human about; a run that ended during the outage is not.
+      const stillLive = projection.workflows().some((workflow) => workflow.terminalState === null);
+      if (stillLive && !resumed) {
         emitUi({
           type: "notice",
           level: "warn",

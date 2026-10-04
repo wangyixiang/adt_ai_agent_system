@@ -22,6 +22,8 @@ export interface Projection {
   noteAnswered(askId: string, answer: Answer): UiEventInput | null;
   /** Seed a step the Server re-dispatched on resume, with its full dispatch. */
   noteResumed(step: ResumedStep): UiEventInput;
+  /** Mark a workflow the Server reports as terminal on resume. */
+  noteTerminal(workflowId: string, terminalState: TerminalState, recordId: string | null): void;
   workflows(): UiWorkflow[];
 }
 
@@ -218,6 +220,15 @@ export function createProjection(): Projection {
 
     workflows() {
       return [...workflows.values()];
+    },
+
+    noteTerminal(workflowId, terminalState, recordId) {
+      const workflow = ensure(workflowId);
+      workflow.terminalState = terminalState;
+      workflow.recordId = recordId;
+      workflow.cancelling = false;
+      workflow.pendingAskId = null;
+      workflow.pendingAsk = null;
     },
   };
 }

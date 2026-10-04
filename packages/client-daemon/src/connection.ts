@@ -22,6 +22,12 @@ export interface ClientConfig {
    * fresh handshake — a new session — rather than failing (PROTOCOL_SPEC.md §5.2).
    */
   session?: { sessionId: string } | null;
+  /**
+   * The workflow ids this host already knows, sent as `known_workflows` so the
+   * Server can report which of them terminated while the client was away
+   * (PROTOCOL_SPEC.md §5.2).
+   */
+  knownWorkflows?: () => string[];
 }
 
 interface WelcomePayload {
@@ -39,6 +45,7 @@ export interface StateSyncSnapshot {
     workflow_id: string;
     workflow_status: string;
     pending_step: StepDispatchPayload | null;
+    record_id: string | null;
   }>;
 }
 
@@ -147,7 +154,7 @@ export class DaemonConnection {
                 // Only terminal workflows are reconciled from this list; live
                 // ones (the ones with a `pending_step`) are always sent — so a
                 // daemon that tracks nothing still gets its unfinished work back.
-                known_workflows: [],
+                known_workflows: (cfg.knownWorkflows?.() ?? []).map((id) => ({ workflow_id: id })),
               },
             }),
           );

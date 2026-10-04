@@ -1,4 +1,4 @@
-import type { StepState } from "@adt/shared";
+import type { StepState, TerminalState } from "@adt/shared";
 
 import { defaultRegistry } from "./capability/defaultRegistry";
 import type { CapabilityRegistry } from "./capability/registry";
@@ -57,6 +57,13 @@ export interface ClientDaemonOptions {
    * of learning only a bare status (which renders as an empty card).
    */
   onResumed?: (steps: ResumedStep[]) => void;
+  /**
+   * The workflow ids this host already knows, sent on resume so the Server can
+   * tell it which of them terminated while it was disconnected.
+   */
+  knownWorkflows?: () => string[];
+  /** Called with workflows that terminated while the client was disconnected. */
+  onReconciled?: (workflows: ReconciledWorkflow[]) => void;
 }
 
 /** A step the Server re-dispatched on resume, with its full dispatch. */
@@ -67,6 +74,15 @@ export interface ResumedStep {
   objective: string;
   input: Record<string, unknown>;
 }
+
+/** A workflow the Server reports as terminal on resume. */
+export interface ReconciledWorkflow {
+  workflowId: string;
+  terminalState: TerminalState;
+  recordId: string | null;
+}
+
+const TERMINAL_STATES: ReadonlySet<string> = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 
 /** A step moving, as the daemon reported it to the Server. */
 export interface StepStatusUpdate {
@@ -167,6 +183,7 @@ export class ClientDaemon {
           clientInfo: opts.clientInfo,
           capabilities: registry.descriptors(),
           session: resumable ? { sessionId: remembered!.sessionId } : null,
+          knownWorkflows: opts.knownWorkflows,
         },
         (ready, stateSync) => {
           // The Server does not echo step statuses back, so the only place to
@@ -208,20 +225,29 @@ export class ClientDaemon {
           if (stateSync) {
             const resumed: ResumedStep[] = [];
             const pending: StepDispatchPayload[] = [];
+            const terminal: ReconciledWorkflow[] = [];
             for (const workflow of stateSync.workflows) {
               const step = workflow.pending_step;
-              if (step === null) continue;
-              pending.push(step);
-              resumed.push({
-                workflowId: workflow.workflow_id,
-                stepId: step.step_id,
-                capability: step.capability,
-                objective: step.objective ?? "",
-                input: step.input ?? {},
-              });
+              if (step !== null) {
+                pending.push(step);
+                resumed.push({
+                  workflowId: workflow.workflow_id,
+                  stepId: step.step_id,
+                  capability: step.capability,
+                  objective: step.objective ?? "",
+                  input: step.input ?? {},
+                });
+              } else if (TERMINAL_STATES.has(workflow.workflow_status)) {
+                terminal.push({
+                  workflowId: workflow.workflow_id,
+                  terminalState: workflow.workflow_status as TerminalState,
+                  recordId: workflow.record_id ?? null,
+                });
+              }
             }
+            if (resumed.length > 0) opts.onResumed?.(resumed);
+            if (terminal.length > 0) opts.onReconciled?.(terminal);
             if (pending.length > 0) {
-              opts.onResumed?.(resumed);
               console.warn(`[daemon] resuming ${pending.length} pending step(s)`);
               void (async () => {
                 for (const step of pending) await runStep(step);

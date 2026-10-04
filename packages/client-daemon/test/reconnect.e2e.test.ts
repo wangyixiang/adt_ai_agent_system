@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Planner } from "@adt/server";
 import { startTestServer, type TestServer } from "@adt/test-support";
-import { ClientDaemon, type ResumedStep } from "../src/daemon";
-import { defaultRegistry } from "../src/capability/defaultRegistry";
+import { ClientDaemon, type ReconciledWorkflow, type ResumedStep } from "../src/daemon";import { defaultRegistry } from "../src/capability/defaultRegistry";
 import { mvpSpec } from "../src/capability/descriptors";
 import { openLedger } from "../src/ledger";
 import { openSessionStore } from "../src/sessionStore";
@@ -149,6 +148,78 @@ describe("reconnect after a side effect started", () => {
     const settled = await waitForState(srv, stepId, "COMPLETED");
     expect(settled).toBe("COMPLETED");
     expect(runs).toBe(1);
+
+    await second.close();
+    await srv.close();
+  });
+
+  it("hands back a workflow that terminated during the outage", async () => {
+    const completingPlanner: Planner = {
+      initialCriteria: async () => ({ mode: "open", revision: 0 }),
+      proposeNext: async ({ steps }) =>
+        steps.length === 0
+          ? {
+              kind: "step",
+              step: {
+                objective: "读状态",
+                capability: "sim_rig.query_state",
+                sideEffect: false,
+                interruptible: true,
+              },
+            }
+          : { kind: "completion_candidate", summary: "完成", evidenceRefs: [] },
+    };
+    const srv = await startTestServer({ plannerImpl: completingPlanner });
+    const dir = mkdtempSync(join(tmpdir(), "adt-reconcile-"));
+    const sessionStore = openSessionStore(join(dir, "session.db"));
+    const ledgerPath = join(dir, "ledger.db");
+
+    let workflowId = "";
+    const first = await ClientDaemon.connect({
+      url: srv.url,
+      credentials,
+      clientInfo,
+      workspaceRoot: process.cwd(),
+      ledger: openLedger(ledgerPath),
+      sessionStore,
+    });
+    first.connection.on("workflow.created", (env) => {
+      workflowId = (env.payload as { workflow_id: string }).workflow_id;
+    });
+    first.connection.on("workflow.completion_candidate", () => {
+      first.connection.send("workflow.completion_response", {
+        workflow_id: workflowId,
+        resolution: "solved",
+      });
+    });
+    await new Promise<void>((resolve) => {
+      first.connection.on("workflow.terminated", () => resolve());
+      first.connection.send("workflow.request", {
+        client_request_id: "req_reconcile",
+        user_request: { text: "x", attachments: [], context: {} },
+      });
+    });
+    await first.close();
+
+    let reconciled: ReconciledWorkflow[] = [];
+    const second = await ClientDaemon.connect({
+      url: srv.url,
+      credentials,
+      clientInfo,
+      workspaceRoot: process.cwd(),
+      ledger: openLedger(ledgerPath),
+      sessionStore,
+      knownWorkflows: () => [workflowId],
+      onReconciled: (workflows) => {
+        reconciled = workflows;
+      },
+    });
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toMatchObject({
+      workflowId,
+      terminalState: "COMPLETED",
+      recordId: expect.stringMatching(/^rec_/),
+    });
 
     await second.close();
     await srv.close();
