@@ -122,6 +122,8 @@ describe("the design tokens", () => {
       "workbench-actions",
       "workbench-state",
       "workbench-steps",
+      "workbench-scroll",
+      "workbench-footer",
       "workbench-completion",
       "workbench-conclusion",
       "objective",

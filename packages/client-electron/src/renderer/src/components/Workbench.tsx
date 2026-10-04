@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 
 import { STEP_STATE_TEXT, type TranscriptItem } from "../transcript";
 import { deriveWorkbench, type WorkbenchState } from "../workbench";
+import { Icon } from "./Icon";
 
 const STATE_TEXT: Record<WorkbenchState, string> = {
   running: "进行中",
@@ -85,7 +86,7 @@ export function Workbench({
     <aside className="workbench" data-testid="workbench">
       <header className="workbench-header">
         <div className="workbench-heading">
-          <h2 className="workbench-title">诊断工作台</h2>
+          <h2 className="workbench-title"><Icon name="tune" /> 诊断工作台</h2>
           <span className="workbench-state" data-state={model.state}>
             <span className="workbench-state-dot" />
             {STATE_TEXT[model.state]}
@@ -95,17 +96,17 @@ export function Workbench({
         <div className="workbench-actions">
           {recordId !== null && (
             <button type="button" onClick={() => onGenerateReport(detailLevel)}>
-              生成报告
+              <Icon name="summarize" /> 生成报告
             </button>
           )}
           {recordId !== null && (
             <button type="button" onClick={() => onExport(exportObject)}>
-              导出到知识库
+              <Icon name="book" /> 导出到知识库
             </button>
           )}
           {canAskToCancel && !confirming && (
             <button type="button" className="danger" onClick={() => setConfirming(true)}>
-              取消
+              <Icon name="cancel" /> 取消
             </button>
           )}
           {canAskToCancel && confirming && (
@@ -152,8 +153,9 @@ export function Workbench({
         )}
       </header>
 
+      <div className="workbench-scroll">
       <div className="workbench-section-heading">
-        <span className="workbench-section-label">步骤与证据时间线 / STEP TIMELINE</span>
+        <span className="workbench-section-label"><Icon name="timeline" /> 步骤与证据时间线 / STEP TIMELINE</span>
         <span className="workbench-section-count">{model.steps.length} NODES</span>
       </div>
       <section className="workbench-steps">
@@ -196,7 +198,7 @@ export function Workbench({
                     type="button"
                     onClick={() => onPreviewBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type)}
                   >
-                    预览证据
+                    <Icon name="eye" /> 预览证据
                   </button>
                   <button
                     type="button"
@@ -204,7 +206,7 @@ export function Workbench({
                       onSaveBlob(step.evidenceBlob!.content_ref, step.evidenceBlob!.media_type, step.evidenceBlob!.name)
                     }
                   >
-                    另存证据
+                    <Icon name="download" /> 另存证据
                   </button>
                 </div>
               )}
@@ -212,14 +214,16 @@ export function Workbench({
           ))}
         </div>
       </section>
+      </div>
 
+      <div className="workbench-footer">
       <div className="workbench-section-heading">
         <span className="workbench-section-label">结论与收敛区 / TERMINAL &amp; CANDIDATE</span>
       </div>
       {model.completion !== null && (
         <section className="workbench-completion">
           <div className="workbench-completion-head">
-            <span className="workbench-completion-title">当前完成候选 (Completion Candidate)</span>
+            <span className="workbench-completion-title"><Icon name="tips" /> 当前完成候选 (Completion Candidate)</span>
             <span className="chip">DRAFT</span>
           </div>
           <p className="completion-decision">{model.completion.decision ?? "待你决定"}</p>
@@ -244,7 +248,7 @@ export function Workbench({
 
       {model.conclusion === null ? (
         <div className="workbench-terminal-placeholder">
-          终止收敛后将在此固化 terminal_state、terminal_reason 与 recordId 归档指纹。
+          <Icon name="verified" /> 终止收敛后将在此固化 terminal_state、terminal_reason 与 recordId 归档指纹。
         </div>
       ) : (
         <section className="workbench-conclusion">
@@ -257,6 +261,7 @@ export function Workbench({
           )}
         </section>
       )}
+      </div>
     </aside>
   );
 }
