@@ -455,4 +455,30 @@ describe("record builder", () => {
 
     expect(record.entries.map((e) => e.kind)).toEqual(["step_dispatched"]);
   });
+
+  it("records a step's requires_confirmation from its side-effect flag", () => {
+    const sideEffect = buildRecord({
+      workflow,
+      steps: [step({ sideEffect: true })],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "sim_rig.trigger_reset" }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_rc_true",
+    });
+    expect(sideEffect.entries[0]!.ref.requires_confirmation).toBe(true);
+
+    const readOnly = buildRecord({
+      workflow,
+      steps: [step()],
+      events: [
+        ev("workflow_created", { request: { text: "x" } }),
+        ev("step_dispatched", { stepId: "step_1", capability: "git.collect_diagnostics" }),
+      ],
+      userRequest: { text: "x" },
+      recordId: "rec_rc_false",
+    });
+    expect(readOnly.entries[0]!.ref.requires_confirmation).toBe(false);
+  });
 });
