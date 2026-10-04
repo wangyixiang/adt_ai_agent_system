@@ -86,6 +86,7 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
         requiresConfirmation: patch.requiresConfirmation ?? false,
         evidenceSummary: patch.evidenceSummary ?? null,
         evidenceBlob: patch.evidenceBlob ?? null,
+        resuming: false,
         text: STEP_STATE_TEXT[state],
       });
       return;

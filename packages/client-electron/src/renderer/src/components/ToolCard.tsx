@@ -16,7 +16,7 @@ export function ToolCard({ item, onLocate }: { item: ToolItem; onLocate(stepId: 
       onClick={() => onLocate(item.stepId)}
     >
       <span className="capability">{item.capability}</span>
-      <span className="badge">{item.text}</span>
+      <span className="badge">{item.resuming ? "恢复中" : item.text}</span>
       {item.objective !== "" && <span className="objective">{item.objective}</span>}
     </button>
   );

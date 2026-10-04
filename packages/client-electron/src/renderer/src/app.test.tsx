@@ -1068,4 +1068,13 @@ describe("the app", () => {
     const shell = await screen.findByTestId("app-screen");
     expect(within(shell).getByLabelText("用户名")).toBeTruthy();
   });
+
+  it("says it is restoring the session while reconnecting", async () => {
+    const client = fakeClient({
+      snapshot: async () => ({ connection: "reconnecting", userId: "usr_1", capabilities: [], workflows: [] }),
+    });
+    render(<App client={client} />);
+    expect(await screen.findByText(/正在恢复会话/)).toBeTruthy();
+    expect(screen.getByTestId("app-bar").textContent).toContain("正在重连…");
+  });
 });

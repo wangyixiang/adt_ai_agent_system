@@ -69,6 +69,33 @@ describe("deriveTranscript", () => {
     expect(deriveTranscript(snapshot, shuffled)).toEqual(deriveTranscript(snapshot, run));
   });
 
+  it("marks a resumed step, and clears the mark on its first status", () => {
+    const created: UiEvent = { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "x" } };
+    const resume: UiEvent = {
+      id: 2,
+      type: "step.dispatched",
+      workflowId: "wf_1",
+      stepId: "st_1",
+      capability: "c",
+      objective: "o",
+      input: {},
+      requiresConfirmation: false,
+      resuming: true,
+    };
+    const toolOf = (items: TranscriptItem[]): Extract<TranscriptItem, { kind: "tool" }> =>
+      items.find((i) => i.kind === "tool") as Extract<TranscriptItem, { kind: "tool" }>;
+    expect(toolOf(deriveTranscript(snapshot, [created, resume])).resuming).toBe(true);
+    expect(
+      toolOf(
+        deriveTranscript(snapshot, [
+          created,
+          resume,
+          { id: 3, type: "step.status", workflowId: "wf_1", stepId: "st_1", state: "RUNNING" },
+        ]),
+      ).resuming,
+    ).toBe(false);
+  });
+
   it("keeps the two kinds of `unknown` apart", () => {
     const events: UiEvent[] = [
       { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "重启服务" } },

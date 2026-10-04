@@ -91,7 +91,7 @@ export function App({ client }: { client: AdtClient }) {
     };
   }, [client]);
 
-  const signedIn = ui.snapshot.connection === "connected" && ui.snapshot.userId !== null;
+  const signedIn = ui.snapshot.userId !== null;
 
   useEffect(() => {
     let alive = true;
@@ -365,6 +365,11 @@ export function App({ client }: { client: AdtClient }) {
         <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
         <main className="thread">
           <ProgressHeader items={viewItems} />
+          {ui.snapshot.connection === "reconnecting" && (
+            <p className="reconnect-note" role="status">
+              正在恢复会话，同步权威状态…
+            </p>
+          )}
           {error !== null && <p role="alert">{error}</p>}
           {notice !== null && <p role="status">{notice}</p>}
           {selectedConversation !== null && !selectedConversation.live && (

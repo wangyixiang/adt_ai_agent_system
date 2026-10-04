@@ -15,6 +15,7 @@ const tool = (): Extract<TranscriptItem, { kind: "tool" }> => ({
   requiresConfirmation: false,
   evidenceSummary: "git_status: clean",
   evidenceBlob: null,
+  resuming: false,
   text: "完成",
 });
 

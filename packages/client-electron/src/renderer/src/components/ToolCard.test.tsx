@@ -18,6 +18,7 @@ const item: Extract<TranscriptItem, { kind: "tool" }> = {
   requiresConfirmation: false,
   evidenceSummary: "git_status: clean",
   evidenceBlob: null,
+  resuming: false,
   text: "完成",
 };
 
@@ -36,5 +37,10 @@ describe("the tool row", () => {
     render(<ToolCard item={item} onLocate={located} />);
     await userEvent.click(screen.getByText("git.collect_diagnostics"));
     expect(located).toHaveBeenCalledWith("st_1");
+  });
+
+  it("shows 恢复中 for a step the reconnect is re-dispatching", () => {
+    render(<ToolCard item={{ ...item, resuming: true }} onLocate={() => {}} />);
+    expect(screen.getByText("恢复中")).toBeTruthy();
   });
 });

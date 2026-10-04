@@ -17,6 +17,11 @@ describe("the app bar", () => {
     expect(screen.getByText("已断开")).toBeTruthy();
   });
 
+  it("says 正在重连… when reconnecting", () => {
+    render(<AppBar connection="reconnecting" userId="usr_1" onOpenSettings={() => {}} />);
+    expect(screen.getByText("正在重连…")).toBeTruthy();
+  });
+
   it("opens settings from the app bar", async () => {
     const onOpenSettings = vi.fn();
     render(<AppBar connection="connected" userId="usr_1" onOpenSettings={onOpenSettings} />);

@@ -22,6 +22,8 @@ export type TranscriptItem =
       requiresConfirmation: boolean;
       evidenceSummary: string | null;
       evidenceBlob: UiEvidenceBlob | null;
+      /** Set while a reconnect is re-dispatching this step; cleared on its status. */
+      resuming: boolean;
       text: string;
     }
   | {
@@ -104,6 +106,7 @@ interface StepPatch {
   requiresConfirmation?: boolean;
   evidenceSummary?: string | null;
   evidenceBlob?: UiEvidenceBlob | null;
+  resuming?: boolean;
 }
 
 function answerText(answer: Answer): string {
@@ -179,6 +182,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
       patch.evidenceSummary !== undefined ? patch.evidenceSummary : (previous?.evidenceSummary ?? null);
     const evidenceBlob =
       patch.evidenceBlob !== undefined ? patch.evidenceBlob : (previous?.evidenceBlob ?? null);
+    const resuming = patch.resuming ?? previous?.resuming ?? false;
 
     ordered.set(toolKey, {
       item: {
@@ -193,6 +197,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
         requiresConfirmation,
         evidenceSummary,
         evidenceBlob,
+        resuming,
         text: STEP_STATE_TEXT[state],
       },
       workflowRank: rank,
@@ -305,6 +310,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
             objective: event.objective,
             input: event.input,
             requiresConfirmation: event.requiresConfirmation,
+            resuming: event.resuming ?? false,
           },
           event.id,
         );
@@ -316,6 +322,7 @@ export function deriveTranscript(snapshot: UiSnapshot, events: UiEvent[]): Trans
           event.stepId,
           {
             state: event.state,
+            resuming: false,
             ...(event.evidenceSummary === undefined ? {} : { evidenceSummary: event.evidenceSummary }),
             ...(event.evidenceBlob === undefined ? {} : { evidenceBlob: event.evidenceBlob }),
           },
