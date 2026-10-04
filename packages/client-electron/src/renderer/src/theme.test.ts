@@ -100,4 +100,10 @@ describe("the design tokens", () => {
       expect(css).toContain(selector);
     }
   });
+
+  it("styles the empty, loading and error states", () => {
+    expect(css).toContain(".empty");
+    expect(css).toContain(".loading");
+    expect(css).toMatch(/\[role="alert"\]/);
+  });
 });

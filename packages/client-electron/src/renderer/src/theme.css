@@ -461,6 +461,23 @@ body,
   color: var(--color-primary);
 }
 
+/* --- Empty / loading / error --- */
+.empty,
+.loading {
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body);
+}
+
+[role="alert"] {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
 .app-body {
   flex: 1;
   display: flex;
