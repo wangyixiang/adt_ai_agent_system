@@ -112,4 +112,37 @@ describe("the design tokens", () => {
     expect(withoutRoot).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(withoutRoot).not.toMatch(/\brgb\(|\bhsl\(/);
   });
+
+  it("dresses the remaining components", () => {
+    for (const selector of [
+      "conversation",
+      "conversation-title",
+      "conversation-state",
+      "conversation-duration",
+      "workbench-actions",
+      "workbench-state",
+      "workbench-steps",
+      "workbench-completion",
+      "workbench-conclusion",
+      "objective",
+      "instruction",
+      "answer",
+      "ask-kind",
+      "decisions",
+      "decision",
+      "evidence-blob",
+      "hint",
+      "past-note",
+      "record",
+      "completion-summary",
+      "detail-level",
+      "export-object",
+      "report-actions",
+      "attachments",
+      "attachment-name",
+      "attachment-mode",
+    ]) {
+      expect(css).toMatch(new RegExp(`\\.${selector}\\b`));
+    }
+  });
 });
