@@ -15,6 +15,8 @@ export interface UiConversation {
   live: boolean;
   /** Elapsed time in ms, when the run's Record is known. */
   durationMs?: number;
+  /** Live runs only: how many steps have been dispatched so far. */
+  stepCount?: number;
 }
 
 interface LiveInfo {
@@ -40,6 +42,11 @@ export function conversations(
   const liveIds = new Set(live.keys());
   const byWorkflow = new Map(records.map((record) => [record.workflowId, record]));
 
+  const toolCounts = new Map<string, number>();
+  for (const item of items) {
+    if (item.kind === "tool") toolCounts.set(item.workflowId, (toolCounts.get(item.workflowId) ?? 0) + 1);
+  }
+
   const running: UiConversation[] = [];
   const finished: UiConversation[] = [];
 
@@ -51,6 +58,7 @@ export function conversations(
       title: info.title !== "" ? info.title : (record?.summary.problem_short ?? "（未命名）"),
       state: info.state,
       live: true,
+      stepCount: toolCounts.get(workflowId) ?? 0,
       ...(record === undefined ? {} : { durationMs: record.summary.duration_ms }),
     };
     if (info.state === "running") running.push(conversation);

@@ -362,7 +362,12 @@ export function App({ client }: { client: AdtClient }) {
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="app-body">
-        <ConversationList conversations={list} selected={effectiveSelected} onSelect={setSelected} />
+        <ConversationList
+          conversations={list}
+          selected={effectiveSelected}
+          onSelect={setSelected}
+          onRefresh={() => setRecordsTick((tick) => tick + 1)}
+        />
         <main className="thread">
           <ProgressHeader items={viewItems} />
           {ui.snapshot.connection === "reconnecting" && (
