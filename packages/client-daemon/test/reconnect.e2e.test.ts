@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Planner } from "@adt/server";
 import { startTestServer, type TestServer } from "@adt/test-support";
-import { ClientDaemon } from "../src/daemon";
+import { ClientDaemon, type ResumedStep } from "../src/daemon";
 import { defaultRegistry } from "../src/capability/defaultRegistry";
 import { mvpSpec } from "../src/capability/descriptors";
 import { openLedger } from "../src/ledger";
@@ -85,6 +85,7 @@ describe("reconnect after a side effect started", () => {
 
     let runs = 0;
     let stepId = "";
+    let resumed: ResumedStep[] = [];
 
     const first = await ClientDaemon.connect({
       url: srv.url,
@@ -127,10 +128,21 @@ describe("reconnect after a side effect started", () => {
       ledger: openLedger(ledgerPath),
       sessionStore,
       onConfirmationRequired: async () => true,
+      onResumed: (steps) => {
+        resumed = steps;
+      },
     });
 
     // Resumed the same logical session...
     expect(second.connection.sessionId).toBe(sessionId);
+
+    // ...and the host was told which step came back, with its full dispatch.
+    expect(resumed).toHaveLength(1);
+    expect(resumed[0]).toMatchObject({
+      stepId,
+      capability: "sim_rig.trigger_reset",
+      objective: "复位测试台",
+    });
 
     // ...and the re-dispatched step was reported unknown (then reconciled),
     // never executed again.

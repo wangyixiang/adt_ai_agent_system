@@ -44,7 +44,10 @@ export interface StateSyncSnapshot {
 
 export class DaemonConnection {
   private readonly listeners = new Map<string, Array<(env: Envelope) => void>>();
+  private readonly closeHandlers: Array<() => void> = [];
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** Set by a deliberate `close()`, so its socket close is not a "drop". */
+  private closing = false;
 
   private constructor(
     private readonly ws: WebSocket,
@@ -63,6 +66,11 @@ export class DaemonConnection {
     // the daemon down with it.
     ws.on("error", (error: Error) => {
       console.warn(`[daemon] socket error: ${error.message}`);
+    });
+    // A close nobody asked for is a dropped transport (the host reconnects).
+    ws.on("close", () => {
+      if (this.closing) return;
+      for (const handler of this.closeHandlers) handler();
     });
   }
 
@@ -237,6 +245,11 @@ export class DaemonConnection {
     this.listeners.set(type, handlers);
   }
 
+  /** Notified when the transport drops (never on a deliberate `close()`). */
+  onClose(handler: () => void): void {
+    this.closeHandlers.push(handler);
+  }
+
   private off(type: string, handler: (env: Envelope) => void): void {
     const handlers = this.listeners.get(type);
     if (!handlers) return;
@@ -307,6 +320,7 @@ export class DaemonConnection {
   }
 
   close(): Promise<void> {
+    this.closing = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;

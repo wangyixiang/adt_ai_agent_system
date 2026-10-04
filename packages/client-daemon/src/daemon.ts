@@ -51,6 +51,21 @@ export interface ClientDaemonOptions {
    * (a UI's tool cards need it).
    */
   onStepStatus?: (update: StepStatusUpdate) => void;
+  /**
+   * Called when a reconnect resumes a session: the steps the Server is about to
+   * re-dispatch, with their full dispatch, so a host can seed its view instead
+   * of learning only a bare status (which renders as an empty card).
+   */
+  onResumed?: (steps: ResumedStep[]) => void;
+}
+
+/** A step the Server re-dispatched on resume, with its full dispatch. */
+export interface ResumedStep {
+  workflowId: string;
+  stepId: string;
+  capability: string;
+  objective: string;
+  input: Record<string, unknown>;
 }
 
 /** A step moving, as the daemon reported it to the Server. */
@@ -191,10 +206,22 @@ export class ClientDaemon {
           // Work the Server says is still ours. Sequential on purpose: two
           // pending steps must not drive the same hardware at once.
           if (stateSync) {
-            const pending = stateSync.workflows
-              .map((workflow) => workflow.pending_step)
-              .filter((step): step is StepDispatchPayload => step !== null);
+            const resumed: ResumedStep[] = [];
+            const pending: StepDispatchPayload[] = [];
+            for (const workflow of stateSync.workflows) {
+              const step = workflow.pending_step;
+              if (step === null) continue;
+              pending.push(step);
+              resumed.push({
+                workflowId: workflow.workflow_id,
+                stepId: step.step_id,
+                capability: step.capability,
+                objective: step.objective ?? "",
+                input: step.input ?? {},
+              });
+            }
             if (pending.length > 0) {
+              opts.onResumed?.(resumed);
               console.warn(`[daemon] resuming ${pending.length} pending step(s)`);
               void (async () => {
                 for (const step of pending) await runStep(step);
