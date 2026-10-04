@@ -79,4 +79,25 @@ describe("the design tokens", () => {
     expect(css).toContain(".blob-viewer");
     expect(css).toContain(".report-content");
   });
+
+  it("dresses the thread and the workbench", () => {
+    for (const selector of [
+      ".transcript",
+      ".bubble",
+      ".tool-row",
+      ".ask-card",
+      ".notice",
+      ".summary",
+      ".workbench-step",
+      ".step-input",
+      ".needs-confirmation",
+      ".completion-decision",
+      ".completion-refs",
+      ".reconnect-note",
+      ".progress",
+      ".composer",
+    ]) {
+      expect(css).toContain(selector);
+    }
+  });
 });
