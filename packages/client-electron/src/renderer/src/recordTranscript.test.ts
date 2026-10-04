@@ -95,4 +95,28 @@ describe("transcriptFromRecord", () => {
     expect(ask(items).text).toContain("人");
     expect(tool(items).text).not.toBe(ask(items).text);
   });
+
+  it("keeps a past step's requires_confirmation, defaulting to false", () => {
+    const withFlag = transcriptFromRecord(
+      recordOf([
+        entry("step_dispatched", {
+          step_id: "st_1",
+          capability: "c",
+          objective: "o",
+          input: {},
+          requires_confirmation: true,
+        }),
+        entry("step_status", { step_id: "st_1", state: "COMPLETED" }),
+      ]),
+    );
+    expect(tool(withFlag).requiresConfirmation).toBe(true);
+
+    const withoutFlag = transcriptFromRecord(
+      recordOf([
+        entry("step_dispatched", { step_id: "st_1", capability: "c", objective: "o", input: {} }),
+        entry("step_status", { step_id: "st_1", state: "COMPLETED" }),
+      ]),
+    );
+    expect(tool(withoutFlag).requiresConfirmation).toBe(false);
+  });
 });

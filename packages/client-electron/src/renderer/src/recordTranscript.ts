@@ -119,7 +119,13 @@ export function transcriptFromRecord(record: UiRecord): TranscriptItem[] {
         const capability = String(ref.capability ?? "");
         const objective = typeof ref.objective === "string" ? ref.objective : "";
         const input = asRecord(ref.input);
-        putTool({ stepId, capability, objective, input });
+        putTool({
+          stepId,
+          capability,
+          objective,
+          input,
+          requiresConfirmation: ref.requires_confirmation === true,
+        });
         break;
       }
 
