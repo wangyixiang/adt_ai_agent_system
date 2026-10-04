@@ -66,4 +66,19 @@ describe("the projection's terminal reconciliation", () => {
     expect(workflow.terminalState).toBe("COMPLETED");
     expect(workflow.recordId).toBe("rec_1");
   });
+
+  it("creates a terminal workflow it had not seen before", () => {
+    const p = createProjection();
+    p.noteTerminal("wf_new", "COMPLETED", "rec_1");
+    expect(p.workflows().find((w) => w.workflowId === "wf_new")!.terminalState).toBe("COMPLETED");
+  });
+
+  it("does not overwrite a terminal state the client already saw", () => {
+    const p = createProjection();
+    p.observe("workflow.terminated", terminated);
+    p.noteTerminal("wf_1", "COMPLETED", "rec_other");
+    const workflow = p.workflows().find((w) => w.workflowId === "wf_1")!;
+    expect(workflow.terminalState).toBe("CANCELLED");
+    expect(workflow.recordId).toBe("rec_1");
+  });
 });

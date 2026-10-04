@@ -224,6 +224,10 @@ export function createProjection(): Projection {
 
     noteTerminal(workflowId, terminalState, recordId) {
       const workflow = ensure(workflowId);
+      // Never downgrade a workflow that already reached a terminal state; the
+      // Server is authoritative but a later reconciliation must not contradict
+      // a `workflow.terminated` the client already saw.
+      if (workflow.terminalState !== null) return;
       workflow.terminalState = terminalState;
       workflow.recordId = recordId;
       workflow.cancelling = false;

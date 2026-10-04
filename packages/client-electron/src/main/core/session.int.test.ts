@@ -508,4 +508,58 @@ describe("the in-process session", () => {
       await session.close();
     }
   });
+
+  it("does not warn about expiry when the run ended before the drop", async () => {
+    const probe = await startTestServer({ planner: [readStep, done] as never });
+    const url = probe.url;
+    const port = Number(new URL(url).port);
+    await probe.close();
+
+    const srv = await startTestServer({ planner: [readStep, done] as never, port });
+    const events: MainEvent[] = [];
+    const session = createSession({
+      serverUrl: url,
+      workspaceRoot: process.cwd(),
+      clientInfo: { name: "session-int-test", platform: "test" },
+      ledgerPath: ":memory:",
+      sessionPath: ":memory:",
+      emit: (event) => void events.push(event),
+    });
+    try {
+      await session.login("alice", "pw-alice");
+      await session.submit("读一下状态");
+      const completion = await waitFor(
+        { session, events, close: async () => undefined },
+        (s) => s.workflows[0]?.pendingAsk?.kind === "completion",
+        "the completion",
+      );
+      session.answer(completion.workflows[0]!.pendingAsk!.askId, {
+        kind: "completion",
+        resolution: "solved",
+      });
+      await waitFor(
+        { session, events, close: async () => undefined },
+        (s) => s.workflows[0]?.terminalState !== null,
+        "the end",
+      );
+
+      await srv.close();
+      const restarted = await startTestServer({ planner: [readStep, done] as never, port });
+      try {
+        const back = Date.now() + 15_000;
+        while (Date.now() < back && session.snapshot().connection !== "connected") {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(session.snapshot().connection).toBe("connected");
+        const notices = events.flatMap((event) =>
+          event.type === "ui" && event.event.type === "notice" ? [event.event.message] : [],
+        );
+        expect(notices.some((message) => message.includes("会话已过期"))).toBe(false);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      await session.close();
+    }
+  });
 });
