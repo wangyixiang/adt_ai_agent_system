@@ -251,8 +251,8 @@ body,
 
 .tool-row {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.375rem;
   width: 100%;
   padding: 0.5rem 0.75rem;
   font: inherit;
@@ -264,6 +264,12 @@ body,
   border-radius: var(--radius);
 }
 
+.tool-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .tool-row .capability {
   font-family: var(--font-mono);
   font-size: var(--text-mono);
@@ -272,26 +278,62 @@ body,
 
 .tool-row .badge {
   margin-left: auto;
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
+  color: var(--color-on-surface-variant);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius);
+}
+
+.tool-row .icon {
   color: var(--color-on-surface-variant);
 }
 
-.tool-row[data-state="COMPLETED"] .badge {
+.tool-row[data-state="COMPLETED"] .badge,
+.tool-row[data-state="COMPLETED"] .icon {
   color: var(--color-tertiary);
+}
+
+.tool-row[data-state="COMPLETED"] .badge {
+  border-color: color-mix(in srgb, var(--color-tertiary) 40%, transparent);
+  background: color-mix(in srgb, var(--color-tertiary) 12%, transparent);
+}
+
+.tool-row[data-state="FAILED"] .badge,
+.tool-row[data-state="FAILED"] .icon,
+.tool-row[data-state="REJECTED"] .badge,
+.tool-row[data-state="REJECTED"] .icon {
+  color: var(--color-error);
 }
 
 .tool-row[data-state="FAILED"] .badge,
 .tool-row[data-state="REJECTED"] .badge {
-  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+
+.tool-row[data-state="RUNNING"] .badge,
+.tool-row[data-state="RUNNING"] .icon,
+.tool-row[data-state="WAITING"] .badge,
+.tool-row[data-state="WAITING"] .icon {
+  color: var(--color-primary);
 }
 
 .tool-row[data-state="RUNNING"] .badge,
 .tool-row[data-state="WAITING"] .badge {
-  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.tool-row[data-state="UNKNOWN"] .badge,
+.tool-row[data-state="UNKNOWN"] .icon {
+  color: var(--color-warning);
 }
 
 .tool-row[data-state="UNKNOWN"] .badge {
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
 .ask-card {
@@ -302,6 +344,28 @@ body,
   background: var(--color-surface-high);
   border: 1px solid var(--color-primary-container);
   border-radius: var(--radius);
+}
+
+.ask-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ask-card .badge {
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-on-surface-variant);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius);
+}
+
+.ask-card .badge[data-answered="false"] {
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 
 .notice {

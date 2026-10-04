@@ -2,9 +2,16 @@ import type { Answer } from "@adt/shared";
 
 import type { TranscriptItem } from "../transcript";
 import { AskCard } from "./AskCard";
+import { Icon } from "./Icon";
 import { Notice } from "./Notice";
 import { Summary } from "./Summary";
 import { ToolCard } from "./ToolCard";
+
+function formatBytes(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
 
 export function Transcript({
   items,
@@ -41,9 +48,10 @@ export function Transcript({
                         key={`${index}-${attachment.name}`}
                         className="bubble-attachment"
                       >
+                        <Icon name="file" />
                         <span className="attachment-name">{attachment.name}</span>
                         <span className="attachment-mode">
-                          {attachment.mode === "inline" ? "内联" : "blob"}
+                          ({formatBytes(attachment.size)}, {attachment.mode === "inline" ? "内联" : "blob"})
                         </span>
                         {attachment.mode === "blob" && (
                           <>

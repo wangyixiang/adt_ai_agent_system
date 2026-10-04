@@ -17,7 +17,8 @@ export type IconName =
   | "check"
   | "error"
   | "block"
-  | "hourglass";
+  | "hourglass"
+  | "file";
 
 const PATHS: Record<IconName, ReactNode> = {
   tune: (
@@ -122,6 +123,12 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M7 21h10" />
       <path d="M7 3v4l5 5 5-5V3" />
       <path d="M7 21v-4l5-5 5 5v4" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 3 14 8 19 8" />
     </>
   ),
 };

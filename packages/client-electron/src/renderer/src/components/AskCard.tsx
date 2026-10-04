@@ -32,9 +32,11 @@ export function AskCard({ item, onAnswer, readOnly }: AskCardProps) {
   const [attachments, setAttachments] = useState<IncomingAttachment[]>([]);
 
   const header = (
-    <header>
-      <span className="badge">{item.answered ? "已回答" : "待你回答"}</span>
+    <header className="ask-card-head">
       <span className="ask-kind">{item.askKind ?? "问题"}</span>
+      <span className="badge" data-answered={item.answered}>
+        {item.answered ? "已回答" : "待你回答"}
+      </span>
     </header>
   );
 
