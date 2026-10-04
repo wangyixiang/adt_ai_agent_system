@@ -69,6 +69,45 @@ describe("deriveTranscript", () => {
     expect(deriveTranscript(snapshot, shuffled)).toEqual(deriveTranscript(snapshot, run));
   });
 
+  it("keeps a resumed step's mark from the snapshot", () => {
+    const snap: UiSnapshot = {
+      connection: "reconnecting",
+      userId: "usr_1",
+      capabilities: [],
+      workflows: [
+        {
+          workflowId: "wf_1",
+          userRequest: { text: "x" },
+          attachments: [],
+          terminalState: null,
+          terminalReason: null,
+          recordId: null,
+          cancelling: false,
+          pendingAskId: null,
+          pendingAsk: null,
+          steps: [
+            {
+              stepId: "st_1",
+              capability: "c",
+              objective: "o",
+              input: {},
+              state: "PENDING",
+              requiresConfirmation: false,
+              evidenceSummary: null,
+              evidenceBlob: null,
+              resuming: true,
+            },
+          ],
+        },
+      ],
+    };
+    const tool = deriveTranscript(snap, []).find((i) => i.kind === "tool") as Extract<
+      TranscriptItem,
+      { kind: "tool" }
+    >;
+    expect(tool.resuming).toBe(true);
+  });
+
   it("marks a resumed step, and clears the mark on its first status", () => {
     const created: UiEvent = { id: 1, type: "workflow.created", workflowId: "wf_1", userRequest: { text: "x" } };
     const resume: UiEvent = {
