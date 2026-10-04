@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import type { UiBlobPreview } from "../../../shared/contract";
 
 /**
@@ -6,11 +8,19 @@ import type { UiBlobPreview } from "../../../shared/contract";
  * or the workbench (spec §10).
  */
 export function BlobViewer({ preview, onClose }: { preview: UiBlobPreview; onClose(): void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div className="blob-viewer" data-testid="blob-viewer" role="dialog" aria-modal="true">
       <header>
         <span>附件 / 证据</span>
-        <button type="button" onClick={onClose}>
+        <button type="button" onClick={onClose} autoFocus>
           关闭
         </button>
       </header>

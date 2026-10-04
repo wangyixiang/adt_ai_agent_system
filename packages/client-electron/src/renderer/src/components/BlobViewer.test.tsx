@@ -33,4 +33,14 @@ describe("the blob viewer", () => {
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("closes on Escape and focuses the close button", async () => {
+    const onClose = vi.fn();
+    render(
+      <BlobViewer preview={{ kind: "text", mediaType: "text/plain", text: "hi" }} onClose={onClose} />,
+    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "关闭" }));
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

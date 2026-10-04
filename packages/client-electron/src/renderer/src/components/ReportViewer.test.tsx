@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -38,5 +38,13 @@ describe("the report viewer", () => {
     expect(screen.getByText(/insufficient_content/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "复制" })).toBeNull();
     expect(screen.queryByRole("button", { name: /另存为/ })).toBeNull();
+  });
+
+  it("closes on Escape and focuses the close button", async () => {
+    const onClose = vi.fn();
+    render(<ReportViewer markdown="# r" onCopy={() => {}} onSave={() => {}} onClose={onClose} />);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "关闭" }));
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

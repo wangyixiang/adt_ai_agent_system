@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 export interface ReportViewerProps {
   /** The Server's markdown. `null` only when `error` is set. */
   markdown: string | null;
@@ -13,11 +15,19 @@ export interface ReportViewerProps {
  * report (REPORT_SPEC.md §6).
  */
 export function ReportViewer({ markdown, error = null, onCopy, onSave, onClose }: ReportViewerProps) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div className="report-viewer" data-testid="report-viewer" role="dialog" aria-modal="true">
       <header>
         <span>报告</span>
-        <button type="button" onClick={onClose}>
+        <button type="button" onClick={onClose} autoFocus>
           关闭
         </button>
       </header>
