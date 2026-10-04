@@ -75,6 +75,11 @@ export interface TestServerOptions {
   /** Ordering clock for engine/protocol event timestamps (default `Date.now`). */
   now?: () => number;
   /**
+   * Bind a fixed port (default: an ephemeral one), so a test can stop a server
+   * and start another on the same URL to exercise a client's reconnect.
+   */
+  port?: number;
+  /**
    * ADR-005 outbound. Tests inject a fake — or a real HTTP depositor pointed at
    * a local endpoint. Absent means "the knowledge base is not configured";
    * deliberately not read from `process.env`, so the suite stays hermetic.
@@ -255,7 +260,7 @@ export async function startTestServer(opts: TestServerOptions = {}): Promise<Tes
   );
   stepTimeouts.start();
 
-  await server.app.listen({ port: 0, host: "127.0.0.1" });
+  await server.app.listen({ port: opts.port ?? 0, host: "127.0.0.1" });
   const port = (server.app.server.address() as AddressInfo).port;
   // Blob URLs must point at the port this server actually got.
   blobBaseUrl = `http://127.0.0.1:${port}`;

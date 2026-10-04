@@ -110,6 +110,11 @@ export function createSession(options: SessionOptions): Session {
   const host = createDecisionHost((ask, workflowId) =>
     emitUi(projection.observeAsk(ask, workflowId)),
   );
+  // Opened once and reused across reconnects: the ledger is what makes a
+  // re-dispatched side effect safe, and the session store is what lets a
+  // reconnect resume. Re-opening them per attempt would leak a handle each time.
+  const ledger = openLedger(options.ledgerPath);
+  const sessionStore = openSessionStore(options.sessionPath);
   let daemon: ClientDaemon | null = null;
   let nextEventId = 1;
   let transport: "connected" | "reconnecting" | "disconnected" = "disconnected";
@@ -176,8 +181,8 @@ export function createSession(options: SessionOptions): Session {
       credentials: creds,
       clientInfo: options.clientInfo,
       workspaceRoot: options.workspaceRoot,
-      ledger: openLedger(options.ledgerPath),
-      sessionStore: openSessionStore(options.sessionPath),
+      ledger,
+      sessionStore,
       onConfirmationRequired: host.onConfirmationRequired,
       onUserInput: host.onUserInput,
       onResourceConflict: host.onResourceConflict,
@@ -208,6 +213,12 @@ export function createSession(options: SessionOptions): Session {
         resumed = steps.length > 0;
         for (const step of steps) emitUi(projection.noteResumed(step));
       });
+      // `close()` may have run while the handshake was in flight; a late
+      // connection must not resurrect the session or leak its socket.
+      if (stopping) {
+        await connected.close().catch(() => undefined);
+        return;
+      }
       daemon = connected;
       reconnectAttempts = 0;
       transport = "connected";
@@ -373,6 +384,8 @@ export function createSession(options: SessionOptions): Session {
       transport = "disconnected";
       host.abandon();
       await daemon?.close();
+      ledger.close();
+      sessionStore.close();
     },
   };
 }

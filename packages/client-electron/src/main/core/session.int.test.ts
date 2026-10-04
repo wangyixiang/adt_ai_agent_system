@@ -451,26 +451,59 @@ describe("the in-process session", () => {
     }
   });
 
-  it("reports reconnecting when the transport drops", async () => {
-    const srv = await startTestServer({ planner: [done] as never });
+  it("reconnects after a drop, and says so when it cannot resume", async () => {
+    // Discover a free port, then bind a server there so a replacement can
+    // listen on the same URL after the first one is gone.
+    const probe = await startTestServer({ planner: [readStep, done] as never });
+    const url = probe.url;
+    const port = Number(new URL(url).port);
+    await probe.close();
+
+    const srv = await startTestServer({ planner: [readStep, done] as never, port });
+    const events: MainEvent[] = [];
     const session = createSession({
-      serverUrl: srv.url,
+      serverUrl: url,
       workspaceRoot: process.cwd(),
       clientInfo: { name: "session-int-test", platform: "test" },
       ledgerPath: ":memory:",
       sessionPath: ":memory:",
-      emit: () => undefined,
+      emit: (event) => void events.push(event),
     });
     try {
       await session.login("alice", "pw-alice");
       expect(session.snapshot().connection).toBe("connected");
 
+      // A live run, so a reconnect that cannot resume has something to lose.
+      await session.submit("读一下状态");
+      await waitFor(
+        { session, events, close: async () => undefined },
+        (s) => s.workflows[0] !== undefined,
+        "the run",
+      );
+
       await srv.close();
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && session.snapshot().connection !== "reconnecting") {
+      const dropDeadline = Date.now() + 8000;
+      while (Date.now() < dropDeadline && session.snapshot().connection !== "reconnecting") {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       expect(session.snapshot().connection).toBe("reconnecting");
+
+      // A fresh server on the same URL: its session store is empty, so the
+      // resume is refused. The client must fall back and say so, not pretend.
+      const restarted = await startTestServer({ planner: [readStep, done] as never, port });
+      try {
+        const backDeadline = Date.now() + 15_000;
+        while (Date.now() < backDeadline && session.snapshot().connection !== "connected") {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(session.snapshot().connection).toBe("connected");
+        const notices = events.flatMap((event) =>
+          event.type === "ui" && event.event.type === "notice" ? [event.event.message] : [],
+        );
+        expect(notices.some((message) => message.includes("会话已过期"))).toBe(true);
+      } finally {
+        await restarted.close();
+      }
     } finally {
       await session.close();
     }
