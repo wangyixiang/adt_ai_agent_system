@@ -66,7 +66,7 @@
 ## 7. 验证口径
 
 - **证据先于声明**（`verification-before-completion`）：没有在本条消息里现场跑过的命令，不能说"通过"；刚跑过也不算，要跑全、读输出、核退出码。
-- 改代码必须跑：`pnpm -r --if-present test` 与 `pnpm -r --if-present typecheck`（**全部 package**；`--if-present` 已排除没有该脚本的）。
+- 改代码必须跑：`pnpm test`（根脚本，内部 `--workspace-concurrency=1` **强制串行**）与 `pnpm -r --if-present typecheck`（**全部 package**；`--if-present` 已排除没有该脚本的）。
 - **两个 package 的测试不能并行跑**：它们共享 `adt_test` 且会 `TRUNCATE`，并行会互相打架（根 `test` 脚本用 `--workspace-concurrency=1` 强制串行；`typecheck` 可并行）。
 - Postgres 由 `docker compose` 提供（`localhost:55432`）。Docker 掉线时表现为测试挂住（P4c 遇到过），**先确认 `docker compose ps` 健康再下"失败"的结论**。
 - **各产品线自己的"出口"在它自己的计划里写明**。例如桌面产品线的出口是"`client-electron` 能**打包并启动**"（打包冒烟）；用了原生模块则需 `@electron/rebuild`。

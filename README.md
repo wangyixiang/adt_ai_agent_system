@@ -2,38 +2,32 @@
 
 HiL 诊断辅助系统。设计文档在 `docs/`（`PRODUCT.md` → `REQUIREMENTS.md` → `architecture/` → `specs/`，架构决策见 `adr/`）。
 
-## 当前状态
+## 状态
 
-已实现到 **P4d + D7(b) + 单体 Electron 客户端（`ADR-006`）的完整闭环 + 部署与分发**：
+**已实现**：P1 → P4d 的完整闭环，外加桌面客户端（`ADR-006`）与部署分发。
 
-- **P1 骨架与协议层**：TypeScript monorepo、协议信封编解码、认证握手、能力同步、应用层心跳与协议错误处置。
-- **P2a Workflow 引擎与持久化**：Step/Workflow 状态机（含 `UNKNOWN` 与终态不可变）、取消与 `CANCELLING` 收敛、终止护栏、`completion_criteria`、PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
-- **P2b Record / Report 与协议接线**：Evidence 入事件日志、Record 构建/持久化/查询（按 owner 过滤）、定型服务（先落盘后通知）、Report 生成、`workflow.*` / `step.*` / `record.*` / `report.*` 协议接线。
-- **P2c 协议一致性与重连**：`ERROR_DISPOSITION` 驱动错误处置、逻辑会话（去重窗口跨重连、TTL）、`session.resume` + `workflow.state_sync`、孤儿回收接进会话生命周期。
-- **P3a 服务端只读闭环**：`LlmProvider` 抽象 + OpenAI 兼容实现 + `LlmPlanner`、受限子集 JSON Schema 校验器、`step.dispatch.input` 与 `evidence.result` 双向校验、规划器产出/修订 `completion_criteria`、`client_request_id` 幂等。
-- **P3b client-daemon 只读闭环**：客户端自有的 Capability 声明（`CapabilityRegistry`）、可插拔适配器（`git.collect_diagnostics` / `filesystem.read_file` / `docker.inspect_container` + 占位能力）、工作区约束与子进程超时、`step.dispatch` → `step.status` 执行链路。
-- **P4a 受控执行与 `UNKNOWN` 对账**：
-  - **受控执行**：`requires_confirmation` 的副作用 Step 绝不自动执行——Client 先 `WAITING(user_confirmation)`，由宿主回调决定，拒绝走 `REJECTED(user_declined)`；`side_effect` 且未要求确认的 Step 仍被本地拦下（防御 Server 漏标）。新增副作用能力 `terminal.execute_command`、`sim_rig.trigger_reset`，以及只读对账伴随能力 `sim_rig.query_state`。
-  - **建议路径**：`human.manual_action` 由 daemon 拦截，展示 `instruction` 并把工程师反馈包装为 `evidence(source=user_input, type=manual_action_result)`；Server 侧把该保留能力补进"规划器可选能力"，否则规划器永远不会提议它。
-  - **`UNKNOWN` 对账**：Step 超时只读 → `FAILED(timeout)`、副作用 → `UNKNOWN`（人类等待豁免，重复 `RUNNING`/`progress` 视为保活、重置计时器），`StepTimeoutMonitor` 扫描并在超时后推进 Workflow；对账裁定由 Planner 产出（`PlannerDecision.reconcile`，LLM 侧有 `action=reconcile` 工具且必须给出 `evidence_refs`），Engine 只落在确定性规则上。存在未对账 `UNKNOWN` 时**禁止再下发副作用 Step**（`WORKFLOW_SPEC.md` §4.3：规划器连副作用能力都看不到，Engine 再兜一层）。State 机补齐 `WAITING → REJECTED`、`PENDING → UNKNOWN` 两条 spec 边。
-  - **幂等台账**：Server 为副作用 Step 生成 Workflow 内稳定 `idempotency_key`；Client 用 `node:sqlite` 持久化「键 → 结果」，重连重发同一 Step 直接回放、不重复执行。
-  - **Record 忠实性**：`guardrail_triggered.ref.threshold` 带出配置阈值；工程师输入记为 `user_input` 条目；`reconciliation_resolved.ref.evidence_refs` 落盘。
-- **P4b 资源冲突如实上报与终结**：资源是否被占用**只有能力提供方知道**，因此由它判断并如实上报，Server 不仲裁、不排队、不建资源模型。提供方报 `resource_conflict` → 客户端先发 `WAITING`（人类等待，不被 `step_timeout` 杀掉）并问工程师：**能腾出资源就让 Workflow 继续（不留痕）**；**腾不出就报 `REJECTED(resource_conflict)`**，Server 不再重规划，Workflow 终止为 `FAILED` + `terminal_reason = resource_conflict`，Record 用提供方的话说明"设备/资源被占用"。
-- **P4c blob 通道**：大体积/二进制证据（日志、截图）不进正文类消息，走**申请制**的独立通道。`blob.allocate_request/response` 换一条带 **HMAC 签名令牌**的 URL（服务端无会话态，重启后旧 URL 仍有效，`BLOB_SECRET` 未配置则每启动随机并告警），`PUT`/`GET /blob/:contentRef` **流式**收发并**边收边校验** size/sha256（不符则失败且不提交）；`LocalBlobStore` 按 sha256 **内容寻址**落本地 FS，元数据在 `blobs` 表；过期**只回收没有被任何 Record 引用的 blob**——Record 不可变，它引用过的证据必须仍能取回。默认：单 blob 512 MiB、令牌 15 分钟、保留期 30 天、白名单 9 种媒体类型；内联阈值 64 KiB **只登记不强制**。
-- **P4 收口（重连恢复 + 清单 `output_type` + 墙钟）**——对齐审计补上的三处缺口：
-  - **断线恢复（NFR-3 的客户端半边）**：daemon 持久化逻辑会话，重连先试 `session.resume`（被拒则在新连接上回落 `session.hello`），并按 `workflow.state_sync` 的 `pending_step` 继续未完成的 Step；`state_sync` 带回 `heartbeat_interval_ms`。
-  - **台账三态**：未见过 / **执行中** / 已完成。重连后重发一个"当时正在执行"的副作用 Step，**不得静默重执行**——报 `UNKNOWN` 等 Server 对账（`WORKFLOW_SPEC.md` §4.3）；台账不持久时**拒绝 resume**（否则会重复执行物理动作）。
-  - **`evidence.type` 校验**：Manifest 携带 `output_type`，Server 在**派发时**快照为 Step 的 `expected_output`，`COMPLETED` 时核对；不符或缺失 → `FAILED(invalid_output)`。
-  - **时间基准**：会被人读、且跨重启成立的结论性时间（`created_at`/`ended_at`、`duration_ms`、`record.list` 的时间过滤）一律**墙钟**；事件的 `ts` 按 `PROTOCOL_SPEC.md` §2 保持**单调**、排序按插入顺序。
-- **D4+D5（超时语义 + LLM 有界重试）**：
-  - **超时两端一套词**：副作用超时（服务端 `step_timeout` 到点，或客户端在本地掐掉）一律 `UNKNOWN`——它可能已部分生效；**只读**才是 `FAILED(timeout)`。服务端 `step_timeout` 在能力的 `timeout_hint` 之上叠 **2s 宽限**，让客户端的观察先到。
-  - **LLM 有界重试**（`ADR-004` 修订 A2）：只对 429 / 5xx / 网络错误按 500ms→1000ms 退避重试（`LLM_MAX_RETRIES`，默认 2），**不重试**其它 4xx、自身超时与模型语义错误；终局仍是 `planner_error`。
-- **P4d KB 导出（`ADR-005` 出站）**：提交人显式把一条 Record（默认）或 Report 投递到**配置的 KB 端点**，同步拿到结论。投递包由纯函数生成（`deposit_version` / 稳定 `deposit_id = hash(record_id, object, content_sha256)` / `content_sha256` / 墙钟 `submitted_at` / `content`）；`object=report` 时**只投 Report、不夹带 Record**。出站是 `KnowledgeDepositor` 接缝 + HTTP 实现：`POST` + 配置的鉴权头 + 超时，**网络错误 / 超时 / 5xx 有限重试（默认 2 次，指数退避），4xx 不重试**；**未配置端点或凭据 → `export_unavailable`**（绝不假装成功）。导出**不改 Record**、**不影响 Workflow 状态**。**blob 引用不随导出解析**（KB 只拿到引用，见 `ADR-005` §7）。
-- **D7(b) `client-cli` 控制台客户端**：`client-daemon` 的人类前端——`:ask` 提交请求，确认 / 建议 / 资源冲突由人在终端回答，`:records` / `:show` / `:report` / `:export` / `:blob` 读与导出；**确认绝不默认同意**，`EOF` 一律落到安全默认。**它会真的执行本机能力**（见下文「控制台客户端」一节）。
-- **桌面客户端的产品化闭环（`ADR-006`）**：**三栏工作台**（步骤/证据时间线 + 完成候选 + 人工决定小标）、**会话历史**（左栏 live + 往期 Record 重建，`RECORD_SPEC` v0.9 增 `step_status`）、**闭环末端**（Report 生成/覆盖式查看器/复制/另存、KB 导出并如实显示"端点已接收≠已收录"、取消含 `CANCELLING` 收敛）、**附件与 blob**（≤64 KiB 内联 / >64 KiB 走 blob、粘贴文本、预览/另存、往期渲染）与手工动作 `details`。契约见 `RECORD_SPEC` v0.10、`CLIENT_SPEC` v0.10。
-- **部署与使用（`docs/DEPLOY.md`）**：Server 用 **Docker Compose 常驻**（`server` + Postgres；`pgdata`/`blobs` 持久化、`/health`、`SIGTERM` 优雅退出、`.env` 装载且**真实环境变量优先**）、运维 CLI **`adm`**（建号/改口令/停用）与**首启脱敏配置摘要**；客户端出 **NSIS 安装包**（`pnpm -C packages/client-electron run dist`）并有**首次运行设置页**（Server 地址持久化，文件 **优先于** 环境变量）。
+- **协议与引擎**：TypeScript monorepo；信封编解码、认证握手、能力同步、心跳与错误处置；Step/Workflow 状态机（含 `UNKNOWN`、终态不可变、取消 `CANCELLING` 收敛、终止护栏、`completion_criteria`）；PostgreSQL 三表 + `WorkflowStore`、孤儿回收、重启恢复。
+- **Record / Report**：Evidence 入事件日志，Record 构建/持久化/按 owner 查询、先落盘后通知、Report 生成；`workflow.*` / `step.*` / `record.*` / `report.*` 协议接线。
+- **协议一致性与重连**：`ERROR_DISPOSITION` 驱动错误处置、逻辑会话（跨重连去重窗口 + TTL）、`session.resume` + `workflow.state_sync`。
+- **LLM 规划（P3a）**：`LlmProvider` 抽象 + OpenAI 兼容实现 + `LlmPlanner`、受限子集 JSON Schema 校验、`client_request_id` 幂等。
+- **client-daemon（P3b）**：客户端自有 Capability 声明（`CapabilityRegistry`）+ 可插拔适配器（`git.collect_diagnostics` / `filesystem.read_file` / `docker.inspect_container` + 占位能力）、工作区约束、子进程超时、`step.dispatch → step.status`。
+- **受控执行与对账（P4a）**：`requires_confirmation` 的副作用 Step 绝不自动执行（拒绝走 `REJECTED(user_declined)`）；`UNKNOWN` 对账（只读超时 → `FAILED(timeout)`、副作用 → `UNKNOWN`），存在未对账 `UNKNOWN` 时禁止再下发副作用；`node:sqlite` 幂等台账（键 → 结果，重连回放不重执行）。
+- **资源冲突（P4b）**：由能力提供方判断并如实上报，Server 不仲裁、不排队；腾不出资源报 `REJECTED(resource_conflict)` → `FAILED` + `terminal_reason`。
+- **blob 通道（P4c）**：申请制独立通道，HMAC 签名 URL、流式收发、边收边校验 size/sha256、按 sha256 内容寻址落盘；过期只回收未被任何 Record 引用的 blob。
+- **收口**：客户端断线恢复（先 `resume`、被拒回落握手，三态幂等台账）；清单 `output_type` 派发时快照为 Step 的 `expected_output` 并在 `COMPLETED` 核对；结论性时间用墙钟、事件 `ts` 单调；副作用超时两端一致走 `UNKNOWN`；LLM 有界重试（`ADR-004` A2）。
+- **KB 导出出站（P4d，`ADR-005`）**：提交人显式投递 Record（默认）/ Report 到配置端点；未配置 → `export_unavailable`；不改 Record、不影响 Workflow。
+- **控制台客户端（D7(b)，`client-cli`）**：`client-daemon` 的人类前端（提交请求、回答四类决策、读 Record·Report、取 blob、触发导出）。
+- **桌面客户端（`ADR-006`，`client-electron`）**：单体 Electron（daemon 内嵌 main、renderer 经 preload IPC）。三栏工作台、会话历史（live + 往期 Record 重建，不新增存储）、闭环末端（Report / KB 导出 / 取消）、附件与 blob（≤ 64 KiB 内联 / > 64 KiB 走 blob、预览/另存）、断线恢复与自动重连、首次运行设置页。契约见 `RECORD_SPEC` v0.11、`CLIENT_SPEC` v0.10。
+- **部署（`docs/DEPLOY.md`）**：Server 用 `docker compose` 常驻、运维 CLI `adm`、客户端 NSIS 安装包。
 
-后续：**D6（a）**（真实 Windows 适配器的调研简报）；**B1** Electron 安全硬化（CSP / `setWindowOpenHandler` / `sender` 校验）、**C1** 断线恢复体验、**D2** token 流式；打包增强（代码签名 / 自动更新）。控制台客户端见下文。
+**未实现 / 后续**：
+
+- **D6（a）** 真实 Windows 适配器调研简报；**B1** Electron 安全硬化（CSP / `setWindowOpenHandler` / `sender` 校验）；**D2** token 流式；**A5** 多条 Workflow 并行。
+- 打包增强：代码签名 / 自动更新（现为不签名、不自动更新，`ADR-003`）。
+- KB 侧检索（FR-23，在第三方系统内）；安全规格（沙箱 / 多租户 / 审计 / 完整角色体系 / TLS 启用）。
+- 桌面 UI **视觉还原**（对着参考稿逐栏）仍在进行中。
+
+**关键契约版本**：`RECORD_SPEC` v0.11 · `PROTOCOL_SPEC` v0.12 · `SERVER_SPEC` v0.13 · `CLIENT_SPEC` v0.10 · `CAPABILITY_SPEC` v0.11 · `WORKFLOW_SPEC` v0.7 · `REPORT_SPEC` v0.4。
 
 ## 结构
 
@@ -62,8 +56,8 @@ pnpm install
 # 启动开发/测试用 PostgreSQL（端口 55432）
 docker compose up -d db
 
-# 全部测试
-pnpm -r --if-present test
+# 全部测试（根脚本强制串行：各包共享 adt_test，不能并行）
+pnpm test
 
 # 类型检查
 pnpm -r --if-present typecheck
@@ -71,41 +65,30 @@ pnpm -r --if-present typecheck
 
 数据库连接串默认 `postgres://adt:adt@localhost:55432/adt_test`（测试）与 `.../adt`（开发），可用 `TEST_DATABASE_URL` / `DATABASE_URL` 覆盖。
 
-Server 监听端口默认 `8080`，可用 `PORT` 覆盖；非法值（`abc` / `0` / `70000`）会**告警并回落默认**，而不是把 `NaN` 交给 Node 在 listen 时报一个难懂的 `ERR_SOCKET_BAD_PORT`。
+Server 监听端口默认 `8080`，可用 `PORT` 覆盖；非法值（`abc` / `0` / `70000`）会**告警并回落默认**。
 
-### 正式运行（部署到内网一台机器）
+**正式运行（部署到内网一台机器）**见 **[`docs/DEPLOY.md`](docs/DEPLOY.md)**：管理员用 `docker compose` 把 Server 常驻（数据持久化、`/health`、优雅退出）、用 `adm` 建账号；工程师装 **`ADT-<版本>-setup.exe`**、首次运行填 Server 地址后登录。
 
-见 **[`docs/DEPLOY.md`](docs/DEPLOY.md)** —— 一套端到端总览：管理员用 `docker compose` 把 Server 常驻（数据持久化、`/health`、优雅退出）、用 `adm` 建账号；工程师装 **`ADT-<版本>-setup.exe`**、首次运行填 Server 地址后登录；含配置项与排障。
+## 桌面客户端（`client-electron`，`ADR-006`）
 
-### LLM 规划（可选）
+`packages/client-electron` 是**单体 Electron 应用**：**daemon 跑在 Electron 的 main 进程里**（`ClientDaemon.connect`，与 `client-cli` 同一套库），界面是 renderer，两者之间只走 **preload 的 `contextBridge` IPC**——没有独立进程、没有本地 HTTP、没有令牌/cookie。
 
-Server 通过环境变量启用真实的 LLM 规划器（`ADR-004` §2，OpenAI 兼容）：
+```bash
+pnpm -C packages/client-electron dev       # 开发（electron-vite 热更）
+pnpm -C packages/client-electron build     # 构建 out/{main,preload,renderer}
+pnpm -C packages/client-electron smoke     # 探针：Electron 里的 node:sqlite 台账
+pnpm -C packages/client-electron run pack  # 打包成单个 Windows portable exe（release/）
+pnpm -C packages/client-electron run dist  # 打包成 NSIS 安装包（release/ADT-<版本>-setup.exe）
+pnpm -C packages/client-electron test:e2e  # 桌面冒烟：真 Electron + 真 Server，走完一条人在回路
+```
 
-- `LLM_API_KEY`：设置后才启用；未设置时回退为 no-op 规划器（Workflow 不会产生 Step，直接给完成候选）。
-- `LLM_BASE_URL`：默认 `https://api.deepseek.com/v1`。
-- `LLM_MODEL`：默认 `deepseek-flash`（当前 DeepSeek 模型名；`deepseek-v4-pro` 亦可）。
-- `LLM_MAX_RETRIES`：默认 `2`（最多 3 次尝试），上限 `10`（超出会**告警**并按默认值处理）。只对 **429 / 5xx / 网络错误**重试，退避 500ms / 1000ms；**不重试**其它 4xx、我们自己的超时、以及模型语义错误（工具调用不合法）。设为 `0` 可关闭。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 93s）——每次尝试各有独立的 `timeoutMs` 窗口；而"挂死"（自身超时）不重试，只花一个窗口。
+- **它做什么**：登录（Server 地址是 `ADT_SERVER_URL`，默认 `ws://127.0.0.1:8080/ws`；工作区 `ADT_WORKSPACE`）→ 提交一次请求 → 看步骤卡 → **四种决策都在卡片上回答**（确认 / 手工动作 / 资源冲突 / 完成候选）→ 看到 `Record`。**关窗 = 最小化到托盘、运行继续**；只有托盘里的"退出"才真正收尾（`ADR-006` §Decision 4）。
+- **左栏会话历史**：列出本次会话跑过的对话 **加上** Server 上你**过去的所有 Record**；点开往期对话，用该 Record **重建**出过程（条目时间线）与结论——**不新增存储**（往期是重建，不是当时的可交互界面）。见 `docs/superpowers/specs/2026-10-01-conversation-history-design.md`。
+- 台账 / 会话落在 Electron 的 `userData` 目录；**`node:sqlite`** 是唯一实现（Electron 44 = Node 24，内置可用，无需原生模块）。
 
-> **思考模式与强制工具调用**（`ADR-004` 修订 A3）：规划器靠**强制工具调用**（`tool_choice` 指定具体 tool）拿到结构化的决定（`step` / `completion_candidate` / `reconcile`）。而 `deepseek-flash` **默认就是思考模式**，思考模式**不接受**强制 `tool_choice`（官方：返回 **400**），所以 provider 一律显式发 `thinking:{type:"disabled"}`。换模型/网关后若遇 **`LLM HTTP 400`**，先查这条。
+## 控制台客户端（`client-cli`）
 
-真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
-
-### Blob 通道（可选）
-
-大体积证据走独立通道（`PROTOCOL_SPEC.md` §7.5）。可用环境变量调整：
-
-- `BLOB_SECRET`：签名密钥；未配置则每次启动随机生成并**告警**（旧 URL 重启后失效）。
-- `BLOB_BASE_URL`：签名 URL 的基地址；默认按实际监听端口拼。
-- `BLOB_DATA_DIR`：内容寻址的落盘目录，默认 `.adt/blobs`。
-- `BLOB_TOKEN_TTL_MS`：令牌有效期，默认 15 分钟，**上限 24 小时**。
-- `BLOB_RETENTION_MS`：保留期，默认 30 天，**上限 365 天**（过期只回收**未被任何 Record 引用**的 blob）。
-- `BLOB_MAX_BYTES`：单 blob 上限，默认 512 MiB，**上限 8 GiB**。
-
-数值类变量必须是**整数**；不可用或超上限的值会**告警**并回落默认——不截断，也不会静默接受 `2.5` 这类值。
-
-### 控制台客户端（`client-cli`）
-
-`packages/client-cli` 是 `client-daemon` 的**人类前端**：连着 Server 跑真实 Workflow——收到派发、被问确认 / 建议 / 资源冲突、读 Record·Report、取回 blob、触发 KB 导出。它是 P4 系列人工路径的**手工验收场所**，不是产品形态（正式 UI 另行立项）。
+`packages/client-cli` 是 `client-daemon` 的**人类前端**：连着 Server 跑真实 Workflow——收到派发、被问确认 / 建议 / 资源冲突、读 Record·Report、取回 blob、触发 KB 导出。它是 P4 系列人工路径的**手工验收场所**；正式产品 UI 见上面的 `client-electron`。
 
 ```bash
 # 需要先有一个跑起来的 Server
@@ -128,41 +111,24 @@ pnpm -C packages/client-cli start -- --user alice --url ws://127.0.0.1:8080/ws
 
 **安全语义**：确认**绝不默认同意**——解析不出的回答会**重问**，`EOF`（管道结束、没人在键盘前）一律落到**安全默认**（拒绝副作用、资源冲突停下、完成候选不算已解决）。幂等台账与会话默认落在 `.adt/client-cli/`（文件后端），这样断线才能 `resume` 而不重复执行物理动作。
 
-### 单体桌面客户端（`client-electron`，`ADR-006`）
+## 可选配置
 
-`packages/client-electron` 是**单体 Electron 应用**：**daemon 跑在 Electron 的 main 进程里**（`ClientDaemon.connect`，与 `client-cli` 同一套库），界面是 renderer，两者之间只走 **preload 的 `contextBridge` IPC**——没有独立进程、没有本地 HTTP、没有令牌/cookie。它依据 **`ADR-006`**（取代 `ADR-004` 的 Client 形态）。
+完整配置项与排障见 **`docs/DEPLOY.md`**；下面是速览。
 
-```bash
-pnpm -C packages/client-electron dev     # 开发（electron-vite 热更）
-pnpm -C packages/client-electron build   # 构建 out/{main,preload,renderer}
-pnpm -C packages/client-electron smoke   # 探针：Electron 里的 node:sqlite 台账
-pnpm -C packages/client-electron run pack  # 打包成单个 Windows portable exe（release/）
-pnpm -C packages/client-electron run dist  # 打包成 NSIS 安装包（release/ADT-<版本>-setup.exe）
-pnpm -C packages/client-electron test:e2e  # 桌面冒烟：真 Electron + 真 Server，走完一条人在回路
-```
+**LLM 规划（`ADR-004` §2，OpenAI 兼容）**：`LLM_API_KEY` 设置后才启用（未设置回退 no-op 规划器，Workflow 不产生 Step、直接给完成候选）；`LLM_BASE_URL` 默认 `https://api.deepseek.com/v1`；`LLM_MODEL` 默认 `deepseek-flash`；`LLM_MAX_RETRIES` 默认 `2`（上限 `10`，设为 `0` 关闭）。只对 **429 / 5xx / 网络错误**按 500ms→1000ms 退避重试，不重试其它 4xx、自身超时与模型语义错误。
 
-**它做什么**：登录（Server 地址是 `ADT_SERVER_URL`，默认 `ws://127.0.0.1:8080/ws`；工作区 `ADT_WORKSPACE`）→ 提交一次请求 → 看步骤卡 → **四种决策都在卡片上回答**（确认 / 手工动作 / 资源冲突 / 完成候选）→ 看到 `Record`。**关窗 = 最小化到托盘、运行继续**；只有托盘里的"退出"才真正收尾（`ADR-006` §Decision 4）。
+> **思考模式与强制工具调用（`ADR-004` 修订 A3）**：`deepseek-flash` 默认就是思考模式，而思考模式**不接受**强制 `tool_choice`（官方返回 **400**），所以 provider 一律显式发 `thinking:{type:"disabled"}`。换模型/网关后若遇 **`LLM HTTP 400`**，先查这条。真实 LLM 的集成测试用 `describe.skipIf(!process.env.LLM_API_KEY)` 守卫，默认跳过。
 
-**左栏会话历史**：列出本次会话跑过的对话 **加上** Server 上你**过去的所有 Record**；点开往期对话，用该 Record **重建**出过程（条目时间线）与结论——**不新增存储**（往期是重建，不是当时的可交互界面）。见 `docs/superpowers/specs/2026-10-01-conversation-history-design.md`。
+**Blob 通道（`PROTOCOL_SPEC.md` §7.5）**：`BLOB_SECRET`（未配置则每次启动随机生成并告警，旧 URL 重启后失效）、`BLOB_BASE_URL`、`BLOB_DATA_DIR`（默认 `.adt/blobs`）、`BLOB_TOKEN_TTL_MS`（默认 15 分钟）、`BLOB_RETENTION_MS`（默认 30 天）、`BLOB_MAX_BYTES`（默认 512 MiB）。数值必须是**整数**，越界会告警并回落默认。
 
-**台账 / 会话**落在 Electron 的 `userData` 目录；**`node:sqlite`** 是唯一实现（Electron 44 = Node 24，内置可用，无需原生模块）。
-
-### KB 导出（可选，`ADR-005`）
-
-Server 通过环境变量启用"把 Record/Report 导出到第三方 Knowledge Base"的出站：
-
-- `KB_ENDPOINT_URL`：KB 接收端点；**与 `KB_TOKEN` 任一缺失/为空即导出不可用**（`record.export_result` 回 `export_unavailable`，不会退化成"发到某个默认地址"）。
-- `KB_TOKEN`：凭据；**只保存在 Server 端**，不下发 Client、不写入 Record、也不出现在失败信息里。
-- `KB_AUTH_HEADER`：默认 `Authorization`。
-- `KB_AUTH_SCHEME`：默认 `Bearer`（即 `Authorization: Bearer <token>`）；**置空则发裸 token**，适配 `X-API-Key` 这类自定义头。
-- `KB_TIMEOUT_MS`：默认 `10000`。
-- `KB_MAX_RETRIES`：默认 `2`，上限 `10`（超出会**告警**并按默认值处理）。只对**网络错误 / 超时 / 5xx**重试，退避 500ms→1000ms；**4xx 不重试**——`ADR-005` §5 只列了 5xx（`429` 也是 4xx，因此**不重试**；这与 LLM 侧的 `ADR-004` 修订 A2 **故意不同**）。**最坏耗时 = `timeoutMs × (maxRetries + 1)` + 退避总和**（默认约 31.5s）——投递是**同步**的，这段时间该客户端连接上的其它消息（**含心跳**）会排队（`ADR-005` §4）。默认心跳判死阈值是 45s（15s × 3），所以默认配置安全；若把 `KB_TIMEOUT_MS` 调大到让最坏耗时逼近该阈值，导出期间的心跳会被饿死、会话可能被判失联——Server 启动时会就此**告警**。
+**KB 导出（`ADR-005`）**：`KB_ENDPOINT_URL` / `KB_TOKEN`（**任一缺失即 `export_unavailable`**，绝不假装成功）、`KB_AUTH_HEADER`（默认 `Authorization`）、`KB_AUTH_SCHEME`（默认 `Bearer`，置空则发裸 token）、`KB_TIMEOUT_MS`（默认 `10000`）、`KB_MAX_RETRIES`（默认 `2`）。只对**网络错误 / 超时 / 5xx** 重试，**4xx 不重试**。投递是**同步**的（默认最坏约 31.5s），若其最坏耗时逼近心跳判死阈值（45s），Server 启动时会**告警**。
 
 ## 参考
 
 - 产品 / 需求：`docs/PRODUCT.md`、`docs/REQUIREMENTS.md`
 - 架构：`docs/architecture/ARCHITECTURE.md`、`CLIENT_SPEC.md`、`SERVER_SPEC.md`
 - 契约：`docs/specs/`（`WORKFLOW_SPEC.md`、`CAPABILITY_SPEC.md`、`PROTOCOL_SPEC.md`、`RECORD_SPEC.md`、`REPORT_SPEC.md`）
+- 部署与使用：`docs/DEPLOY.md`
 - 架构决策：`docs/adr/ADR-001`~`ADR-006`
 - MVP 范围：`docs/superpowers/specs/2026-09-29-mvp-scope.md`
 - **阶段推进约定：`docs/superpowers/WORKFLOW.md`（先读它：流程、评审裁决表、验证口径、不 push）**
